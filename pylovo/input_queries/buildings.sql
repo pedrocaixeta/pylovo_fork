@@ -70,6 +70,7 @@ CREATE TABLE pylovo_input.building (
     geom geometry(MultiPolygon, 3035)
 );
 CREATE INDEX IF NOT EXISTS building_geom_idx ON pylovo_input.building USING GIST(geom);
+CREATE INDEX IF NOT EXISTS idx_building_type_check ON pylovo_input.building(id, building_type, building_use);
 
 -- fill id, objectid and building use columns
 INSERT INTO pylovo_input.building (id, objectid, building_use, building_use_id)
@@ -79,8 +80,7 @@ SELECT
     pylovo_input.classify_building_type(p.val_string) as building_use,
     p.val_string as building_use_id
 FROM feature f
-JOIN geometry_data gd ON f.id = gd.feature_id
-JOIN property p ON gd.feature_id = p.feature_id
+JOIN property p ON f.id = p.feature_id
 WHERE
     f.objectclass_id = 901 AND
     p.namespace_id = 10 AND
@@ -175,140 +175,208 @@ CREATE MATERIALIZED VIEW pylovo_input.neighbor_counts AS
     FROM pylovo_input.neighbors
     GROUP BY a_id;
 
--- PHASE 1: Initial classification based on physical characteristics
+-- Apartment Buildings (AB):
+-- Typically have 4+ floors and many neighbors
+-- or if floor area > 1500
 UPDATE pylovo_input.building
-SET building_type =
-    CASE
-        -- Apartment Buildings (AB):
-        -- Typically have 4+ floors and many neighbors
-        -- or if floora area > 1500
-        WHEN
-            floor_number >= 4 OR
-            (
-                floor_number >= 3 AND
-                EXISTS (SELECT 1 FROM pylovo_input.neighbor_counts
-                       WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
-                       AND count >= 3)
-            ) OR
-            floor_area > 1500
-        THEN 'AB'
-
-        -- Single Family Houses (SFH):
-        -- Typically have larger floor area, 1-2 floors, and few or no neighbors
-        WHEN (floor_area > 120 AND floor_number <= 2 AND
-              NOT EXISTS (SELECT 1 FROM pylovo_input.neighbors
-                         WHERE pylovo_input.neighbors.a_id = pylovo_input.building.id)) THEN 'SFH'
-
-        -- Terraced Houses (TH):
-        -- Typically have a medium floor area, 2-3 floors, and exactly 1-2 neighbors
-        -- They also tend to have similar floor area to their neighbors (within 20%)
-        WHEN (floor_area BETWEEN 80 AND 150 AND floor_number BETWEEN 2 AND 3 AND
-              EXISTS (SELECT 1 FROM pylovo_input.neighbor_counts
-                     WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
-                     AND count BETWEEN 1 AND 2) AND
-              EXISTS (SELECT 1 FROM pylovo_input.neighbors
-                     WHERE pylovo_input.neighbors.a_id = pylovo_input.building.id
-                     AND ABS(pylovo_input.neighbors.a_area - pylovo_input.neighbors.b_area) /
-                         GREATEST(pylovo_input.neighbors.a_area, pylovo_input.neighbors.b_area) < 0.2)
-             ) THEN 'TH'
-
-        -- Multi-Family Houses (MFH):
-        -- Buildings with 2-3 floors, multiple units but smaller than apartment buildings
-        -- Often have some neighbors but not as many as apartment buildings
-        WHEN (floor_number BETWEEN 2 AND 3 OR
-              (floor_area > 150 AND
-               EXISTS (SELECT 1 FROM pylovo_input.neighbor_counts
-                      WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
-                      AND count BETWEEN 1 AND 3))
-             ) THEN 'MFH'
-
-        -- Default case - if none of the above criteria are met
-        ELSE NULL
-    END
+SET building_type = 'AB'
 WHERE building_use = 'residential'
-AND building_type IS NULL;
-
--- Now apply propagation rules in separate updates
-CREATE INDEX IF NOT EXISTS idx_building_type_check ON pylovo_input.building(id, building_type, building_use);
+  AND building_type IS NULL
+  AND (floor_number >= 4
+    OR (
+           floor_number >= 3 AND
+           EXISTS (SELECT 1
+                   FROM pylovo_input.neighbor_counts
+                   WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                     AND count >= 3)
+           )
+    OR floor_area > 1500);
 
 -- Rule 1: Buildings adjacent to AB with 3+ floors and similar height become AB
-UPDATE pylovo_input.building b
-SET building_type = 'AB'
-FROM (
-    SELECT DISTINCT n.a_id
-    FROM pylovo_input.neighbors n
-    JOIN pylovo_input.building nb ON n.b_id = nb.id
-    JOIN pylovo_input.building b1 ON n.a_id = b1.id
-    WHERE nb.building_type = 'AB'
-    AND b1.floor_number >= 3
-    AND ABS(b1.height - nb.height)/GREATEST(b1.height, nb.height) < 0.2
-) AS candidates
-WHERE b.id = candidates.a_id
-AND b.building_use = 'residential'
-AND b.building_type IS NULL;
+DO $$
+DECLARE
+    updated_count INTEGER := 1;
+BEGIN
+    WHILE updated_count > 0 LOOP
+        WITH candidates AS (
+            SELECT DISTINCT n.a_id
+            FROM pylovo_input.neighbors n
+            JOIN pylovo_input.building nb ON n.b_id = nb.id
+            JOIN pylovo_input.building b1 ON n.a_id = b1.id
+            WHERE nb.building_type = 'AB'
+            --AND b1.floor_number >= 3
+            --AND ABS(b1.height - nb.height)/GREATEST(b1.height, nb.height) < 0.2
+            AND b1.building_use = 'residential'
+            AND b1.building_type IS NULL
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'AB'
+        FROM candidates
+        WHERE b.id = candidates.a_id;
 
--- Rule 2: Buildings adjacent to at least 2 THs with similar floor area become TH
-UPDATE pylovo_input.building b
-SET building_type = 'TH'
-FROM (
-    SELECT DISTINCT n.a_id
-    FROM pylovo_input.neighbors n
-    JOIN pylovo_input.building nb ON n.b_id = nb.id
-    WHERE nb.building_type = 'TH'
-    AND ABS(n.a_area - n.b_area)/GREATEST(n.a_area, n.b_area) < 0.25
-    GROUP BY n.a_id
-    HAVING COUNT(*) >= 2
-) AS candidates
-WHERE b.id = candidates.a_id
-AND b.building_use = 'residential'
-AND b.building_type IS NULL;
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+        RAISE NOTICE 'Rule 1 iteration: % buildings updated', updated_count;
+    END LOOP;
+END $$;
 
--- Rule 3: Row of buildings with similar floor area and height likely TH
-UPDATE pylovo_input.building b
-SET building_type = 'TH'
-FROM (
-    SELECT DISTINCT n.a_id
-    FROM pylovo_input.neighbors n
-    JOIN pylovo_input.building b1 ON n.a_id = b1.id
-    JOIN pylovo_input.building b2 ON n.b_id = b2.id
-    WHERE b2.building_type = 'TH'
-    AND b1.floor_number = b2.floor_number
-    AND ABS(b1.floor_area - b2.floor_area)/GREATEST(b1.floor_area, b2.floor_area) < 0.2
-) AS candidates
-WHERE b.id = candidates.a_id
-AND b.building_use = 'residential'
-AND b.building_type IS NULL;
+-- Single Family Houses (SFH):
+-- Typically have larger floor area, 1-2 floors, and few or no neighbors
 
--- Rule 4: Small buildings with floor area < 100 next to SFH likely also SFH
-UPDATE pylovo_input.building b
+UPDATE pylovo_input.building
 SET building_type = 'SFH'
-FROM (
-    SELECT DISTINCT n.a_id
-    FROM pylovo_input.neighbors n
-    JOIN pylovo_input.building b1 ON n.a_id = b1.id
-    JOIN pylovo_input.building b2 ON n.b_id = b2.id
-    WHERE b2.building_type = 'SFH'
-    AND b1.floor_area < 100
-    AND b1.floor_number <= 2
-) AS candidates
-WHERE b.id = candidates.a_id
-AND b.building_use = 'residential'
-AND b.building_type IS NULL;
+WHERE building_use = 'residential'
+  AND building_type IS NULL
+  AND ((floor_area < 350 AND floor_number <= 3 AND
+        NOT EXISTS (SELECT 1
+                    FROM pylovo_input.neighbors
+                    WHERE pylovo_input.neighbors.a_id = pylovo_input.building.id)) OR
+       (floor_area < 200 AND floor_number <= 2 AND
+        NOT EXISTS (SELECT 1
+                    FROM pylovo_input.neighbor_counts
+                    WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                      AND count >= 2)));
+
+-- Rule 2: Small buildings with floor area < 100 next to SFH likely also SFH
+DO $$
+DECLARE
+    updated_count INTEGER := 1;
+BEGIN
+    WHILE updated_count > 0 LOOP
+        WITH candidates AS (
+            SELECT DISTINCT n.a_id
+            FROM pylovo_input.neighbors n
+            JOIN pylovo_input.building b1 ON n.a_id = b1.id
+            JOIN pylovo_input.building b2 ON n.b_id = b2.id
+            WHERE b2.building_type = 'SFH'
+            AND b1.floor_area < 100
+            AND b1.floor_number <= 2
+            AND b1.building_use = 'residential'
+            AND b1.building_type IS NULL
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'SFH'
+        FROM candidates
+        WHERE b.id = candidates.a_id;
+
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+        RAISE NOTICE 'Rule 2 iteration: % buildings updated', updated_count;
+    END LOOP;
+END $$;
+
+-- Terraced Houses (TH):
+-- Typically have a medium floor area, 2-3 floors, and exactly 1-2 neighbors
+-- They also tend to have similar floor area to their neighbors (within 20%)
+UPDATE pylovo_input.building
+SET building_type = 'TH'
+WHERE building_use = 'residential'
+  AND building_type IS NULL
+  AND ((floor_area BETWEEN 80 AND 150 AND floor_number BETWEEN 2 AND 3 AND
+        EXISTS (SELECT 1
+                FROM pylovo_input.neighbor_counts
+                WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                  AND count BETWEEN 1 AND 2) AND
+        EXISTS (SELECT 1
+                FROM pylovo_input.neighbors
+                WHERE pylovo_input.neighbors.a_id = pylovo_input.building.id
+                  AND ABS(pylovo_input.neighbors.a_area - pylovo_input.neighbors.b_area) /
+                      GREATEST(pylovo_input.neighbors.a_area, pylovo_input.neighbors.b_area) < 0.2))
+    );
+
+-- Rule 3: Buildings adjacent to at least 2 THs with similar floor area become TH
+DO $$
+DECLARE
+    updated_count INTEGER := 1;
+BEGIN
+    WHILE updated_count > 0 LOOP
+        WITH candidates AS (
+            SELECT DISTINCT n.a_id
+            FROM pylovo_input.neighbors n
+            JOIN pylovo_input.building nb ON n.b_id = nb.id
+            JOIN pylovo_input.building b1 ON n.a_id = b1.id
+            WHERE nb.building_type = 'TH'
+            AND ABS(n.a_area - n.b_area)/GREATEST(n.a_area, n.b_area) < 0.25
+            AND b1.building_use = 'residential'
+            AND b1.building_type IS NULL
+            GROUP BY n.a_id
+            HAVING COUNT(*) >= 2
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'TH'
+        FROM candidates
+        WHERE b.id = candidates.a_id;
+
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+        RAISE NOTICE 'Rule 3 iteration: % buildings updated', updated_count;
+    END LOOP;
+END $$;
+
+-- Rule 4: Row of buildings with similar floor area and height likely TH
+DO $$
+DECLARE
+    updated_count INTEGER := 1;
+BEGIN
+    WHILE updated_count > 0 LOOP
+        WITH candidates AS (
+            SELECT DISTINCT n.a_id
+            FROM pylovo_input.neighbors n
+            JOIN pylovo_input.building b1 ON n.a_id = b1.id
+            JOIN pylovo_input.building b2 ON n.b_id = b2.id
+            WHERE b2.building_type = 'TH'
+            AND b1.floor_number = b2.floor_number
+            AND ABS(b1.floor_area - b2.floor_area)/GREATEST(b1.floor_area, b2.floor_area) < 0.2
+            AND b1.building_use = 'residential'
+            AND b1.building_type IS NULL
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'TH'
+        FROM candidates
+        WHERE b.id = candidates.a_id;
+
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+        RAISE NOTICE 'Rule 4 iteration: % buildings updated', updated_count;
+    END LOOP;
+END $$;
+
+-- Multi-Family Houses (MFH):
+-- Buildings with 2-3 floors, multiple units but smaller than apartment buildings
+-- Often have some neighbors but not as many as apartment buildings
+UPDATE pylovo_input.building
+SET building_type = 'MFH'
+WHERE building_use = 'residential'
+  AND building_type IS NULL
+  AND ((floor_number BETWEEN 2 AND 3 OR
+        (floor_area > 150 AND
+         EXISTS (SELECT 1
+                 FROM pylovo_input.neighbor_counts
+                 WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                   AND count BETWEEN 1 AND 3))
+    ));
 
 -- Rule 5: Buildings with 2-3 floors adjacent to MFH likely also MFH
-UPDATE pylovo_input.building b
-SET building_type = 'MFH'
-FROM (
-    SELECT DISTINCT n.a_id
-    FROM pylovo_input.neighbors n
-    JOIN pylovo_input.building b1 ON n.a_id = b1.id
-    JOIN pylovo_input.building b2 ON n.b_id = b2.id
-    WHERE b2.building_type = 'MFH'
-    AND b1.floor_number BETWEEN 2 AND 3
-) AS candidates
-WHERE b.id = candidates.a_id
-AND b.building_use = 'residential'
-AND b.building_type IS NULL;
+DO $$
+DECLARE
+    updated_count INTEGER := 1;
+BEGIN
+    WHILE updated_count > 0 LOOP
+        WITH candidates AS (
+            SELECT DISTINCT n.a_id
+            FROM pylovo_input.neighbors n
+            JOIN pylovo_input.building b1 ON n.a_id = b1.id
+            JOIN pylovo_input.building b2 ON n.b_id = b2.id
+            WHERE b2.building_type = 'MFH'
+            --AND b1.floor_number BETWEEN 2 AND 3
+            AND b1.building_use = 'residential'
+            AND b1.building_type IS NULL
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'MFH'
+        FROM candidates
+        WHERE b.id = candidates.a_id;
+
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+        RAISE NOTICE 'Rule 5 iteration: % buildings updated', updated_count;
+    END LOOP;
+END $$;
 
 -- Set rest to AB
 UPDATE pylovo_input.building b
