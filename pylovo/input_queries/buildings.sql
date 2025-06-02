@@ -313,7 +313,7 @@ SELECT a_id as id, count(b_id)
 FROM pylovo_input.neighbors
 GROUP BY a_id;
 
--- Apartment Buildings (AB):
+-- Step 1: Apartment Buildings (AB):
 -- Typically have 4+ floors and many neighbors
 -- or 3+ floors and at 3+ neighbors
 -- or if floor area > 1500
@@ -331,7 +331,7 @@ WHERE building_use = 'residential'
            )
     OR floor_area > 1500);
 
--- Rule 1: Buildings adjacent to AB with 3+ floors and similar height become AB
+-- Buildings adjacent to AB with 3+ floors and similar height become AB
 DO
 $$
     DECLARE
@@ -359,9 +359,8 @@ $$
     END
 $$;
 
--- Single Family Houses (SFH):
+-- Step 2: Single Family Houses (SFH):
 -- Typically have larger floor area, 1-2 floors, and few or no neighbors
-
 UPDATE pylovo_input.building
 SET building_type = 'SFH'
 WHERE building_use = 'residential'
@@ -376,7 +375,7 @@ WHERE building_use = 'residential'
                     WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
                       AND count >= 2)));
 
--- Rule 2: Small buildings with floor area < 100 next to SFH likely also SFH
+-- Small buildings with floor area < 100 next to SFH likely also SFH
 DO
 $$
     DECLARE
@@ -404,7 +403,7 @@ $$
     END
 $$;
 
--- Terraced Houses (TH):
+-- Step 3: Terraced Houses (TH):
 -- Typically have a medium floor area, 2-3 floors, and exactly 1-2 neighbors
 -- They also tend to have similar floor area to their neighbors (within 20%)
 UPDATE pylovo_input.building
@@ -423,7 +422,7 @@ WHERE building_use = 'residential'
                       GREATEST(pylovo_input.neighbors.a_area, pylovo_input.neighbors.b_area) < 0.2))
     );
 
--- Rule 3: Buildings adjacent to at least 2 THs with similar floor area become TH
+-- Buildings adjacent to at least 2 THs with similar floor area become TH
 DO
 $$
     DECLARE
@@ -452,7 +451,7 @@ $$
     END
 $$;
 
--- Rule 4: Row of buildings with similar floor area and height likely TH
+-- Row of buildings with similar floor area and height likely TH
 DO
 $$
     DECLARE
@@ -481,7 +480,7 @@ $$
     END
 $$;
 
--- Multi-Family Houses (MFH):
+-- Step 4: Multi-Family Houses (MFH):
 -- Buildings with 2-3 floors, multiple units but smaller than apartment buildings
 -- Often have some neighbors but not as many as apartment buildings
 UPDATE pylovo_input.building
@@ -496,7 +495,7 @@ WHERE building_use = 'residential'
                    AND count BETWEEN 1 AND 3))
     ));
 
--- Rule 5: Buildings with 2-3 floors adjacent to MFH likely also MFH
+-- Buildings with 2-3 floors adjacent to MFH likely also MFH
 DO
 $$
     DECLARE
@@ -523,7 +522,7 @@ $$
     END
 $$;
 
--- Set rest to AB
+-- Step 5: Set rest to AB
 UPDATE pylovo_input.building b
 SET building_type = 'AB'
 WHERE b.building_use = 'residential'
