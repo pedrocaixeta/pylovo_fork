@@ -1,3 +1,9 @@
+-- drops
+DROP MATERIALIZED VIEW pylovo_input.neighbor_counts;
+DROP MATERIALIZED VIEW pylovo_input.neighbors;
+DROP TABLE pylovo_input.building;
+
+
 CREATE OR REPLACE FUNCTION pylovo_input.classify_building_use(funktion TEXT)
     RETURNS TEXT AS
 $$
@@ -71,7 +77,7 @@ CREATE TABLE pylovo_input.building
     building_type     text,
     occupants         int,
     households        int,
-    construction_year int,
+    construction_year text,
     geom              geometry(MultiPolygon, 3035)
 );
 
@@ -89,11 +95,9 @@ FROM feature f
 WHERE f.objectclass_id = 901
   AND p.namespace_id = 10
   AND p.name = 'function'
-  AND p.val_string LIKE '31001_%'
-  AND                            -- only allow buildings
-    p.val_string <> '31001_2463'
-  AND                            -- exclude garages
-    p.val_string <> '31001_2513' -- exclude water containers
+  AND p.val_string LIKE '31001_%'  -- only allow buildings
+  AND p.val_string <> '31001_2463' -- exclude garages
+  AND p.val_string <> '31001_2513' -- exclude water containers
 ORDER BY f.id;
 
 -- fill height column
@@ -154,68 +158,26 @@ WHERE b.floor_number IS NULL
   AND b.building_use_id = afh.building_use_id;
 
 
--- fill construction_year
--- Step 1: Create a temporary table with joined buildings and grid cells
-DROP TABLE IF EXISTS temp_building_with_grid_year;
-CREATE TEMP TABLE temp_building_with_grid_year AS
-SELECT b.id   AS building_id,
-       b.geom AS building_geom,
-       g.*
-FROM pylovo_input.building b
-         JOIN
-     census2022.gebaeude_nach_baujahr_in_mikrozensus_klassen g
-     ON
-         ST_Intersects(b.geom, g.geometry)
-WHERE g.gitter_id_100m IS NOT NULL;
+-- create neighborhood views
+CREATE MATERIALIZED VIEW pylovo_input.neighbors AS
+SELECT a.id         AS a_id,
+       b.id         AS b_id,
+       a.floor_area AS a_area,
+       b.floor_area AS b_area
+FROM pylovo_input.building a
+         JOIN pylovo_input.building b ON
+    a.id != b.id AND
+    a.building_use = 'residential' AND
+    b.building_use = 'residential' AND
+    a.geom && b.geom AND -- check for bbox intersection
+    ST_DWithin(a.geom, b.geom, 0.01);
 
--- Step 2: Assign construction year using weighted random distribution
--- min year = 1800
--- Note: This version uses a WITH clause to prepare weights and cumulative ranges.
---       Then assigns a construction_year based on a random number weighted by those counts.
-UPDATE pylovo_input.building b
-SET construction_year = sub.assigned_year
-FROM (SELECT building_id,
-             CASE
-                 WHEN total > 0 THEN (
-                     -- Normalize weights and generate a random year within the matched bin
-                     CASE
-                         WHEN r < vor1919 / total THEN floor(random() * (1919 - 1800) + 1800)
-                         WHEN r < (vor1919 + a1919bis1948) / total THEN floor(random() * (1948 - 1919) + 1919)
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978) / total
-                             THEN floor(random() * (1978 - 1949) + 1949)
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990) / total
-                             THEN floor(random() * (1990 - 1979) + 1979)
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000) / total
-                             THEN floor(random() * (2000 - 1991) + 1991)
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010) /
-                                  total THEN floor(random() * (2010 - 2001) + 2001)
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010 +
-                                   a2011bis2019) / total THEN floor(random() * (2019 - 2011) + 2011)
-                         ELSE floor(random() * (2025 - 2020 + 1) + 2020)
-                         END
-                     )
-                 ELSE NULL
-                 END AS assigned_year
-      FROM (SELECT building_id,
-                   vor1919,
-                   a1919bis1948,
-                   a1949bis1978,
-                   a1979bis1990,
-                   a1991bis2000,
-                   a2001bis2010,
-                   a2011bis2019,
-                   a2020undspaeter,
-                   (COALESCE(vor1919, 0) +
-                    COALESCE(a1919bis1948, 0) +
-                    COALESCE(a1949bis1978, 0) +
-                    COALESCE(a1979bis1990, 0) +
-                    COALESCE(a1991bis2000, 0) +
-                    COALESCE(a2001bis2010, 0) +
-                    COALESCE(a2011bis2019, 0) +
-                    COALESCE(a2020undspaeter, 0)) AS total,
-                   random()                       AS r
-            FROM temp_building_with_grid_year) year_probs) sub
-WHERE b.id = sub.building_id;
+-- also includes counts of 0
+CREATE MATERIALIZED VIEW pylovo_input.neighbor_counts AS
+SELECT b.id as id, count(b_id) as count
+FROM pylovo_input.building b
+         LEFT JOIN pylovo_input.neighbors n ON b.id = n.a_id
+GROUP BY b.id;
 
 
 -- fill occupants
@@ -284,7 +246,7 @@ CREATE TEMP TABLE temp_building_households AS
 SELECT building_id,
        occupants,
        durchschnhhgroesse,
-       ROUND(occupants / durchschnhhgroesse)::int AS estimated_households
+       GREATEST(ROUND(occupants / durchschnhhgroesse)::int, 1) AS estimated_households
 FROM temp_building_hh_grid;
 
 -- Step 3: Update original building table
@@ -293,30 +255,74 @@ SET households = bh.estimated_households
 FROM temp_building_households bh
 WHERE b.id = bh.building_id;
 
+-- fill construction_year
+-- Step 1: Create a temporary table with joined buildings and grid cells
+DROP TABLE IF EXISTS temp_building_with_grid_year;
+CREATE TEMP TABLE temp_building_with_grid_year AS
+SELECT b.id   AS building_id,
+       b.geom AS building_geom,
+       g.*
+FROM pylovo_input.building b
+         JOIN
+     census2022.gebaeude_nach_baujahr_in_mikrozensus_klassen g
+     ON
+         ST_Intersects(b.geom, g.geometry)
+WHERE g.gitter_id_100m IS NOT NULL;
 
--- fill residential_building_type
-CREATE MATERIALIZED VIEW pylovo_input.neighbors AS
-SELECT a.id         AS a_id,
-       b.id         AS b_id,
-       a.floor_area AS a_area,
-       b.floor_area AS b_area
-FROM pylovo_input.building a
-         JOIN pylovo_input.building b ON
-    a.id != b.id AND
-    a.building_use = 'residential' AND
-    b.building_use = 'residential' AND
-    a.geom && b.geom AND -- check for bbox intersection
-    ST_DWithin(a.geom, b.geom, 0.01);
 
-CREATE MATERIALIZED VIEW pylovo_input.neighbor_counts AS
-SELECT a_id as id, count(b_id)
-FROM pylovo_input.neighbors
-GROUP BY a_id;
+-- Step 2: Assign construction year using weighted random distribution
+-- min year = 1800
+-- Note: This version uses a WITH clause to prepare weights and cumulative ranges.
+--       Then assigns a construction_year based on a random number weighted by those counts.
+UPDATE pylovo_input.building b
+SET construction_year = sub.assigned_year
+FROM (SELECT building_id,
+             CASE
+                 WHEN total > 0 THEN (
+                     -- Normalize weights and generate a random year within the matched bin
+                     CASE
+                         WHEN r < vor1919 / total THEN '-1919'
+                         WHEN r < (vor1919 + a1919bis1948) / total THEN '1919-1948'
+                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978) / total
+                             THEN '1949-1978'
+                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990) / total
+                             THEN '1979-1990'
+                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000) / total
+                             THEN '1991-2000'
+                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010) /
+                                  total THEN '2001-2010'
+                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010 +
+                                   a2011bis2019) / total THEN '2011-2019'
+                         ELSE '2020-'
+                         END
+                     )
+                 ELSE NULL
+                 END AS assigned_year
+      FROM (SELECT building_id,
+                   vor1919,
+                   a1919bis1948,
+                   a1949bis1978,
+                   a1979bis1990,
+                   a1991bis2000,
+                   a2001bis2010,
+                   a2011bis2019,
+                   a2020undspaeter,
+                   (COALESCE(vor1919, 0) +
+                    COALESCE(a1919bis1948, 0) +
+                    COALESCE(a1949bis1978, 0) +
+                    COALESCE(a1979bis1990, 0) +
+                    COALESCE(a1991bis2000, 0) +
+                    COALESCE(a2001bis2010, 0) +
+                    COALESCE(a2011bis2019, 0) +
+                    COALESCE(a2020undspaeter, 0)) AS total,
+                   random()                       AS r
+            FROM temp_building_with_grid_year) year_probs) sub
+WHERE b.id = sub.building_id;
 
+
+-- fill building_type
 -- Step 1: Apartment Buildings (AB):
--- Typically have 4+ floors and many neighbors
--- or 3+ floors and at 3+ neighbors
--- or if floor area > 1500
+-- Typically have <4+ floors and many neighbors> or <3+ floors and 3+ neighbors> or <floor area > 1500>
 UPDATE pylovo_input.building
 SET building_type = 'AB'
 WHERE building_use = 'residential'
@@ -354,7 +360,7 @@ $$
                 WHERE b.id = candidates.a_id;
 
                 GET DIAGNOSTICS updated_count = ROW_COUNT;
-                RAISE NOTICE 'Rule 1 iteration: % buildings updated', updated_count;
+                -- RAISE NOTICE 'Rule 1 iteration: % buildings updated', updated_count;
             END LOOP;
     END
 $$;
@@ -398,7 +404,7 @@ $$
                 WHERE b.id = candidates.a_id;
 
                 GET DIAGNOSTICS updated_count = ROW_COUNT;
-                RAISE NOTICE 'Rule 2 iteration: % buildings updated', updated_count;
+                -- RAISE NOTICE 'Rule 2 iteration: % buildings updated', updated_count;
             END LOOP;
     END
 $$;
@@ -446,7 +452,7 @@ $$
                 WHERE b.id = candidates.a_id;
 
                 GET DIAGNOSTICS updated_count = ROW_COUNT;
-                RAISE NOTICE 'Rule 3 iteration: % buildings updated', updated_count;
+                -- RAISE NOTICE 'Rule 3 iteration: % buildings updated', updated_count;
             END LOOP;
     END
 $$;
@@ -475,7 +481,7 @@ $$
                 WHERE b.id = candidates.a_id;
 
                 GET DIAGNOSTICS updated_count = ROW_COUNT;
-                RAISE NOTICE 'Rule 4 iteration: % buildings updated', updated_count;
+                -- RAISE NOTICE 'Rule 4 iteration: % buildings updated', updated_count;
             END LOOP;
     END
 $$;
@@ -517,7 +523,7 @@ $$
                 WHERE b.id = candidates.a_id;
 
                 GET DIAGNOSTICS updated_count = ROW_COUNT;
-                RAISE NOTICE 'Rule 5 iteration: % buildings updated', updated_count;
+                -- RAISE NOTICE 'Rule 5 iteration: % buildings updated', updated_count;
             END LOOP;
     END
 $$;
@@ -527,3 +533,491 @@ UPDATE pylovo_input.building b
 SET building_type = 'AB'
 WHERE b.building_use = 'residential'
   AND b.building_type IS NULL;
+
+
+-- fix wrong assignments
+UPDATE pylovo_input.building b
+SET building_type = 'SFH'
+FROM pylovo_input.neighbor_counts nc
+WHERE b.id = nc.id
+  AND building_type IN ('MFH', 'AB')
+  AND households = 1
+  AND nc.count = 0;
+
+UPDATE pylovo_input.building b
+SET building_type = 'TH'
+FROM pylovo_input.neighbor_counts nc
+WHERE b.id = nc.id
+  AND building_type IN ('MFH', 'AB')
+  AND households = 1
+  AND nc.count != 0;
+
+UPDATE pylovo_input.building b
+SET building_type = 'MFH'
+FROM pylovo_input.neighbor_counts nc
+WHERE b.id = nc.id
+  AND building_type IN ('SFH', 'TH')
+  AND households BETWEEN 2 AND 4;
+
+UPDATE pylovo_input.building b
+SET building_type = 'AB'
+FROM pylovo_input.neighbor_counts nc
+WHERE b.id = nc.id
+  AND building_type IN ('SFH', 'TH')
+  AND households >= 5;
+
+
+-- Rebalance according to census data
+-- This script rebalances residential building types according to reference data
+
+-- Step 1: Create a mapping between building types and reference columns
+-- AB (Apartment Buildings) = mfh_13undmehrwohnungen + mfh_7bis12wohnungen
+-- MFH (Multi-Family Houses) = mfh_3bis6wohnungen + freist_zfh + zfh_dhh
+-- TH (Terraced Houses) = efh_reihenhaus + zfh_reihenhaus (partial)
+-- SFH (Single Family Houses) = freiefh + efh_dhh
+
+-- Step 2: Calculate current distribution and target distribution per grid
+DROP TABLE IF EXISTS temp_grid_current;
+CREATE TEMPORARY TABLE temp_grid_current AS
+WITH grid_current AS (
+    SELECT
+        w.gitter_id_100m as grid_id,
+        COUNT(CASE WHEN b.building_type = 'AB' THEN 1 END) as current_ab,
+        COUNT(CASE WHEN b.building_type = 'MFH' THEN 1 END) as current_mfh,
+        COUNT(CASE WHEN b.building_type = 'TH' THEN 1 END) as current_th,
+        COUNT(CASE WHEN b.building_type = 'SFH' THEN 1 END) as current_sfh,
+        COUNT(*) as total_buildings
+    FROM pylovo_input.building b
+    JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+    WHERE b.building_use = 'residential' AND w.gitter_id_100m IS NOT NULL
+    GROUP BY w.gitter_id_100m
+)
+SELECT * FROM grid_current;
+
+DROP TABLE IF EXISTS temp_grid_target;
+CREATE TEMPORARY TABLE temp_grid_target AS
+WITH grid_target AS (
+    SELECT
+        gitter_id_100m as grid_id,
+        -- Calculate target counts from reference data
+        COALESCE(mfh_13undmehrwohnungen + mfh_7bis12wohnungen, 0) as target_ab,
+        COALESCE(mfh_3bis6wohnungen + freist_zfh + zfh_dhh, 0) as target_mfh,
+        COALESCE(efh_reihenhaus + zfh_reihenhaus, 0) as target_th,
+        COALESCE(freiefh + efh_dhh, 0) as target_sfh,
+        COALESCE(freiefh + efh_dhh + efh_reihenhaus + freist_zfh + zfh_dhh + zfh_reihenhaus + mfh_3bis6wohnungen + mfh_7bis12wohnungen + mfh_13undmehrwohnungen, 0)
+            as total_target
+    FROM census2022.wohnungen_nach_gebaeudetyp_groesse
+    WHERE gitter_id_100m IS NOT NULL
+)
+SELECT * FROM grid_target;
+
+DROP TABLE IF EXISTS temp_grid_comparison;
+CREATE TEMPORARY TABLE temp_grid_comparison AS
+WITH grid_comparison AS (
+    SELECT
+        gc.grid_id,
+        gc.current_ab,
+        gc.current_mfh,
+        gc.current_th,
+        gc.current_sfh,
+        gc.total_buildings,
+        gt.target_ab,
+        gt.target_mfh,
+        gt.target_th,
+        gt.target_sfh,
+        gt.total_target,
+        -- Calculate needed adjustments (scaled to current total)
+        CASE WHEN gt.total_target > 0 THEN
+            ROUND(gt.target_ab * gc.total_buildings / gt.total_target) - gc.current_ab
+        ELSE 0 END as ab_adjustment,
+        CASE WHEN gt.total_target > 0 THEN
+            ROUND(gt.target_mfh * gc.total_buildings / gt.total_target) - gc.current_mfh
+        ELSE 0 END as mfh_adjustment,
+        CASE WHEN gt.total_target > 0 THEN
+            ROUND(gt.target_th * gc.total_buildings / gt.total_target) - gc.current_th
+        ELSE 0 END as th_adjustment,
+        CASE WHEN gt.total_target > 0 THEN
+            ROUND(gt.target_sfh * gc.total_buildings / gt.total_target) - gc.current_sfh
+        ELSE 0 END as sfh_adjustment
+    FROM temp_grid_current gc
+    LEFT JOIN temp_grid_target gt ON gc.grid_id = gt.grid_id
+)
+SELECT * FROM grid_comparison;
+
+-- Step 3: Create a temporary table to store actual rebalancing decisions
+DROP TABLE IF EXISTS temp_building_rebalance;
+CREATE TEMPORARY TABLE temp_building_rebalance AS
+SELECT * FROM temp_grid_comparison WHERE total_target > 0;
+
+-- Step 4: Rebalance buildings where AB needs to increase
+-- Convert largest MFH buildings to AB first
+DO $$
+DECLARE
+    grid_rec RECORD;
+    buildings_to_convert INTEGER;
+    converted_count INTEGER;
+BEGIN
+    FOR grid_rec IN
+        SELECT grid_id, ab_adjustment
+        FROM temp_building_rebalance
+        WHERE ab_adjustment > 0
+    LOOP
+        buildings_to_convert := grid_rec.ab_adjustment;
+
+        -- Convert largest MFH to AB
+        WITH candidates AS (
+            SELECT b.id
+            FROM pylovo_input.building b
+            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+            WHERE w.gitter_id_100m = grid_rec.grid_id
+              AND b.building_use = 'residential'
+              AND b.building_type = 'MFH'
+              AND COALESCE(b.households, 0) > 1  -- Ensure it can be AB
+            ORDER BY b.floor_area * b.height DESC
+            LIMIT buildings_to_convert
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'AB'
+        FROM candidates
+        WHERE b.id = candidates.id;
+
+        GET DIAGNOSTICS converted_count = ROW_COUNT;
+        buildings_to_convert := buildings_to_convert - converted_count;
+
+        -- If still need more AB, convert largest TH to AB (with household adjustment)
+        IF buildings_to_convert > 0 THEN
+            WITH candidates AS (
+                SELECT b.id
+                FROM pylovo_input.building b
+                JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+                WHERE w.gitter_id_100m = grid_rec.grid_id
+                  AND b.building_use = 'residential'
+                  AND b.building_type = 'TH'
+                ORDER BY b.floor_area * b.height DESC
+                LIMIT buildings_to_convert
+            )
+            UPDATE pylovo_input.building b
+            SET building_type = 'AB',
+                households = GREATEST(b.households, 2),  -- AB should have > 1 households
+                occupants = GREATEST(b.occupants, b.households, 2)
+            FROM candidates
+            WHERE b.id = candidates.id;
+        END IF;
+
+        -- -- RAISE NOTICE 'Grid %: Converted % buildings to AB', grid_rec.grid_id, grid_rec.ab_adjustment;
+    END LOOP;
+END $$;
+
+-- Step 5: Rebalance buildings where MFH needs to increase
+-- Convert largest TH or smallest AB to MFH
+DO $$
+DECLARE
+    grid_rec RECORD;
+    buildings_to_convert INTEGER;
+    converted_count INTEGER;
+BEGIN
+    FOR grid_rec IN
+        SELECT grid_id, mfh_adjustment
+        FROM temp_building_rebalance
+        WHERE mfh_adjustment > 0
+    LOOP
+        buildings_to_convert := grid_rec.mfh_adjustment;
+
+        -- Convert largest TH to MFH first
+        WITH candidates AS (
+            SELECT b.id
+            FROM pylovo_input.building b
+            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+            WHERE w.gitter_id_100m = grid_rec.grid_id
+              AND b.building_use = 'residential'
+              AND b.building_type = 'TH'
+            ORDER BY b.floor_area * b.height DESC
+            LIMIT buildings_to_convert
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'MFH',
+            households = GREATEST(b.households, 2),  -- MFH should have 2+ households
+            occupants = GREATEST(b.occupants, b.households, 2)
+        FROM candidates
+        WHERE b.id = candidates.id;
+
+        GET DIAGNOSTICS converted_count = ROW_COUNT;
+        buildings_to_convert := buildings_to_convert - converted_count;
+
+        -- If still need more MFH, convert smallest AB to MFH
+        IF buildings_to_convert > 0 THEN
+            WITH candidates AS (
+                SELECT b.id
+                FROM pylovo_input.building b
+                JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+                WHERE w.gitter_id_100m = grid_rec.grid_id
+                  AND b.building_use = 'residential'
+                  AND b.building_type = 'AB'
+                  AND COALESCE(b.households, 5) <= 4  -- Only convert smaller AB
+                ORDER BY b.floor_area * b.height ASC
+                LIMIT buildings_to_convert
+            )
+            UPDATE pylovo_input.building b
+            SET building_type = 'MFH'
+            FROM candidates
+            WHERE b.id = candidates.id;
+        END IF;
+
+        -- RAISE NOTICE 'Grid %: Converted % buildings to MFH', grid_rec.grid_id, grid_rec.mfh_adjustment;
+    END LOOP;
+END $$;
+
+-- Step 6: Rebalance buildings where TH needs to increase
+-- Convert smaller MFH to TH
+DO $$
+DECLARE
+    grid_rec RECORD;
+    buildings_to_convert INTEGER;
+BEGIN
+    FOR grid_rec IN
+        SELECT grid_id, th_adjustment
+        FROM temp_building_rebalance
+        WHERE th_adjustment > 0
+    LOOP
+        buildings_to_convert := grid_rec.th_adjustment;
+
+        -- Convert smaller MFH to TH
+        WITH candidates AS (
+            SELECT b.id
+            FROM pylovo_input.building b
+            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+            WHERE w.gitter_id_100m = grid_rec.grid_id
+              AND b.building_use = 'residential'
+              AND b.building_type = 'MFH'
+              AND b.households <= 2
+            ORDER BY b.floor_area * b.height ASC
+            LIMIT buildings_to_convert
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'TH'
+        FROM candidates
+        WHERE b.id = candidates.id;
+
+        -- RAISE NOTICE 'Grid %: Converted % buildings to TH', grid_rec.grid_id, grid_rec.th_adjustment;
+    END LOOP;
+END $$;
+
+-- Step 7: Rebalance buildings where SFH needs to increase
+-- Convert smaller TH or MFH to SFH
+DO $$
+DECLARE
+    grid_rec RECORD;
+    buildings_to_convert INTEGER;
+    converted_count INTEGER;
+BEGIN
+    FOR grid_rec IN
+        SELECT grid_id, sfh_adjustment
+        FROM temp_building_rebalance
+        WHERE sfh_adjustment > 0
+    LOOP
+        buildings_to_convert := grid_rec.sfh_adjustment;
+
+        -- Convert smaller TH to SFH first
+        WITH candidates AS (
+            SELECT b.id
+            FROM pylovo_input.building b
+            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+            WHERE w.gitter_id_100m = grid_rec.grid_id
+              AND b.building_use = 'residential'
+              AND b.building_type = 'TH'
+            ORDER BY b.floor_area * b.height ASC
+            LIMIT buildings_to_convert
+        )
+        UPDATE pylovo_input.building b
+        SET building_type = 'SFH',
+            households = 1  -- SFH always has 1 household
+        FROM candidates
+        WHERE b.id = candidates.id;
+
+        GET DIAGNOSTICS converted_count = ROW_COUNT;
+        buildings_to_convert := buildings_to_convert - converted_count;
+
+        -- If still need more SFH, convert smaller MFH to SFH
+        IF buildings_to_convert > 0 THEN
+            WITH candidates AS (
+                SELECT b.id
+                FROM pylovo_input.building b
+                JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+                WHERE w.gitter_id_100m = grid_rec.grid_id
+                  AND b.building_use = 'residential'
+                  AND b.building_type = 'MFH'
+                  AND b.households <= 2
+                ORDER BY b.floor_area * b.height ASC
+                LIMIT buildings_to_convert
+            )
+            UPDATE pylovo_input.building b
+            SET building_type = 'SFH',
+                households = 1  -- SFH always has 1 household
+            FROM candidates
+            WHERE b.id = candidates.id;
+        END IF;
+
+        -- RAISE NOTICE 'Grid %: Converted % buildings to SFH', grid_rec.grid_id, grid_rec.sfh_adjustment;
+    END LOOP;
+END $$;
+
+-- Step 8: Final consistency check and cleanup
+-- Ensure building constraints are met
+UPDATE pylovo_input.building
+SET households = 1
+WHERE building_use = 'residential'
+  AND building_type = 'SFH'
+  AND COALESCE(households, 0) != 1;
+
+UPDATE pylovo_input.building
+SET households = GREATEST(COALESCE(households, 2), 2)
+WHERE building_use = 'residential'
+  AND building_type IN ('MFH', 'AB')
+  AND COALESCE(households, 0) < 2;
+
+-- Step 9: Generate final report
+WITH final_distribution AS (
+    SELECT
+        w.gitter_id_100m as grid_id,
+        COUNT(CASE WHEN b.building_type = 'AB' THEN 1 END) as final_ab,
+        COUNT(CASE WHEN b.building_type = 'MFH' THEN 1 END) as final_mfh,
+        COUNT(CASE WHEN b.building_type = 'TH' THEN 1 END) as final_th,
+        COUNT(CASE WHEN b.building_type = 'SFH' THEN 1 END) as final_sfh,
+        COUNT(*) as total_buildings
+    FROM pylovo_input.building b
+    JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+    WHERE b.building_use = 'residential'
+    GROUP BY w.gitter_id_100m
+)
+SELECT
+    tr.grid_id,
+    tr.current_ab as old_ab,
+    fd.final_ab as new_ab,
+    tr.current_mfh as old_mfh,
+    fd.final_mfh as new_mfh,
+    tr.current_th as old_th,
+    fd.final_th as new_th,
+    tr.current_sfh as old_sfh,
+    fd.final_sfh as new_sfh,
+    tr.ab_adjustment,
+    tr.mfh_adjustment,
+    tr.th_adjustment,
+    tr.sfh_adjustment
+FROM temp_building_rebalance tr
+JOIN final_distribution fd ON tr.grid_id = fd.grid_id
+ORDER BY tr.grid_id;
+
+
+
+-- checks
+SELECT count(*)
+FROM pylovo_input.building;
+
+SELECT 'residential' as Category, COUNT(*) as Count
+FROM pylovo_input.building
+WHERE building_use = 'residential'
+UNION ALL
+SELECT 'AB' as Category, COUNT(*) as Count
+FROM pylovo_input.building
+WHERE building_type = 'AB'
+UNION ALL
+SELECT 'SFH' as Category, COUNT(*) as Count
+FROM pylovo_input.building
+WHERE building_type = 'SFH'
+UNION ALL
+SELECT 'TH' as Category, COUNT(*) as Count
+FROM pylovo_input.building
+WHERE building_type = 'TH'
+UNION ALL
+SELECT 'MFH' as Category, COUNT(*) as Count
+FROM pylovo_input.building
+WHERE building_type = 'MFH';
+
+SELECT count(*)
+FROM pylovo_input.building
+WHERE building_use = 'residential'
+  AND building_type IS NULL;
+
+----------
+
+SELECT count(*)
+FROM property
+WHERE name = 'storeysAboveGround';
+
+SELECT count(*)
+FROM property
+WHERE name = 'Flaeche';
+
+SELECT count(*)
+FROM pylovo_input.building;
+
+SELECT *
+FROM feature f
+         JOIN property p ON f.id = p.feature_id
+WHERE name = 'Flaeche';
+
+SELECT f.id, geometry as geom, ST_Geometrytype(geometry)
+FROM feature f
+         JOIN geometry_data gd ON f.id = gd.feature_id
+WHERE f.objectclass_id = 710;
+
+SELECT feature_id, datatype_id, name, val_string, val_lod, val_geometry_id
+FROM property
+WHERE feature_id IN (SELECT id FROM feature WHERE objectclass_id = 710)
+ORDER BY feature_id, name;
+
+SELECT feature_id,
+       datatype_id,
+       name,
+       val_string,
+       val_double,
+       val_int,
+       val_lod,
+       val_geometry_id
+FROM property
+WHERE feature_id IN (SELECT id FROM feature WHERE objectclass_id = 901)
+ORDER BY feature_id, name;
+
+SELECT count(*)
+FROM pylovo_input.neighbors;
+
+SELECT *, ST_Area(geom) as calc_area
+FROM pylovo_input.building
+LIMIT 1;
+SELECT AVG(height / floor_number) as average_floor_height
+FROM pylovo_input.building;
+
+SELECT building_use_id, PERCENTILE_CONT(0.5) WITHIN GROUP ( ORDER BY (height / floor_number) )
+FROM pylovo_input.building
+GROUP BY building_use_id;
+
+-- empty
+SELECT *
+FROM feature
+WHERE objectclass_id = 607; -- Road
+SELECT *
+FROM feature
+WHERE objectclass_id = 606; -- Track
+
+SELECT *
+FROM basemap.verkehrsflaeche;
+
+----------
+
+
+-- explore things
+-- objectclasses
+SELECT DISTINCT id, classname
+FROM objectclass
+ORDER BY id;
+
+SELECT DISTINCT datatype_id, name
+FROM property;
+
+SELECT id, typename, schema
+FROM datatype
+ORDER BY id;
+
+SELECT *
+FROM property
+WHERE val_timestamp IS NOT NULL;
