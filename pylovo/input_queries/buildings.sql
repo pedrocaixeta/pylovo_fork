@@ -573,7 +573,7 @@ WHERE b.id = nc.id
 -- Step 1: Create a mapping between building types and reference columns
 -- AB (Apartment Buildings) = mfh_13undmehrwohnungen + mfh_7bis12wohnungen
 -- MFH (Multi-Family Houses) = mfh_3bis6wohnungen + freist_zfh + zfh_dhh
--- TH (Terraced Houses) = efh_reihenhaus + zfh_reihenhaus (partial)
+-- TH (Terraced Houses) = efh_reihenhaus + zfh_reihenhaus
 -- SFH (Single Family Houses) = freiefh + efh_dhh
 
 -- Step 2: Calculate current distribution and target distribution per grid
@@ -595,8 +595,7 @@ WITH grid_current AS (
 SELECT * FROM grid_current;
 
 DROP TABLE IF EXISTS temp_grid_target;
-CREATE TEMPORARY TABLE temp_grid_target AS
-WITH grid_target AS (
+CREATE TEMPORARY TABLE temp_grid_target AS (
     SELECT
         gitter_id_100m as grid_id,
         -- Calculate target counts from reference data
@@ -606,10 +605,9 @@ WITH grid_target AS (
         COALESCE(freiefh + efh_dhh, 0) as target_sfh,
         COALESCE(freiefh + efh_dhh + efh_reihenhaus + freist_zfh + zfh_dhh + zfh_reihenhaus + mfh_3bis6wohnungen + mfh_7bis12wohnungen + mfh_13undmehrwohnungen, 0)
             as total_target
-    FROM census2022.wohnungen_nach_gebaeudetyp_groesse
+    FROM census2022.wohnungen_nach_gebaeudetyp_groesse c JOIN pylovo_input.building b ON ST_Contains(c.geometry, ST_Centroid(b.geom))
     WHERE gitter_id_100m IS NOT NULL
-)
-SELECT * FROM grid_target;
+);
 
 DROP TABLE IF EXISTS temp_grid_comparison;
 CREATE TEMPORARY TABLE temp_grid_comparison AS
@@ -644,268 +642,273 @@ WITH grid_comparison AS (
 )
 SELECT * FROM grid_comparison;
 
--- Step 3: Create a temporary table to store actual rebalancing decisions
-DROP TABLE IF EXISTS temp_building_rebalance;
-CREATE TEMPORARY TABLE temp_building_rebalance AS
-SELECT * FROM temp_grid_comparison WHERE total_target > 0;
-
--- Step 4: Rebalance buildings where AB needs to increase
--- Convert largest MFH buildings to AB first
-DO $$
-DECLARE
-    grid_rec RECORD;
-    buildings_to_convert INTEGER;
-    converted_count INTEGER;
-BEGIN
-    FOR grid_rec IN
-        SELECT grid_id, ab_adjustment
-        FROM temp_building_rebalance
-        WHERE ab_adjustment > 0
-    LOOP
-        buildings_to_convert := grid_rec.ab_adjustment;
-
-        -- Convert largest MFH to AB
-        WITH candidates AS (
-            SELECT b.id
-            FROM pylovo_input.building b
-            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-            WHERE w.gitter_id_100m = grid_rec.grid_id
-              AND b.building_use = 'residential'
-              AND b.building_type = 'MFH'
-              AND COALESCE(b.households, 0) > 1  -- Ensure it can be AB
-            ORDER BY b.floor_area * b.height DESC
-            LIMIT buildings_to_convert
-        )
-        UPDATE pylovo_input.building b
-        SET building_type = 'AB'
-        FROM candidates
-        WHERE b.id = candidates.id;
-
-        GET DIAGNOSTICS converted_count = ROW_COUNT;
-        buildings_to_convert := buildings_to_convert - converted_count;
-
-        -- If still need more AB, convert largest TH to AB (with household adjustment)
-        IF buildings_to_convert > 0 THEN
-            WITH candidates AS (
-                SELECT b.id
-                FROM pylovo_input.building b
-                JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-                WHERE w.gitter_id_100m = grid_rec.grid_id
-                  AND b.building_use = 'residential'
-                  AND b.building_type = 'TH'
-                ORDER BY b.floor_area * b.height DESC
-                LIMIT buildings_to_convert
-            )
-            UPDATE pylovo_input.building b
-            SET building_type = 'AB',
-                households = GREATEST(b.households, 2),  -- AB should have > 1 households
-                occupants = GREATEST(b.occupants, b.households, 2)
-            FROM candidates
-            WHERE b.id = candidates.id;
-        END IF;
-
-        -- -- RAISE NOTICE 'Grid %: Converted % buildings to AB', grid_rec.grid_id, grid_rec.ab_adjustment;
-    END LOOP;
-END $$;
-
--- Step 5: Rebalance buildings where MFH needs to increase
--- Convert largest TH or smallest AB to MFH
-DO $$
-DECLARE
-    grid_rec RECORD;
-    buildings_to_convert INTEGER;
-    converted_count INTEGER;
-BEGIN
-    FOR grid_rec IN
-        SELECT grid_id, mfh_adjustment
-        FROM temp_building_rebalance
-        WHERE mfh_adjustment > 0
-    LOOP
-        buildings_to_convert := grid_rec.mfh_adjustment;
-
-        -- Convert largest TH to MFH first
-        WITH candidates AS (
-            SELECT b.id
-            FROM pylovo_input.building b
-            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-            WHERE w.gitter_id_100m = grid_rec.grid_id
-              AND b.building_use = 'residential'
-              AND b.building_type = 'TH'
-            ORDER BY b.floor_area * b.height DESC
-            LIMIT buildings_to_convert
-        )
-        UPDATE pylovo_input.building b
-        SET building_type = 'MFH',
-            households = GREATEST(b.households, 2),  -- MFH should have 2+ households
-            occupants = GREATEST(b.occupants, b.households, 2)
-        FROM candidates
-        WHERE b.id = candidates.id;
-
-        GET DIAGNOSTICS converted_count = ROW_COUNT;
-        buildings_to_convert := buildings_to_convert - converted_count;
-
-        -- If still need more MFH, convert smallest AB to MFH
-        IF buildings_to_convert > 0 THEN
-            WITH candidates AS (
-                SELECT b.id
-                FROM pylovo_input.building b
-                JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-                WHERE w.gitter_id_100m = grid_rec.grid_id
-                  AND b.building_use = 'residential'
-                  AND b.building_type = 'AB'
-                  AND COALESCE(b.households, 5) <= 4  -- Only convert smaller AB
-                ORDER BY b.floor_area * b.height ASC
-                LIMIT buildings_to_convert
-            )
-            UPDATE pylovo_input.building b
-            SET building_type = 'MFH'
-            FROM candidates
-            WHERE b.id = candidates.id;
-        END IF;
-
-        -- RAISE NOTICE 'Grid %: Converted % buildings to MFH', grid_rec.grid_id, grid_rec.mfh_adjustment;
-    END LOOP;
-END $$;
-
--- Step 6: Rebalance buildings where TH needs to increase
--- Convert smaller MFH to TH
-DO $$
-DECLARE
-    grid_rec RECORD;
-    buildings_to_convert INTEGER;
-BEGIN
-    FOR grid_rec IN
-        SELECT grid_id, th_adjustment
-        FROM temp_building_rebalance
-        WHERE th_adjustment > 0
-    LOOP
-        buildings_to_convert := grid_rec.th_adjustment;
-
-        -- Convert smaller MFH to TH
-        WITH candidates AS (
-            SELECT b.id
-            FROM pylovo_input.building b
-            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-            WHERE w.gitter_id_100m = grid_rec.grid_id
-              AND b.building_use = 'residential'
-              AND b.building_type = 'MFH'
-              AND b.households <= 2
-            ORDER BY b.floor_area * b.height ASC
-            LIMIT buildings_to_convert
-        )
-        UPDATE pylovo_input.building b
-        SET building_type = 'TH'
-        FROM candidates
-        WHERE b.id = candidates.id;
-
-        -- RAISE NOTICE 'Grid %: Converted % buildings to TH', grid_rec.grid_id, grid_rec.th_adjustment;
-    END LOOP;
-END $$;
-
--- Step 7: Rebalance buildings where SFH needs to increase
--- Convert smaller TH or MFH to SFH
-DO $$
-DECLARE
-    grid_rec RECORD;
-    buildings_to_convert INTEGER;
-    converted_count INTEGER;
-BEGIN
-    FOR grid_rec IN
-        SELECT grid_id, sfh_adjustment
-        FROM temp_building_rebalance
-        WHERE sfh_adjustment > 0
-    LOOP
-        buildings_to_convert := grid_rec.sfh_adjustment;
-
-        -- Convert smaller TH to SFH first
-        WITH candidates AS (
-            SELECT b.id
-            FROM pylovo_input.building b
-            JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-            WHERE w.gitter_id_100m = grid_rec.grid_id
-              AND b.building_use = 'residential'
-              AND b.building_type = 'TH'
-            ORDER BY b.floor_area * b.height ASC
-            LIMIT buildings_to_convert
-        )
-        UPDATE pylovo_input.building b
-        SET building_type = 'SFH',
-            households = 1  -- SFH always has 1 household
-        FROM candidates
-        WHERE b.id = candidates.id;
-
-        GET DIAGNOSTICS converted_count = ROW_COUNT;
-        buildings_to_convert := buildings_to_convert - converted_count;
-
-        -- If still need more SFH, convert smaller MFH to SFH
-        IF buildings_to_convert > 0 THEN
-            WITH candidates AS (
-                SELECT b.id
-                FROM pylovo_input.building b
-                JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-                WHERE w.gitter_id_100m = grid_rec.grid_id
-                  AND b.building_use = 'residential'
-                  AND b.building_type = 'MFH'
-                  AND b.households <= 2
-                ORDER BY b.floor_area * b.height ASC
-                LIMIT buildings_to_convert
-            )
-            UPDATE pylovo_input.building b
-            SET building_type = 'SFH',
-                households = 1  -- SFH always has 1 household
-            FROM candidates
-            WHERE b.id = candidates.id;
-        END IF;
-
-        -- RAISE NOTICE 'Grid %: Converted % buildings to SFH', grid_rec.grid_id, grid_rec.sfh_adjustment;
-    END LOOP;
-END $$;
-
--- Step 8: Final consistency check and cleanup
--- Ensure building constraints are met
-UPDATE pylovo_input.building
-SET households = 1
-WHERE building_use = 'residential'
-  AND building_type = 'SFH'
-  AND COALESCE(households, 0) != 1;
-
-UPDATE pylovo_input.building
-SET households = GREATEST(COALESCE(households, 2), 2)
-WHERE building_use = 'residential'
-  AND building_type IN ('MFH', 'AB')
-  AND COALESCE(households, 0) < 2;
-
--- Step 9: Generate final report
-WITH final_distribution AS (
+-- Step 3: Create unified conversion plan using window functions
+DROP TABLE IF EXISTS temp_building_rankings;
+CREATE TEMPORARY TABLE temp_building_rankings AS (
     SELECT
-        w.gitter_id_100m as grid_id,
-        COUNT(CASE WHEN b.building_type = 'AB' THEN 1 END) as final_ab,
-        COUNT(CASE WHEN b.building_type = 'MFH' THEN 1 END) as final_mfh,
-        COUNT(CASE WHEN b.building_type = 'TH' THEN 1 END) as final_th,
-        COUNT(CASE WHEN b.building_type = 'SFH' THEN 1 END) as final_sfh,
-        COUNT(*) as total_buildings
+        b.id,
+        b.building_type,
+        b.households,
+        b.occupants,
+        b.floor_area,
+        b.height,
+        gc.grid_id,
+        gc.ab_adjustment,
+        gc.mfh_adjustment,
+        gc.th_adjustment,
+        gc.sfh_adjustment,
+
+        -- Rankings for conversion priorities
+        -- For AB increases: prioritize largest MFH, then largest TH
+        ROW_NUMBER() OVER (
+            PARTITION BY gc.grid_id, b.building_type
+            ORDER BY
+                CASE WHEN b.building_type = 'MFH' THEN b.floor_area * b.height END DESC NULLS LAST,
+                CASE WHEN b.building_type = 'TH' THEN b.floor_area * b.height END DESC NULLS LAST
+        ) as ab_conversion_rank,
+
+        -- For MFH increases: prioritize largest TH, then smallest AB
+        ROW_NUMBER() OVER (
+            PARTITION BY gc.grid_id, b.building_type
+            ORDER BY
+                CASE WHEN b.building_type = 'TH' THEN b.floor_area * b.height END DESC NULLS LAST,
+                CASE WHEN b.building_type = 'AB' AND b.households <= 4 THEN b.floor_area * b.height END ASC NULLS LAST
+        ) as mfh_conversion_rank,
+
+        -- For TH increases: prioritize smaller MFH
+        ROW_NUMBER() OVER (
+            PARTITION BY gc.grid_id, b.building_type
+            ORDER BY
+                CASE WHEN b.building_type = 'MFH' AND b.households <= 2 THEN b.floor_area * b.height END ASC NULLS LAST
+        ) as th_conversion_rank,
+
+        -- For SFH increases: prioritize smaller TH, then smaller MFH
+        ROW_NUMBER() OVER (
+            PARTITION BY gc.grid_id, b.building_type
+            ORDER BY
+                CASE WHEN b.building_type = 'TH' THEN b.floor_area * b.height END ASC NULLS LAST,
+                CASE WHEN b.building_type = 'MFH' AND b.households <= 2 THEN b.floor_area * b.height END ASC NULLS LAST
+        ) as sfh_conversion_rank
+
     FROM pylovo_input.building b
     JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
+    JOIN temp_grid_comparison gc ON w.gitter_id_100m = gc.grid_id
     WHERE b.building_use = 'residential'
-    GROUP BY w.gitter_id_100m
-)
+      AND gc.total_target > 0
+);
+
+DROP TABLE IF EXISTS temp_conversion_decisions;
+CREATE TEMPORARY TABLE temp_conversion_decisions AS (
+    SELECT
+        id,
+        building_type as original_type,
+        households,
+        occupants,
+        grid_id,
+
+        -- Determine new building type based on conversion needs and rankings
+        CASE
+            -- Convert to AB
+            WHEN ab_adjustment > 0 AND (
+                (building_type = 'MFH' AND households > 1 AND ab_conversion_rank <= ab_adjustment) OR
+                (building_type = 'TH' AND ab_conversion_rank <= GREATEST(0, ab_adjustment -
+                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'MFH' AND br2.households > 1)
+                ))
+            ) THEN 'AB'
+
+            -- Convert to MFH
+            WHEN mfh_adjustment > 0 AND (
+                (building_type = 'TH' AND mfh_conversion_rank <= mfh_adjustment) OR
+                (building_type = 'AB' AND households <= 4 AND mfh_conversion_rank <= GREATEST(0, mfh_adjustment -
+                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
+                ))
+            ) THEN 'MFH'
+
+            -- Convert to TH
+            WHEN th_adjustment > 0 AND building_type = 'MFH' AND households <= 2 AND th_conversion_rank <= th_adjustment
+            THEN 'TH'
+
+            -- Convert to SFH
+            WHEN sfh_adjustment > 0 AND (
+                (building_type = 'TH' AND sfh_conversion_rank <= sfh_adjustment) OR
+                (building_type = 'MFH' AND households <= 2 AND sfh_conversion_rank <= GREATEST(0, sfh_adjustment -
+                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
+                ))
+            ) THEN 'SFH'
+
+            ELSE building_type
+        END as new_type,
+
+        -- Calculate new household and occupant counts
+        CASE
+            -- AB conversions
+            WHEN ab_adjustment > 0 AND (
+                (building_type = 'MFH' AND households > 1 AND ab_conversion_rank <= ab_adjustment) OR
+                (building_type = 'TH' AND ab_conversion_rank <= GREATEST(0, ab_adjustment -
+                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'MFH' AND br2.households > 1)
+                ))
+            ) THEN GREATEST(households, 2)
+
+            -- MFH conversions
+            WHEN mfh_adjustment > 0 AND (
+                (building_type = 'TH' AND mfh_conversion_rank <= mfh_adjustment) OR
+                (building_type = 'AB' AND households <= 4 AND mfh_conversion_rank <= GREATEST(0, mfh_adjustment -
+                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
+                ))
+            ) THEN GREATEST(households, 2)
+
+            -- SFH conversions
+            WHEN sfh_adjustment > 0 AND (
+                (building_type = 'TH' AND sfh_conversion_rank <= sfh_adjustment) OR
+                (building_type = 'MFH' AND households <= 2 AND sfh_conversion_rank <= GREATEST(0, sfh_adjustment -
+                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
+                ))
+            ) THEN 1
+
+            ELSE households
+        END as new_households
+
+    FROM temp_building_rankings br1
+);
+
+DROP TABLE IF EXISTS temp_conversion_plan;
+CREATE TEMPORARY TABLE temp_conversion_plan AS
+(
+    SELECT
+        id,
+        original_type,
+        new_type,
+        households,
+        new_households,
+        GREATEST(occupants, new_households, CASE WHEN new_type = 'AB' THEN 2 ELSE 1 END) as new_occupants
+    FROM temp_conversion_decisions
+    WHERE original_type != new_type
+);
+
+-- Step 4: Apply all conversions in a single batch update
+UPDATE pylovo_input.building
+SET
+    building_type = cp.new_type,
+    households = cp.new_households,
+    occupants = cp.new_occupants
+FROM temp_conversion_plan cp
+WHERE building.id = cp.id;
+
+-- Step 5: Generate final report
+-- Pre-conversion state
+DROP TABLE IF EXISTS temp_pre_conversion;
+CREATE TEMPORARY TABLE temp_pre_conversion AS
 SELECT
-    tr.grid_id,
-    tr.current_ab as old_ab,
-    fd.final_ab as new_ab,
-    tr.current_mfh as old_mfh,
-    fd.final_mfh as new_mfh,
-    tr.current_th as old_th,
-    fd.final_th as new_th,
-    tr.current_sfh as old_sfh,
-    fd.final_sfh as new_sfh,
-    tr.ab_adjustment,
-    tr.mfh_adjustment,
-    tr.th_adjustment,
-    tr.sfh_adjustment
-FROM temp_building_rebalance tr
-JOIN final_distribution fd ON tr.grid_id = fd.grid_id
-ORDER BY tr.grid_id;
+    'Pre-Conversion' as phase,
+    COUNT(CASE WHEN building_type = 'AB' THEN 1 END) as ab_count,
+    COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) as mfh_count,
+    COUNT(CASE WHEN building_type = 'TH' THEN 1 END) as th_count,
+    COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) as sfh_count,
+    COUNT(*) as total_count
+FROM (
+    SELECT
+        CASE
+            WHEN cp.original_type IS NOT NULL THEN cp.original_type
+            ELSE b.building_type
+        END as building_type
+    FROM pylovo_input.building b
+    LEFT JOIN temp_conversion_plan cp ON b.id = cp.id
+    WHERE b.building_use = 'residential'
+) pre_state;
+
+-- Post-conversion state
+DROP TABLE IF EXISTS temp_post_conversion;
+CREATE TEMPORARY TABLE temp_post_conversion AS
+SELECT
+    'Post-Conversion' as phase,
+    COUNT(CASE WHEN building_type = 'AB' THEN 1 END) as ab_count,
+    COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) as mfh_count,
+    COUNT(CASE WHEN building_type = 'TH' THEN 1 END) as th_count,
+    COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) as sfh_count,
+    COUNT(*) as total_count
+FROM pylovo_input.building
+WHERE building_use = 'residential';
+
+-- Target distribution
+DROP TABLE IF EXISTS temp_target_summary;
+CREATE TEMPORARY TABLE temp_target_summary AS
+SELECT
+    'Target' as phase,
+    SUM(target_ab) as ab_count,
+    SUM(target_mfh) as mfh_count,
+    SUM(target_th) as th_count,
+    SUM(target_sfh) as sfh_count,
+    SUM(total_target) as total_count
+FROM temp_grid_target;
+
+-- Conversion summary
+DROP TABLE IF EXISTS temp_conversion_summary;
+CREATE TEMPORARY TABLE temp_conversion_summary AS
+SELECT
+    original_type,
+    new_type,
+    COUNT(*) as conversion_count
+FROM temp_conversion_plan
+GROUP BY original_type, new_type
+ORDER BY original_type, new_type;
+
+-- Final Report
+SELECT '=== BUILDING REBALANCING REPORT ===' as report_section;
+
+SELECT
+    phase,
+    ab_count as "AB (Apartment Buildings)",
+    mfh_count as "MFH (Multi-Family Houses)",
+    th_count as "TH (Terraced Houses)",
+    sfh_count as "SFH (Single Family Houses)",
+    total_count as "Total Buildings"
+FROM (
+    SELECT * FROM temp_pre_conversion
+    UNION ALL
+    SELECT * FROM temp_post_conversion
+    UNION ALL
+    SELECT * FROM temp_target_summary
+) combined_summary
+ORDER BY
+    CASE phase
+        WHEN 'Pre-Conversion' THEN 1
+        WHEN 'Post-Conversion' THEN 2
+        WHEN 'Target' THEN 3
+    END;
+
+SELECT '=== CONVERSION DETAILS ===' as report_section;
+
+SELECT
+    original_type as "From Type",
+    new_type as "To Type",
+    conversion_count as "Buildings Converted"
+FROM temp_conversion_summary;
+
+SELECT '=== GRID ANALYSIS ===' as report_section;
+
+SELECT '=== SUMMARY STATISTICS ===' as report_section;
+
+SELECT
+    'Total Grids Requiring Adjustment' as metric,
+    COUNT(*) as value
+FROM temp_grid_comparison
+WHERE ABS(ab_adjustment) + ABS(mfh_adjustment) + ABS(th_adjustment) + ABS(sfh_adjustment) > 0
+UNION ALL
+SELECT
+    'Total Buildings Converted' as metric,
+    COUNT(*) as value
+FROM temp_conversion_plan;
+
+-- Clean up temporary tables
+DROP TABLE IF EXISTS temp_grid_current;
+DROP TABLE IF EXISTS temp_grid_target;
+DROP TABLE IF EXISTS temp_grid_comparison;
+DROP TABLE IF EXISTS temp_conversion_plan;
+DROP TABLE IF EXISTS temp_pre_conversion;
+DROP TABLE IF EXISTS temp_post_conversion;
+DROP TABLE IF EXISTS temp_target_summary;
+DROP TABLE IF EXISTS temp_conversion_summary;
+DROP TABLE IF EXISTS temp_grid_analysis;
 
 
 
