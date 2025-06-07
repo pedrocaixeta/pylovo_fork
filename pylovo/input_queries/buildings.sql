@@ -3,7 +3,6 @@ DROP MATERIALIZED VIEW pylovo_input.neighbor_counts;
 DROP MATERIALIZED VIEW pylovo_input.neighbors;
 DROP TABLE pylovo_input.building;
 
-
 CREATE OR REPLACE FUNCTION pylovo_input.classify_building_use(funktion TEXT)
     RETURNS TEXT AS
 $$
@@ -78,7 +77,8 @@ CREATE TABLE pylovo_input.building
     occupants         int,
     households        int,
     construction_year text,
-    geom              geometry(MultiPolygon, 3035)
+    geom              geometry(MultiPolygon, 3035),
+    grid_id           text
 );
 
 CREATE INDEX IF NOT EXISTS building_geom_idx ON pylovo_input.building USING GIST (geom);
@@ -179,6 +179,12 @@ FROM pylovo_input.building b
          LEFT JOIN pylovo_input.neighbors n ON b.id = n.a_id
 GROUP BY b.id;
 
+-- assign grid id for later use
+UPDATE pylovo_input.building
+SET grid_id = w.gitter_id_100m
+FROM census2022.wohnungen_nach_gebaeudetyp_groesse w
+WHERE ST_Contains(w.geometry, ST_Centroid(geom));
+
 
 -- fill occupants
 -- Step 1: Create temp table for buildings with cell and weight
@@ -256,7 +262,7 @@ FROM temp_building_households bh
 WHERE b.id = bh.building_id;
 
 -- fill construction_year
--- Step 1: Create a temporary table with joined buildings and grid cells
+-- Step 1: Create a table with joined buildings and grid cells
 DROP TABLE IF EXISTS temp_building_with_grid_year;
 CREATE TEMP TABLE temp_building_with_grid_year AS
 SELECT b.id   AS building_id,
@@ -578,7 +584,7 @@ WHERE b.id = nc.id
 
 -- Step 2: Calculate current distribution and target distribution per grid
 DROP TABLE IF EXISTS temp_grid_current;
-CREATE TEMPORARY TABLE temp_grid_current AS
+CREATE TABLE temp_grid_current AS
 WITH grid_current AS (
     SELECT
         w.gitter_id_100m as grid_id,
@@ -595,7 +601,7 @@ WITH grid_current AS (
 SELECT * FROM grid_current;
 
 DROP TABLE IF EXISTS temp_grid_target;
-CREATE TEMPORARY TABLE temp_grid_target AS (
+CREATE TABLE temp_grid_target AS (
     SELECT
         gitter_id_100m as grid_id,
         -- Calculate target counts from reference data
@@ -605,12 +611,17 @@ CREATE TEMPORARY TABLE temp_grid_target AS (
         COALESCE(freiefh + efh_dhh, 0) as target_sfh,
         COALESCE(freiefh + efh_dhh + efh_reihenhaus + freist_zfh + zfh_dhh + zfh_reihenhaus + mfh_3bis6wohnungen + mfh_7bis12wohnungen + mfh_13undmehrwohnungen, 0)
             as total_target
-    FROM census2022.wohnungen_nach_gebaeudetyp_groesse c JOIN pylovo_input.building b ON ST_Contains(c.geometry, ST_Centroid(b.geom))
+    FROM census2022.wohnungen_nach_gebaeudetyp_groesse w
     WHERE gitter_id_100m IS NOT NULL
+    AND EXISTS (
+        SELECT 1
+        FROM pylovo_input.building b
+        WHERE b.grid_id = w.gitter_id_100m
+    )
 );
 
 DROP TABLE IF EXISTS temp_grid_comparison;
-CREATE TEMPORARY TABLE temp_grid_comparison AS
+CREATE TABLE temp_grid_comparison AS
 WITH grid_comparison AS (
     SELECT
         gc.grid_id,
@@ -644,7 +655,7 @@ SELECT * FROM grid_comparison;
 
 -- Step 3: Create unified conversion plan using window functions
 DROP TABLE IF EXISTS temp_building_rankings;
-CREATE TEMPORARY TABLE temp_building_rankings AS (
+CREATE TABLE temp_building_rankings AS (
     SELECT
         b.id,
         b.building_type,
@@ -697,82 +708,84 @@ CREATE TEMPORARY TABLE temp_building_rankings AS (
       AND gc.total_target > 0
 );
 
-DROP TABLE IF EXISTS temp_conversion_decisions;
-CREATE TEMPORARY TABLE temp_conversion_decisions AS (
+-- Pre-calculate the subquery values once per grid_id
+DROP TABLE IF EXISTS temp_grid_counts;
+CREATE TABLE temp_grid_counts AS (
     SELECT
-        id,
-        building_type as original_type,
-        households,
-        occupants,
         grid_id,
+        COUNT(CASE WHEN building_type = 'MFH' AND households > 1 THEN 1 END) as mfh_multi_household_count,
+        COUNT(CASE WHEN building_type = 'TH' THEN 1 END) as th_count
+    FROM temp_building_rankings
+    GROUP BY grid_id
+);
+
+-- Create the conversion decisions table with a single join
+DROP TABLE IF EXISTS temp_conversion_decisions;
+CREATE TABLE temp_conversion_decisions AS (
+    SELECT
+        br.id,
+        br.building_type as original_type,
+        br.households,
+        br.occupants,
+        br.grid_id,
 
         -- Determine new building type based on conversion needs and rankings
         CASE
             -- Convert to AB
-            WHEN ab_adjustment > 0 AND (
-                (building_type = 'MFH' AND households > 1 AND ab_conversion_rank <= ab_adjustment) OR
-                (building_type = 'TH' AND ab_conversion_rank <= GREATEST(0, ab_adjustment -
-                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'MFH' AND br2.households > 1)
-                ))
+            WHEN br.ab_adjustment > 0 AND (
+                (br.building_type = 'MFH' AND br.households > 1 AND br.ab_conversion_rank <= br.ab_adjustment) OR
+                (br.building_type = 'TH' AND br.ab_conversion_rank <= GREATEST(0, br.ab_adjustment - gc.mfh_multi_household_count))
             ) THEN 'AB'
 
             -- Convert to MFH
-            WHEN mfh_adjustment > 0 AND (
-                (building_type = 'TH' AND mfh_conversion_rank <= mfh_adjustment) OR
-                (building_type = 'AB' AND households <= 4 AND mfh_conversion_rank <= GREATEST(0, mfh_adjustment -
-                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
-                ))
+            WHEN br.mfh_adjustment > 0 AND (
+                (br.building_type = 'TH' AND br.mfh_conversion_rank <= br.mfh_adjustment) OR
+                (br.building_type = 'AB' AND br.households <= 4 AND br.mfh_conversion_rank <= GREATEST(0, br.mfh_adjustment - gc.th_count))
             ) THEN 'MFH'
 
             -- Convert to TH
-            WHEN th_adjustment > 0 AND building_type = 'MFH' AND households <= 2 AND th_conversion_rank <= th_adjustment
+            WHEN br.th_adjustment > 0 AND br.building_type = 'MFH' AND br.households <= 2 AND br.th_conversion_rank <= br.th_adjustment
             THEN 'TH'
 
             -- Convert to SFH
-            WHEN sfh_adjustment > 0 AND (
-                (building_type = 'TH' AND sfh_conversion_rank <= sfh_adjustment) OR
-                (building_type = 'MFH' AND households <= 2 AND sfh_conversion_rank <= GREATEST(0, sfh_adjustment -
-                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
-                ))
+            WHEN br.sfh_adjustment > 0 AND (
+                (br.building_type = 'TH' AND br.sfh_conversion_rank <= br.sfh_adjustment) OR
+                (br.building_type = 'MFH' AND br.households <= 2 AND br.sfh_conversion_rank <= GREATEST(0, br.sfh_adjustment - gc.th_count))
             ) THEN 'SFH'
 
-            ELSE building_type
+            ELSE br.building_type
         END as new_type,
 
-        -- Calculate new household and occupant counts
+        -- Calculate new household counts (same logic as before, just using pre-calculated values)
         CASE
             -- AB conversions
-            WHEN ab_adjustment > 0 AND (
-                (building_type = 'MFH' AND households > 1 AND ab_conversion_rank <= ab_adjustment) OR
-                (building_type = 'TH' AND ab_conversion_rank <= GREATEST(0, ab_adjustment -
-                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'MFH' AND br2.households > 1)
-                ))
-            ) THEN GREATEST(households, 2)
+            WHEN br.ab_adjustment > 0 AND (
+                (br.building_type = 'MFH' AND br.households > 1 AND br.ab_conversion_rank <= br.ab_adjustment) OR
+                (br.building_type = 'TH' AND br.ab_conversion_rank <= GREATEST(0, br.ab_adjustment - gc.mfh_multi_household_count))
+            ) THEN GREATEST(br.households, 2)
 
             -- MFH conversions
-            WHEN mfh_adjustment > 0 AND (
-                (building_type = 'TH' AND mfh_conversion_rank <= mfh_adjustment) OR
-                (building_type = 'AB' AND households <= 4 AND mfh_conversion_rank <= GREATEST(0, mfh_adjustment -
-                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
-                ))
-            ) THEN GREATEST(households, 2)
+            WHEN br.mfh_adjustment > 0 AND (
+                (br.building_type = 'TH' AND br.mfh_conversion_rank <= br.mfh_adjustment) OR
+                (br.building_type = 'AB' AND br.households <= 4 AND br.mfh_conversion_rank <= GREATEST(0, br.mfh_adjustment - gc.th_count))
+            ) THEN GREATEST(br.households, 2)
 
             -- SFH conversions
-            WHEN sfh_adjustment > 0 AND (
-                (building_type = 'TH' AND sfh_conversion_rank <= sfh_adjustment) OR
-                (building_type = 'MFH' AND households <= 2 AND sfh_conversion_rank <= GREATEST(0, sfh_adjustment -
-                    (SELECT COUNT(*) FROM temp_building_rankings br2 WHERE br2.grid_id = br1.grid_id AND br2.building_type = 'TH')
-                ))
+            WHEN br.sfh_adjustment > 0 AND (
+                (br.building_type = 'TH' AND br.sfh_conversion_rank <= br.sfh_adjustment) OR
+                (br.building_type = 'MFH' AND br.households <= 2 AND br.sfh_conversion_rank <= GREATEST(0, br.sfh_adjustment - gc.th_count))
             ) THEN 1
 
-            ELSE households
+            ELSE br.households
         END as new_households
 
-    FROM temp_building_rankings br1
+    FROM temp_building_rankings br
+    JOIN temp_grid_counts gc ON br.grid_id = gc.grid_id
 );
 
+
 DROP TABLE IF EXISTS temp_conversion_plan;
-CREATE TEMPORARY TABLE temp_conversion_plan AS
+CREATE TABLE temp_conversion_plan AS
 (
     SELECT
         id,
@@ -795,16 +808,22 @@ FROM temp_conversion_plan cp
 WHERE building.id = cp.id;
 
 -- Step 5: Generate final report
+
 -- Pre-conversion state
 DROP TABLE IF EXISTS temp_pre_conversion;
-CREATE TEMPORARY TABLE temp_pre_conversion AS
+CREATE TABLE temp_pre_conversion AS
 SELECT
     'Pre-Conversion' as phase,
     COUNT(CASE WHEN building_type = 'AB' THEN 1 END) as ab_count,
     COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) as mfh_count,
     COUNT(CASE WHEN building_type = 'TH' THEN 1 END) as th_count,
     COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) as sfh_count,
-    COUNT(*) as total_count
+    COUNT(*) as total_count,
+    -- Calculate percentages
+    ROUND(COUNT(CASE WHEN building_type = 'AB' THEN 1 END) * 100.0 / COUNT(*), 1) as ab_pct,
+    ROUND(COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) * 100.0 / COUNT(*), 1) as mfh_pct,
+    ROUND(COUNT(CASE WHEN building_type = 'TH' THEN 1 END) * 100.0 / COUNT(*), 1) as th_pct,
+    ROUND(COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) * 100.0 / COUNT(*), 1) as sfh_pct
 FROM (
     SELECT
         CASE
@@ -818,32 +837,42 @@ FROM (
 
 -- Post-conversion state
 DROP TABLE IF EXISTS temp_post_conversion;
-CREATE TEMPORARY TABLE temp_post_conversion AS
+CREATE TABLE temp_post_conversion AS
 SELECT
     'Post-Conversion' as phase,
     COUNT(CASE WHEN building_type = 'AB' THEN 1 END) as ab_count,
     COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) as mfh_count,
     COUNT(CASE WHEN building_type = 'TH' THEN 1 END) as th_count,
     COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) as sfh_count,
-    COUNT(*) as total_count
+    COUNT(*) as total_count,
+    -- Calculate percentages
+    ROUND(COUNT(CASE WHEN building_type = 'AB' THEN 1 END) * 100.0 / COUNT(*), 1) as ab_pct,
+    ROUND(COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) * 100.0 / COUNT(*), 1) as mfh_pct,
+    ROUND(COUNT(CASE WHEN building_type = 'TH' THEN 1 END) * 100.0 / COUNT(*), 1) as th_pct,
+    ROUND(COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) * 100.0 / COUNT(*), 1) as sfh_pct
 FROM pylovo_input.building
 WHERE building_use = 'residential';
 
 -- Target distribution
 DROP TABLE IF EXISTS temp_target_summary;
-CREATE TEMPORARY TABLE temp_target_summary AS
+CREATE TABLE temp_target_summary AS
 SELECT
     'Target' as phase,
     SUM(target_ab) as ab_count,
     SUM(target_mfh) as mfh_count,
     SUM(target_th) as th_count,
     SUM(target_sfh) as sfh_count,
-    SUM(total_target) as total_count
+    SUM(total_target) as total_count,
+    -- Calculate percentages based on census total
+    ROUND(SUM(target_ab) * 100.0 / NULLIF(SUM(total_target), 0)) as ab_pct,
+    ROUND(SUM(target_mfh) * 100.0 / NULLIF(SUM(total_target), 0)) as mfh_pct,
+    ROUND(SUM(target_th) * 100.0 / NULLIF(SUM(total_target), 0)) as th_pct,
+    ROUND(SUM(target_sfh) * 100.0 / NULLIF(SUM(total_target), 0)) as sfh_pct
 FROM temp_grid_target;
 
 -- Conversion summary
 DROP TABLE IF EXISTS temp_conversion_summary;
-CREATE TEMPORARY TABLE temp_conversion_summary AS
+CREATE TABLE temp_conversion_summary AS
 SELECT
     original_type,
     new_type,
@@ -855,13 +884,18 @@ ORDER BY original_type, new_type;
 -- Final Report
 SELECT '=== BUILDING REBALANCING REPORT ===' as report_section;
 
+-- Main summary with counts and percentages
 SELECT
     phase,
-    ab_count as "AB (Apartment Buildings)",
-    mfh_count as "MFH (Multi-Family Houses)",
-    th_count as "TH (Terraced Houses)",
-    sfh_count as "SFH (Single Family Houses)",
-    total_count as "Total Buildings"
+    ab_count as "AB Count",
+    CONCAT(ab_pct, '%') as "AB %",
+    mfh_count as "MFH Count",
+    CONCAT(mfh_pct, '%') as "MFH %",
+    th_count as "TH Count",
+    CONCAT(th_pct, '%') as "TH %",
+    sfh_count as "SFH Count",
+    CONCAT(sfh_pct, '%') as "SFH %",
+    total_count as "Total"
 FROM (
     SELECT * FROM temp_pre_conversion
     UNION ALL
@@ -898,129 +932,3 @@ SELECT
     'Total Buildings Converted' as metric,
     COUNT(*) as value
 FROM temp_conversion_plan;
-
--- Clean up temporary tables
-DROP TABLE IF EXISTS temp_grid_current;
-DROP TABLE IF EXISTS temp_grid_target;
-DROP TABLE IF EXISTS temp_grid_comparison;
-DROP TABLE IF EXISTS temp_conversion_plan;
-DROP TABLE IF EXISTS temp_pre_conversion;
-DROP TABLE IF EXISTS temp_post_conversion;
-DROP TABLE IF EXISTS temp_target_summary;
-DROP TABLE IF EXISTS temp_conversion_summary;
-DROP TABLE IF EXISTS temp_grid_analysis;
-
-
-
--- checks
-SELECT count(*)
-FROM pylovo_input.building;
-
-SELECT 'residential' as Category, COUNT(*) as Count
-FROM pylovo_input.building
-WHERE building_use = 'residential'
-UNION ALL
-SELECT 'AB' as Category, COUNT(*) as Count
-FROM pylovo_input.building
-WHERE building_type = 'AB'
-UNION ALL
-SELECT 'SFH' as Category, COUNT(*) as Count
-FROM pylovo_input.building
-WHERE building_type = 'SFH'
-UNION ALL
-SELECT 'TH' as Category, COUNT(*) as Count
-FROM pylovo_input.building
-WHERE building_type = 'TH'
-UNION ALL
-SELECT 'MFH' as Category, COUNT(*) as Count
-FROM pylovo_input.building
-WHERE building_type = 'MFH';
-
-SELECT count(*)
-FROM pylovo_input.building
-WHERE building_use = 'residential'
-  AND building_type IS NULL;
-
-----------
-
-SELECT count(*)
-FROM property
-WHERE name = 'storeysAboveGround';
-
-SELECT count(*)
-FROM property
-WHERE name = 'Flaeche';
-
-SELECT count(*)
-FROM pylovo_input.building;
-
-SELECT *
-FROM feature f
-         JOIN property p ON f.id = p.feature_id
-WHERE name = 'Flaeche';
-
-SELECT f.id, geometry as geom, ST_Geometrytype(geometry)
-FROM feature f
-         JOIN geometry_data gd ON f.id = gd.feature_id
-WHERE f.objectclass_id = 710;
-
-SELECT feature_id, datatype_id, name, val_string, val_lod, val_geometry_id
-FROM property
-WHERE feature_id IN (SELECT id FROM feature WHERE objectclass_id = 710)
-ORDER BY feature_id, name;
-
-SELECT feature_id,
-       datatype_id,
-       name,
-       val_string,
-       val_double,
-       val_int,
-       val_lod,
-       val_geometry_id
-FROM property
-WHERE feature_id IN (SELECT id FROM feature WHERE objectclass_id = 901)
-ORDER BY feature_id, name;
-
-SELECT count(*)
-FROM pylovo_input.neighbors;
-
-SELECT *, ST_Area(geom) as calc_area
-FROM pylovo_input.building
-LIMIT 1;
-SELECT AVG(height / floor_number) as average_floor_height
-FROM pylovo_input.building;
-
-SELECT building_use_id, PERCENTILE_CONT(0.5) WITHIN GROUP ( ORDER BY (height / floor_number) )
-FROM pylovo_input.building
-GROUP BY building_use_id;
-
--- empty
-SELECT *
-FROM feature
-WHERE objectclass_id = 607; -- Road
-SELECT *
-FROM feature
-WHERE objectclass_id = 606; -- Track
-
-SELECT *
-FROM basemap.verkehrsflaeche;
-
-----------
-
-
--- explore things
--- objectclasses
-SELECT DISTINCT id, classname
-FROM objectclass
-ORDER BY id;
-
-SELECT DISTINCT datatype_id, name
-FROM property;
-
-SELECT id, typename, schema
-FROM datatype
-ORDER BY id;
-
-SELECT *
-FROM property
-WHERE val_timestamp IS NOT NULL;
