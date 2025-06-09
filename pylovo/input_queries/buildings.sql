@@ -1,8 +1,3 @@
--- drops
-DROP MATERIALIZED VIEW pylovo_input.neighbor_counts;
-DROP MATERIALIZED VIEW pylovo_input.neighbors;
-DROP TABLE pylovo_input.building;
-
 CREATE OR REPLACE FUNCTION pylovo_input.classify_building_use(funktion TEXT)
     RETURNS TEXT AS
 $$
@@ -64,6 +59,7 @@ $$ LANGUAGE plpgsql IMMUTABLE
                     STRICT;
 
 
+DROP TABLE IF EXISTS pylovo_input.building;
 CREATE TABLE pylovo_input.building
 (
     id                bigint PRIMARY KEY,
@@ -159,6 +155,7 @@ WHERE b.floor_number IS NULL
 
 
 -- create neighborhood views
+DROP MATERIALIZED VIEW IF EXISTS pylovo_input.neighbors;
 CREATE MATERIALIZED VIEW pylovo_input.neighbors AS
 SELECT a.id         AS a_id,
        b.id         AS b_id,
@@ -173,6 +170,7 @@ FROM pylovo_input.building a
     ST_DWithin(a.geom, b.geom, 0.01);
 
 -- also includes counts of 0
+DROP MATERIALIZED VIEW IF EXISTS pylovo_input.neighbor_counts;
 CREATE MATERIALIZED VIEW pylovo_input.neighbor_counts AS
 SELECT b.id as id, count(b_id) as count
 FROM pylovo_input.building b
@@ -277,7 +275,6 @@ WHERE g.gitter_id_100m IS NOT NULL;
 
 
 -- Step 2: Assign construction year using weighted random distribution
--- min year = 1800
 -- Note: This version uses a WITH clause to prepare weights and cumulative ranges.
 --       Then assigns a construction_year based on a random number weighted by those counts.
 UPDATE pylovo_input.building b
@@ -806,129 +803,3 @@ SET
     occupants = cp.new_occupants
 FROM temp_conversion_plan cp
 WHERE building.id = cp.id;
-
--- Step 5: Generate final report
-
--- Pre-conversion state
-DROP TABLE IF EXISTS temp_pre_conversion;
-CREATE TABLE temp_pre_conversion AS
-SELECT
-    'Pre-Conversion' as phase,
-    COUNT(CASE WHEN building_type = 'AB' THEN 1 END) as ab_count,
-    COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) as mfh_count,
-    COUNT(CASE WHEN building_type = 'TH' THEN 1 END) as th_count,
-    COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) as sfh_count,
-    COUNT(*) as total_count,
-    -- Calculate percentages
-    ROUND(COUNT(CASE WHEN building_type = 'AB' THEN 1 END) * 100.0 / COUNT(*), 1) as ab_pct,
-    ROUND(COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) * 100.0 / COUNT(*), 1) as mfh_pct,
-    ROUND(COUNT(CASE WHEN building_type = 'TH' THEN 1 END) * 100.0 / COUNT(*), 1) as th_pct,
-    ROUND(COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) * 100.0 / COUNT(*), 1) as sfh_pct
-FROM (
-    SELECT
-        CASE
-            WHEN cp.original_type IS NOT NULL THEN cp.original_type
-            ELSE b.building_type
-        END as building_type
-    FROM pylovo_input.building b
-    LEFT JOIN temp_conversion_plan cp ON b.id = cp.id
-    WHERE b.building_use = 'residential'
-) pre_state;
-
--- Post-conversion state
-DROP TABLE IF EXISTS temp_post_conversion;
-CREATE TABLE temp_post_conversion AS
-SELECT
-    'Post-Conversion' as phase,
-    COUNT(CASE WHEN building_type = 'AB' THEN 1 END) as ab_count,
-    COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) as mfh_count,
-    COUNT(CASE WHEN building_type = 'TH' THEN 1 END) as th_count,
-    COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) as sfh_count,
-    COUNT(*) as total_count,
-    -- Calculate percentages
-    ROUND(COUNT(CASE WHEN building_type = 'AB' THEN 1 END) * 100.0 / COUNT(*), 1) as ab_pct,
-    ROUND(COUNT(CASE WHEN building_type = 'MFH' THEN 1 END) * 100.0 / COUNT(*), 1) as mfh_pct,
-    ROUND(COUNT(CASE WHEN building_type = 'TH' THEN 1 END) * 100.0 / COUNT(*), 1) as th_pct,
-    ROUND(COUNT(CASE WHEN building_type = 'SFH' THEN 1 END) * 100.0 / COUNT(*), 1) as sfh_pct
-FROM pylovo_input.building
-WHERE building_use = 'residential';
-
--- Target distribution
-DROP TABLE IF EXISTS temp_target_summary;
-CREATE TABLE temp_target_summary AS
-SELECT
-    'Target' as phase,
-    SUM(target_ab) as ab_count,
-    SUM(target_mfh) as mfh_count,
-    SUM(target_th) as th_count,
-    SUM(target_sfh) as sfh_count,
-    SUM(total_target) as total_count,
-    -- Calculate percentages based on census total
-    ROUND(SUM(target_ab) * 100.0 / NULLIF(SUM(total_target), 0)) as ab_pct,
-    ROUND(SUM(target_mfh) * 100.0 / NULLIF(SUM(total_target), 0)) as mfh_pct,
-    ROUND(SUM(target_th) * 100.0 / NULLIF(SUM(total_target), 0)) as th_pct,
-    ROUND(SUM(target_sfh) * 100.0 / NULLIF(SUM(total_target), 0)) as sfh_pct
-FROM temp_grid_target;
-
--- Conversion summary
-DROP TABLE IF EXISTS temp_conversion_summary;
-CREATE TABLE temp_conversion_summary AS
-SELECT
-    original_type,
-    new_type,
-    COUNT(*) as conversion_count
-FROM temp_conversion_plan
-GROUP BY original_type, new_type
-ORDER BY original_type, new_type;
-
--- Final Report
-SELECT '=== BUILDING REBALANCING REPORT ===' as report_section;
-
--- Main summary with counts and percentages
-SELECT
-    phase,
-    ab_count as "AB Count",
-    CONCAT(ab_pct, '%') as "AB %",
-    mfh_count as "MFH Count",
-    CONCAT(mfh_pct, '%') as "MFH %",
-    th_count as "TH Count",
-    CONCAT(th_pct, '%') as "TH %",
-    sfh_count as "SFH Count",
-    CONCAT(sfh_pct, '%') as "SFH %",
-    total_count as "Total"
-FROM (
-    SELECT * FROM temp_pre_conversion
-    UNION ALL
-    SELECT * FROM temp_post_conversion
-    UNION ALL
-    SELECT * FROM temp_target_summary
-) combined_summary
-ORDER BY
-    CASE phase
-        WHEN 'Pre-Conversion' THEN 1
-        WHEN 'Post-Conversion' THEN 2
-        WHEN 'Target' THEN 3
-    END;
-
-SELECT '=== CONVERSION DETAILS ===' as report_section;
-
-SELECT
-    original_type as "From Type",
-    new_type as "To Type",
-    conversion_count as "Buildings Converted"
-FROM temp_conversion_summary;
-
-SELECT '=== GRID ANALYSIS ===' as report_section;
-
-SELECT '=== SUMMARY STATISTICS ===' as report_section;
-
-SELECT
-    'Total Grids Requiring Adjustment' as metric,
-    COUNT(*) as value
-FROM temp_grid_comparison
-WHERE ABS(ab_adjustment) + ABS(mfh_adjustment) + ABS(th_adjustment) + ABS(sfh_adjustment) > 0
-UNION ALL
-SELECT
-    'Total Buildings Converted' as metric,
-    COUNT(*) as value
-FROM temp_conversion_plan;
