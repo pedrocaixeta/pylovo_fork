@@ -130,8 +130,7 @@ WHERE objectid = building_objectid;
 -- delete buildings below an area threshold
 DELETE
 FROM pylovo_input.building
-WHERE building.floor_area < 15
-   OR (building.floor_area * height) < 150;
+WHERE building.floor_area < 12;
 
 -- fill floor_number column
 WITH floor_number_data AS (SELECT feature_id, val_int
@@ -154,7 +153,7 @@ WHERE b.floor_number IS NULL
   AND b.building_use_id = afh.building_use_id;
 
 
--- create neighborhood views
+-- create touching neighborhood tables
 DROP TABLE IF EXISTS temp_touching_neighbors;
 CREATE TEMP TABLE temp_touching_neighbors AS
 SELECT a.id         AS a_id,
@@ -190,43 +189,69 @@ DROP TABLE IF EXISTS temp_building_weights;
 CREATE TEMP TABLE temp_building_weights AS
 SELECT b.id                    AS building_id,
        b.height * b.floor_area AS weight,
-       v.gitter_id_100m,
+       v.id as bevoelkerungszahl_id,
        v.einwohner
 FROM pylovo_input.building b
-         JOIN census2022.bevoelkerungszahl v
-              ON ST_Intersects(v.geometry, b.geom)
+         JOIN census2022.bevoelkerungszahl v ON ST_Contains(v.geometry, ST_CENTROID(b.geom))
 WHERE building_use = 'residential';
 
 -- Step 2: Create temp table for total weights per grid cell
 DROP TABLE IF EXISTS temp_cell_weights;
-DROP TABLE IF EXISTS temp_cell_weights;
 CREATE TEMP TABLE temp_cell_weights AS
-SELECT gitter_id_100m,
+SELECT bevoelkerungszahl_id,
        SUM(weight) AS total_weight
 FROM temp_building_weights
-GROUP BY gitter_id_100m;
+GROUP BY bevoelkerungszahl_id;
 
 -- Step 3: Assign occupants proportionally to each building
 DROP TABLE IF EXISTS temp_building_occupants;
 CREATE TEMP TABLE temp_building_occupants AS
 SELECT bw.building_id,
        bw.weight,
-       bw.gitter_id_100m,
+       bw.bevoelkerungszahl_id,
        bw.einwohner,
        cw.total_weight,
        CASE
-           WHEN cw.total_weight > 0 THEN ROUND((bw.weight / cw.total_weight) * bw.einwohner)::int
+           WHEN cw.total_weight > 0 THEN GREATEST(ROUND((bw.weight / cw.total_weight) * bw.einwohner)::int, 1)
            ELSE 0
            END AS assigned_occupants
 FROM temp_building_weights bw
          JOIN temp_cell_weights cw
-              ON bw.gitter_id_100m = cw.gitter_id_100m;
+              ON bw.bevoelkerungszahl_id = cw.bevoelkerungszahl_id;
 
 -- Step 4: Update the original building table
 UPDATE pylovo_input.building b
 SET occupants = bo.assigned_occupants
 FROM temp_building_occupants bo
 WHERE b.id = bo.building_id;
+
+-- Handle buildings without occupants using nearest neighbor
+-- Step 5: Find nearest grid cell with occupancy data for each unassigned building
+DROP TABLE IF EXISTS temp_nearest_grid_occupants;
+CREATE TEMP TABLE temp_nearest_grid_occupants AS
+SELECT
+    b.id AS building_id,
+    -- (bo.weight / bo.total_weight) * nearest.nearest_einwohner * (bo.total_weight / cw.total_weight) as assigned_occupants, -- ratio of building weight * closest occupancy count * ratio of total weights
+    GREATEST(ROUND((bo.weight / cw.total_weight) * nearest.nearest_einwohner)::int, 1) as assigned_occupants
+FROM pylovo_input.building b
+CROSS JOIN LATERAL (
+    SELECT g.id as bevoelkerungszahl_id,
+           g.einwohner as nearest_einwohner
+    FROM census2022.bevoelkerungszahl g
+    WHERE g.gitter_id_100m IS NOT NULL
+      AND g.einwohner IS NOT NULL
+    ORDER BY g.geometry <-> ST_Centroid(b.geom)
+    LIMIT 1
+) nearest
+JOIN temp_building_occupants bo ON b.id = bo.building_id
+JOIN temp_cell_weights cw ON nearest.bevoelkerungszahl_id = cw.bevoelkerungszahl_id
+WHERE b.occupants IS NULL AND b.building_use = 'residential';
+
+-- Step 6: Update the original building table with the nearest estimations
+UPDATE pylovo_input.building b
+SET occupants = ngo.assigned_occupants
+FROM temp_nearest_grid_occupants ngo
+WHERE b.id = ngo.building_id;
 
 
 -- fill households
@@ -235,29 +260,54 @@ DROP TABLE IF EXISTS temp_building_hh_grid;
 CREATE TEMP TABLE temp_building_hh_grid AS
 SELECT b.id AS building_id,
        b.occupants,
+       d.id as haushaltsgroesse_id,
        d.durchschnhhgroesse
 FROM pylovo_input.building b
          JOIN census2022.durchschn_haushaltsgroesse d
               ON ST_Intersects(d.geometry, b.geom)
 WHERE b.occupants IS NOT NULL
-  AND b.building_use = 'residential' -- already ensured by above clause
-  AND d.durchschnhhgroesse IS NOT NULL
-  AND d.durchschnhhgroesse > 0;
+  AND b.building_use = 'residential'; -- already ensured by above clause
+
+SELECT * FROM temp_building_hh_grid;
 
 -- Step 2: Compute households per building
 DROP TABLE IF EXISTS temp_building_households;
 CREATE TEMP TABLE temp_building_households AS
 SELECT building_id,
-       occupants,
-       durchschnhhgroesse,
        GREATEST(ROUND(occupants / durchschnhhgroesse)::int, 1) AS estimated_households
 FROM temp_building_hh_grid;
+
+SELECT * FROM temp_building_households;
 
 -- Step 3: Update original building table
 UPDATE pylovo_input.building b
 SET households = bh.estimated_households
 FROM temp_building_households bh
 WHERE b.id = bh.building_id;
+
+--===
+-- Handle buildings without occupants using nearest neighbor
+-- Step 4: Find nearest grid cell with occupancy data for each unassigned building
+DROP TABLE IF EXISTS temp_nearest_grid_households;
+CREATE TEMP TABLE temp_nearest_grid_households AS
+SELECT
+    b.id AS building_id,
+    -- (bo.weight / bo.total_weight) * nearest.nearest_einwohner * (bo.total_weight / cw.total_weight) as assigned_occupants, -- ratio of building weight * closest occupancy count * ratio of total weights
+    GREATEST(ROUND((bo.weight / cw.total_weight) * nearest.nearest_einwohner)::int, 1) as assigned_occupants
+FROM pylovo_input.building b
+CROSS JOIN LATERAL (
+    SELECT g.id as bevoelkerungszahl_id,
+           g.einwohner as nearest_einwohner
+    FROM census2022.bevoelkerungszahl g
+    WHERE g.gitter_id_100m IS NOT NULL
+      AND g.einwohner IS NOT NULL
+    ORDER BY g.geometry <-> ST_Centroid(b.geom)
+    LIMIT 1
+) nearest
+JOIN temp_building_occupants bo ON b.id = bo.building_id
+JOIN temp_cell_weights cw ON nearest.bevoelkerungszahl_id = cw.bevoelkerungszahl_id
+WHERE b.occupants IS NULL AND b.building_use = 'residential';
+--===
 
 -- fill construction_year
 CREATE OR REPLACE FUNCTION pylovo_input.assign_weighted_year(
@@ -349,8 +399,6 @@ DROP TABLE IF EXISTS temp_nearest_grid_year;
 CREATE TEMP TABLE temp_nearest_grid_year AS
 SELECT
     b.id AS building_id,
-    b.geom,
-    b.construction_year,
     nearest.*
 FROM pylovo_input.building b
 CROSS JOIN LATERAL (
@@ -362,8 +410,7 @@ CROSS JOIN LATERAL (
            g.a1991bis2000,
            g.a2001bis2010,
            g.a2011bis2019,
-           g.a2020undspaeter,
-           ST_Distance(g.geometry, ST_Centroid(b.geom))
+           g.a2020undspaeter
     FROM census2022.gebaeude_nach_baujahr_in_mikrozensus_klassen g
     WHERE g.gitter_id_100m IS NOT NULL
       AND (COALESCE(g.vor1919, 0) + COALESCE(g.a1919bis1948, 0) +
@@ -374,8 +421,6 @@ CROSS JOIN LATERAL (
     LIMIT 1
 ) nearest
 WHERE b.construction_year IS NULL;
-
-SELECT * FROM temp_nearest_grid_year;
 
 -- Step 4: Assign construction year using the same weighted random logic
 UPDATE pylovo_input.building b
