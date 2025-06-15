@@ -155,8 +155,8 @@ WHERE b.floor_number IS NULL
 
 
 -- create neighborhood views
-DROP MATERIALIZED VIEW IF EXISTS pylovo_input.neighbors;
-CREATE MATERIALIZED VIEW pylovo_input.neighbors AS
+DROP TABLE IF EXISTS temp_touching_neighbors;
+CREATE TEMP TABLE temp_touching_neighbors AS
 SELECT a.id         AS a_id,
        b.id         AS b_id,
        a.floor_area AS a_area,
@@ -170,11 +170,11 @@ FROM pylovo_input.building a
     ST_DWithin(a.geom, b.geom, 0.01);
 
 -- also includes counts of 0
-DROP MATERIALIZED VIEW IF EXISTS pylovo_input.neighbor_counts;
-CREATE MATERIALIZED VIEW pylovo_input.neighbor_counts AS
+DROP TABLE IF EXISTS temp_touching_neighbor_counts;
+CREATE TEMP TABLE temp_touching_neighbor_counts AS
 SELECT b.id as id, count(b_id) as count
 FROM pylovo_input.building b
-         LEFT JOIN pylovo_input.neighbors n ON b.id = n.a_id
+         LEFT JOIN temp_touching_neighbors n ON b.id = n.a_id
 GROUP BY b.id;
 
 -- assign grid id for later use
@@ -260,6 +260,46 @@ FROM temp_building_households bh
 WHERE b.id = bh.building_id;
 
 -- fill construction_year
+CREATE OR REPLACE FUNCTION pylovo_input.assign_weighted_year(
+    vor1919 double precision,
+    a1919bis1948 double precision,
+    a1949bis1978 double precision,
+    a1979bis1990 double precision,
+    a1991bis2000 double precision,
+    a2001bis2010 double precision,
+    a2011bis2019 double precision,
+    a2020undspaeter double precision,
+    r double precision
+) RETURNS TEXT AS $$
+DECLARE
+    total NUMERIC;
+BEGIN
+    total := vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010 + a2011bis2019 + a2020undspaeter;
+
+    IF total <= 0 THEN
+        RETURN NULL;
+    END IF;
+
+    IF r < vor1919 / total THEN
+        RETURN '-1919';
+    ELSIF r < (vor1919 + a1919bis1948) / total THEN
+        RETURN '1919-1948';
+    ELSIF r < (vor1919 + a1919bis1948 + a1949bis1978) / total THEN
+        RETURN '1949-1978';
+    ELSIF r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990) / total THEN
+        RETURN '1979-1990';
+    ELSIF r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000) / total THEN
+        RETURN '1991-2000';
+    ELSIF r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010) / total THEN
+        RETURN '2001-2010';
+    ELSIF r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010 + a2011bis2019) / total THEN
+        RETURN '2011-2019';
+    ELSE
+        RETURN '2020-';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Step 1: Create a table with joined buildings and grid cells
 DROP TABLE IF EXISTS temp_building_with_grid_year;
 CREATE TEMP TABLE temp_building_with_grid_year AS
@@ -269,8 +309,7 @@ SELECT b.id   AS building_id,
 FROM pylovo_input.building b
          JOIN
      census2022.gebaeude_nach_baujahr_in_mikrozensus_klassen g
-     ON
-         ST_Intersects(b.geom, g.geometry)
+     ON b.grid_id = g.gitter_id_100m
 WHERE g.gitter_id_100m IS NOT NULL;
 
 
@@ -280,27 +319,17 @@ WHERE g.gitter_id_100m IS NOT NULL;
 UPDATE pylovo_input.building b
 SET construction_year = sub.assigned_year
 FROM (SELECT building_id,
-             CASE
-                 WHEN total > 0 THEN (
-                     -- Normalize weights and generate a random year within the matched bin
-                     CASE
-                         WHEN r < vor1919 / total THEN '-1919'
-                         WHEN r < (vor1919 + a1919bis1948) / total THEN '1919-1948'
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978) / total
-                             THEN '1949-1978'
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990) / total
-                             THEN '1979-1990'
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000) / total
-                             THEN '1991-2000'
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010) /
-                                  total THEN '2001-2010'
-                         WHEN r < (vor1919 + a1919bis1948 + a1949bis1978 + a1979bis1990 + a1991bis2000 + a2001bis2010 +
-                                   a2011bis2019) / total THEN '2011-2019'
-                         ELSE '2020-'
-                         END
-                     )
-                 ELSE NULL
-                 END AS assigned_year
+             pylovo_input.assign_weighted_year(
+                     vor1919,
+                     a1919bis1948,
+                     a1949bis1978,
+                     a1979bis1990,
+                     a1991bis2000,
+                     a2001bis2010,
+                     a2011bis2019,
+                     a2020undspaeter,
+                     r)
+                 AS assigned_year
       FROM (SELECT building_id,
                    vor1919,
                    a1919bis1948,
@@ -310,17 +339,73 @@ FROM (SELECT building_id,
                    a2001bis2010,
                    a2011bis2019,
                    a2020undspaeter,
-                   (COALESCE(vor1919, 0) +
-                    COALESCE(a1919bis1948, 0) +
-                    COALESCE(a1949bis1978, 0) +
-                    COALESCE(a1979bis1990, 0) +
-                    COALESCE(a1991bis2000, 0) +
-                    COALESCE(a2001bis2010, 0) +
-                    COALESCE(a2011bis2019, 0) +
-                    COALESCE(a2020undspaeter, 0)) AS total,
-                   random()                       AS r
+                   random() AS r
             FROM temp_building_with_grid_year) year_probs) sub
 WHERE b.id = sub.building_id;
+
+-- Handle buildings without construction_year using nearest neighbor
+-- Step 3: Find nearest grid cell with construction year data for each unassigned building
+DROP TABLE IF EXISTS temp_nearest_grid_year;
+CREATE TEMP TABLE temp_nearest_grid_year AS
+SELECT
+    b.id AS building_id,
+    b.geom,
+    b.construction_year,
+    nearest.*
+FROM pylovo_input.building b
+CROSS JOIN LATERAL (
+    SELECT g.gitter_id_100m,
+           g.vor1919,
+           g.a1919bis1948,
+           g.a1949bis1978,
+           g.a1979bis1990,
+           g.a1991bis2000,
+           g.a2001bis2010,
+           g.a2011bis2019,
+           g.a2020undspaeter,
+           ST_Distance(g.geometry, ST_Centroid(b.geom))
+    FROM census2022.gebaeude_nach_baujahr_in_mikrozensus_klassen g
+    WHERE g.gitter_id_100m IS NOT NULL
+      AND (COALESCE(g.vor1919, 0) + COALESCE(g.a1919bis1948, 0) +
+           COALESCE(g.a1949bis1978, 0) + COALESCE(g.a1979bis1990, 0) +
+           COALESCE(g.a1991bis2000, 0) + COALESCE(g.a2001bis2010, 0) +
+           COALESCE(g.a2011bis2019, 0) + COALESCE(g.a2020undspaeter, 0)) > 0
+    ORDER BY g.geometry <-> ST_Centroid(b.geom)
+    LIMIT 1
+) nearest
+WHERE b.construction_year IS NULL;
+
+SELECT * FROM temp_nearest_grid_year;
+
+-- Step 4: Assign construction year using the same weighted random logic
+UPDATE pylovo_input.building b
+SET construction_year = sub.assigned_year
+FROM (SELECT building_id,
+             pylovo_input.assign_weighted_year(
+                     vor1919,
+                     a1919bis1948,
+                     a1949bis1978,
+                     a1979bis1990,
+                     a1991bis2000,
+                     a2001bis2010,
+                     a2011bis2019,
+                     a2020undspaeter,
+                     r)
+                 AS assigned_year
+      FROM (SELECT building_id,
+                   vor1919,
+                   a1919bis1948,
+                   a1949bis1978,
+                   a1979bis1990,
+                   a1991bis2000,
+                   a2001bis2010,
+                   a2011bis2019,
+                   a2020undspaeter,
+                   random() AS r
+            FROM temp_nearest_grid_year) year_probs) sub
+WHERE b.id = sub.building_id
+  AND b.construction_year IS NULL;
+
 
 
 -- fill building_type
@@ -334,8 +419,8 @@ WHERE building_use = 'residential'
     OR (
            floor_number >= 3 AND
            EXISTS (SELECT 1
-                   FROM pylovo_input.neighbor_counts
-                   WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                   FROM temp_touching_neighbor_counts
+                   WHERE temp_touching_neighbor_counts.id = pylovo_input.building.id
                      AND count >= 3)
            )
     OR floor_area > 1500);
@@ -349,7 +434,7 @@ $$
         WHILE updated_count > 0
             LOOP
                 WITH candidates AS (SELECT DISTINCT n.a_id
-                                    FROM pylovo_input.neighbors n
+                                    FROM temp_touching_neighbors n
                                              JOIN pylovo_input.building nb ON n.b_id = nb.id
                                              JOIN pylovo_input.building b1 ON n.a_id = b1.id
                                     WHERE nb.building_type = 'AB'
@@ -376,12 +461,12 @@ WHERE building_use = 'residential'
   AND building_type IS NULL
   AND ((floor_area < 350 AND floor_number <= 3 AND
         NOT EXISTS (SELECT 1
-                    FROM pylovo_input.neighbors
-                    WHERE pylovo_input.neighbors.a_id = pylovo_input.building.id)) OR
+                    FROM temp_touching_neighbors
+                    WHERE temp_touching_neighbors.a_id = pylovo_input.building.id)) OR
        (floor_area < 200 AND floor_number <= 2 AND
         NOT EXISTS (SELECT 1
-                    FROM pylovo_input.neighbor_counts
-                    WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                    FROM temp_touching_neighbor_counts
+                    WHERE temp_touching_neighbor_counts.id = pylovo_input.building.id
                       AND count >= 2)));
 
 -- Small buildings with floor area < 100 next to SFH likely also SFH
@@ -393,7 +478,7 @@ $$
         WHILE updated_count > 0
             LOOP
                 WITH candidates AS (SELECT DISTINCT n.a_id
-                                    FROM pylovo_input.neighbors n
+                                    FROM temp_touching_neighbors n
                                              JOIN pylovo_input.building b1 ON n.a_id = b1.id
                                              JOIN pylovo_input.building b2 ON n.b_id = b2.id
                                     WHERE b2.building_type = 'SFH'
@@ -421,14 +506,14 @@ WHERE building_use = 'residential'
   AND building_type IS NULL
   AND ((floor_area BETWEEN 80 AND 150 AND floor_number BETWEEN 2 AND 3 AND
         EXISTS (SELECT 1
-                FROM pylovo_input.neighbor_counts
-                WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                FROM temp_touching_neighbor_counts
+                WHERE temp_touching_neighbor_counts.id = pylovo_input.building.id
                   AND count BETWEEN 1 AND 2) AND
         EXISTS (SELECT 1
-                FROM pylovo_input.neighbors
-                WHERE pylovo_input.neighbors.a_id = pylovo_input.building.id
-                  AND ABS(pylovo_input.neighbors.a_area - pylovo_input.neighbors.b_area) /
-                      GREATEST(pylovo_input.neighbors.a_area, pylovo_input.neighbors.b_area) < 0.2))
+                FROM temp_touching_neighbors
+                WHERE temp_touching_neighbors.a_id = pylovo_input.building.id
+                  AND ABS(temp_touching_neighbors.a_area - temp_touching_neighbors.b_area) /
+                      GREATEST(temp_touching_neighbors.a_area, temp_touching_neighbors.b_area) < 0.2))
     );
 
 -- Buildings adjacent to at least 2 THs with similar floor area become TH
@@ -440,7 +525,7 @@ $$
         WHILE updated_count > 0
             LOOP
                 WITH candidates AS (SELECT DISTINCT n.a_id
-                                    FROM pylovo_input.neighbors n
+                                    FROM temp_touching_neighbors n
                                              JOIN pylovo_input.building nb ON n.b_id = nb.id
                                              JOIN pylovo_input.building b1 ON n.a_id = b1.id
                                     WHERE nb.building_type = 'TH'
@@ -469,7 +554,7 @@ $$
         WHILE updated_count > 0
             LOOP
                 WITH candidates AS (SELECT DISTINCT n.a_id
-                                    FROM pylovo_input.neighbors n
+                                    FROM temp_touching_neighbors n
                                              JOIN pylovo_input.building b1 ON n.a_id = b1.id
                                              JOIN pylovo_input.building b2 ON n.b_id = b2.id
                                     WHERE b2.building_type = 'TH'
@@ -499,8 +584,8 @@ WHERE building_use = 'residential'
   AND ((floor_number BETWEEN 2 AND 3 OR
         (floor_area > 150 AND
          EXISTS (SELECT 1
-                 FROM pylovo_input.neighbor_counts
-                 WHERE pylovo_input.neighbor_counts.id = pylovo_input.building.id
+                 FROM temp_touching_neighbor_counts
+                 WHERE temp_touching_neighbor_counts.id = pylovo_input.building.id
                    AND count BETWEEN 1 AND 3))
     ));
 
@@ -513,7 +598,7 @@ $$
         WHILE updated_count > 0
             LOOP
                 WITH candidates AS (SELECT DISTINCT n.a_id
-                                    FROM pylovo_input.neighbors n
+                                    FROM temp_touching_neighbors n
                                              JOIN pylovo_input.building b1 ON n.a_id = b1.id
                                              JOIN pylovo_input.building b2 ON n.b_id = b2.id
                                     WHERE b2.building_type = 'MFH'
@@ -541,7 +626,7 @@ WHERE b.building_use = 'residential'
 -- fix wrong assignments
 UPDATE pylovo_input.building b
 SET building_type = 'SFH'
-FROM pylovo_input.neighbor_counts nc
+FROM temp_touching_neighbor_counts nc
 WHERE b.id = nc.id
   AND building_type IN ('MFH', 'AB')
   AND households = 1
@@ -549,7 +634,7 @@ WHERE b.id = nc.id
 
 UPDATE pylovo_input.building b
 SET building_type = 'TH'
-FROM pylovo_input.neighbor_counts nc
+FROM temp_touching_neighbor_counts nc
 WHERE b.id = nc.id
   AND building_type IN ('MFH', 'AB')
   AND households = 1
@@ -557,14 +642,14 @@ WHERE b.id = nc.id
 
 UPDATE pylovo_input.building b
 SET building_type = 'MFH'
-FROM pylovo_input.neighbor_counts nc
+FROM temp_touching_neighbor_counts nc
 WHERE b.id = nc.id
   AND building_type IN ('SFH', 'TH')
   AND households BETWEEN 2 AND 4;
 
 UPDATE pylovo_input.building b
 SET building_type = 'AB'
-FROM pylovo_input.neighbor_counts nc
+FROM temp_touching_neighbor_counts nc
 WHERE b.id = nc.id
   AND building_type IN ('SFH', 'TH')
   AND households >= 5;
@@ -579,7 +664,7 @@ WHERE b.id = nc.id
 -- TH (Terraced Houses) = efh_reihenhaus + zfh_reihenhaus
 -- SFH (Single Family Houses) = freiefh + efh_dhh
 
--- Step 2: Calculate current distribution and target distribution per grid
+-- Step 2: Calculate current counts and target counts per grid
 DROP TABLE IF EXISTS temp_grid_current;
 CREATE TABLE temp_grid_current AS
 WITH grid_current AS (
@@ -650,7 +735,7 @@ WITH grid_comparison AS (
 )
 SELECT * FROM grid_comparison;
 
--- Step 3: Create unified conversion plan using window functions
+-- Step 3: Create conversion plan
 DROP TABLE IF EXISTS temp_building_rankings;
 CREATE TABLE temp_building_rankings AS (
     SELECT
@@ -753,7 +838,7 @@ CREATE TABLE temp_conversion_decisions AS (
             ELSE br.building_type
         END as new_type,
 
-        -- Calculate new household counts (same logic as before, just using pre-calculated values)
+        -- Calculate new household counts
         CASE
             -- AB conversions
             WHEN br.ab_adjustment > 0 AND (
@@ -795,7 +880,7 @@ CREATE TABLE temp_conversion_plan AS
     WHERE original_type != new_type
 );
 
--- Step 4: Apply all conversions in a single batch update
+-- Step 4: Apply all conversions
 UPDATE pylovo_input.building
 SET
     building_type = cp.new_type,
