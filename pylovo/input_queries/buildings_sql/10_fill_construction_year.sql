@@ -1,7 +1,7 @@
 -- fill construction_year
 -- Step 1: Create a table with joined buildings and grid cells
-DROP TABLE IF EXISTS temp_building_with_grid_year;
-CREATE TEMP TABLE temp_building_with_grid_year AS
+DROP TABLE IF EXISTS pylovo_input.temp_building_with_grid_year;
+CREATE TEMP TABLE pylovo_input.temp_building_with_grid_year AS
 SELECT b.id   AS building_id,
        b.geom AS building_geom,
        g.*
@@ -38,13 +38,13 @@ FROM (SELECT building_id,
                    a2011bis2019,
                    a2020undspaeter,
                    random() AS r
-            FROM temp_building_with_grid_year) year_probs) sub
+            FROM pylovo_input.temp_building_with_grid_year) year_probs) sub
 WHERE b.id = sub.building_id;
 
 -- Handle buildings without construction_year using nearest neighbor
 -- Step 3: Find nearest grid cell with construction year data for each unassigned building
-DROP TABLE IF EXISTS temp_nearest_grid_year;
-CREATE TEMP TABLE temp_nearest_grid_year AS
+DROP TABLE IF EXISTS pylovo_input.temp_nearest_grid_year;
+CREATE TEMP TABLE pylovo_input.temp_nearest_grid_year AS
 SELECT
     b.id AS building_id,
     nearest.*
@@ -95,6 +95,6 @@ FROM (SELECT building_id,
                    a2011bis2019,
                    a2020undspaeter,
                    random() AS r
-            FROM temp_nearest_grid_year) year_probs) sub
+            FROM pylovo_input.temp_nearest_grid_year) year_probs) sub
 WHERE b.id = sub.building_id
   AND b.construction_year IS NULL;
