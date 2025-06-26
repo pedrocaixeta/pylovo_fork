@@ -1,4 +1,4 @@
-# Database connection configuration
+# Default Database connection configuration
 DBNAME: pylovo_db_local
 USER: postgres
 HOST: localhost

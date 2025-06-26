@@ -8,6 +8,7 @@ from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
 
 import src.database.database_client as dbc
+from src.infdb.infdb_client import InfdbClient
 from src.parameter_calculator import ParameterCalculator
 from src import utils
 from src.config_loader import *
@@ -16,6 +17,7 @@ class ResultExistsError(Exception):
     "Raised when the PLZ has already been created."
     pass
 
+USE_INFDB = True
 
 class GridGenerator:
     """
@@ -23,23 +25,26 @@ class GridGenerator:
     """
 
     def __init__(self, plz=999999, **kwargs):
-        self.plz = str(plz)
+        self.plz = plz
         self.dbc = dbc.DatabaseClient()
         self.dbc.insert_version_if_not_exists()
         self.dbc.insert_parameter_tables(consumer_categories=CONSUMER_CATEGORIES)
         self.logger = utils.create_logger(
             name="GridGenerator", log_file=kwargs.get("log_file", "log.txt"), log_level=LOG_LEVEL
         )
+        self.inf_dbc = None
+        if USE_INFDB:
+            self.inf_dbc = InfdbClient()
 
     def __del__(self):
         self.dbc.__del__()
 
-    def generate_grid_for_single_plz(self, plz: str, analyze_grids: bool = False) -> None:
+    def generate_grid_for_single_plz(self, plz: int, analyze_grids: bool = False) -> None:
         """
         Generates the grid for a single PLZ.
 
         :param plz: Postal code for which the grid should be generated.
-        :type plz: str
+        :type plz: int
         :param analyze_grids: Option to analyze the results after grid generation, defaults to False.
         :type analyze_grids: bool
         """
@@ -80,7 +85,7 @@ class GridGenerator:
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
 
         for index, row in df_plz.iterrows():
-            self.plz = str(row['plz'])
+            self.plz = int(row['plz'])
             print('-------------------- start', self.plz, '---------------------------')
             try:
                 self.generate_grid()
@@ -132,8 +137,12 @@ class GridGenerator:
         FROM: res, oth
         INTO: buildings_tem
         """
-        self.dbc.set_residential_buildings_table(self.plz)
-        self.dbc.set_other_buildings_table(self.plz)
+        if USE_INFDB:
+            self.dbc.get_plz_geom(self.plz)
+            self.inf_dbc.set_buildings_table()
+        else:
+            self.dbc.set_residential_buildings_table(self.plz)
+            self.dbc.set_other_buildings_table(self.plz)
         self.logger.info("Buildings_tem table prepared")
         self.dbc.remove_duplicate_buildings()
         self.logger.info("Duplicate buildings removed from buildings_tem")
@@ -948,7 +957,7 @@ class GridGenerator:
         Save one grid to file and to database
         """
         if SAVE_GRID_FOLDER:
-            savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", self.plz)
+            savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
             savepath_folder.mkdir(parents=True, exist_ok=True)
             filename = f"kcid{kcid}bcid{bcid}.json"
             savepath_file = Path(savepath_folder, filename)

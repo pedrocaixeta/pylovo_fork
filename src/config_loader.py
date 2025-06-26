@@ -31,6 +31,12 @@ PORT = os.getenv("PORT", CONFIG_DATA["PORT"])
 PASSWORD = os.getenv("PASSWORD", CONFIG_DATA["PASSWORD"])
 TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATA["TARGET_SCHEMA"])
 
+INFDB_DBNAME = os.getenv("INFDB_DBNAME", "not set")
+INFDB_USER = os.getenv("INFDB_USER", "not set")
+INFDB_HOST = os.getenv("INFDB_HOST", "not set")
+INFDB_PORT = os.getenv("INFDB_PORT", "not set")
+INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", "not set")
+
 # Assign other variables from CONFIG_DATA
 RESULT_DIR = os.path.join(os.getcwd(), "results")
 ANALYZE_GRIDS = CONFIG_DATA["ANALYZE_GRIDS"]

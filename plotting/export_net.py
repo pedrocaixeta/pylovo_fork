@@ -31,7 +31,7 @@ def get_bus_line_geo_for_network(pandapower_net, plz, net_index=0):
     return line_geo, bus_geo
 
 
-def get_bus_line_geo_for_plz(plz):
+def get_bus_line_geo_for_plz(plz: int):
     """
     input: plz
     returns two dataframes: one with bus geometry (Nodebuses) and one with line geometry (cables)
@@ -71,7 +71,7 @@ def save_geodata_as_csv(df_plz: pd.DataFrame, data_path_lines: str, data_path_bu
     for plz in df_plz['plz']:
         print("Saving geodata of plz:", str(plz), "to csv.")
         # get_bus_line_geo(str(plz))
-        gdf_line_tmp, gdf_bus_tmp = get_bus_line_geo_for_plz(str(plz))
+        gdf_line_tmp, gdf_bus_tmp = get_bus_line_geo_for_plz(plz)
         gdf_line = pd.concat([gdf_line, gdf_line_tmp])
         gdf_bus = pd.concat([gdf_bus, gdf_bus_tmp])
 

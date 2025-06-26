@@ -56,6 +56,17 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         self.cur.execute(query, {"v": VERSION_ID, "p": plz})
 
+    def get_plz_geom(self, plz: int):
+        query = """
+            SELECT post.geom
+            FROM postcode_result AS post
+            WHERE version_id = %(v)s AND postcode_result_plz = %(plz)s
+            LIMIT 1"""
+
+        self.cur.execute(query, {"v": VERSION_ID, "plz": plz})
+        result = self.cur.fetchone()
+        return None
+
     def set_residential_buildings_table(self, plz: int):
         """
         * Fills buildings_tem with residential buildings which are inside the plz area
