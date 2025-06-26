@@ -2,7 +2,7 @@ ALTER TABLE pylovo_input.buildings ALTER COLUMN objectid SET NOT NULL;
 ALTER TABLE pylovo_input.buildings ADD CONSTRAINT objectid_unique UNIQUE (objectid);
 
 ALTER TABLE pylovo_input.buildings ALTER COLUMN building_use SET NOT NULL;
-ALTER TABLE pylovo_input.buildings ADD CONSTRAINT building_use_check CHECK (building_use IN ('residential', 'industrial', 'commercial', 'public'));
+ALTER TABLE pylovo_input.buildings ADD CONSTRAINT building_use_check CHECK (building_use IN ('Residential', 'Industrial', 'Commercial', 'Public'));
 
 ALTER TABLE pylovo_input.buildings ALTER COLUMN building_use_id SET NOT NULL;
 

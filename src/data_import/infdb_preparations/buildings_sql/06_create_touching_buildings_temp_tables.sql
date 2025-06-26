@@ -1,6 +1,6 @@
 -- create touching neighborhood tables
-DROP TABLE IF EXISTS pylovo_input.temp_touching_neighbors;
-CREATE TEMP TABLE pylovo_input.temp_touching_neighbors AS
+DROP TABLE IF EXISTS temp_touching_neighbors;
+CREATE TEMP TABLE temp_touching_neighbors AS
 SELECT a.id         AS a_id,
        b.id         AS b_id,
        a.floor_area AS a_area,
@@ -14,9 +14,9 @@ FROM pylovo_input.buildings a
     ST_DWithin(a.geom, b.geom, 0.01);
 
 -- also includes counts of 0
-DROP TABLE IF EXISTS pylovo_input.temp_touching_neighbor_counts;
-CREATE TEMP TABLE pylovo_input.temp_touching_neighbor_counts AS
+DROP TABLE IF EXISTS temp_touching_neighbor_counts;
+CREATE TEMP TABLE temp_touching_neighbor_counts AS
 SELECT b.id as id, count(b_id) as count
 FROM pylovo_input.buildings b
-         LEFT JOIN pylovo_input.temp_touching_neighbors n ON b.id = n.a_id
+         LEFT JOIN temp_touching_neighbors n ON b.id = n.a_id
 GROUP BY b.id;

@@ -8,15 +8,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DB_HOST = 'ip'  # Replace with database IP-address
-DB_PORT = 5432
-DB_NAME = 'name'
-DB_USER = 'user'
-DB_PASSWORD = 'pw'
+DB_NAME = ''
+DB_USER = ''
+DB_HOST = ''  # Replace with database IP-address
+DB_PORT = 0
+DB_PASSWORD = ''
 
 # SQL files directory and list of files to execute in order
 SQL_DIR = 'buildings_sql'
 SQL_FILES = [
+    '00_cleanup.sql',
     '01_create_functions.sql',
     '02_create_buildings_table.sql',
     '03_fill_id_object_id_building_use.sql',

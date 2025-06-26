@@ -33,11 +33,33 @@ class InfdbClient:
         self.cur.close()
         self.conn.close()
 
-    def set_buildings_table(self):
-        query = "SELECT * FROM pylovo_input.buildings LIMIT 10"
+    def get_relevant_buildings_in_area(self, area_geom: str) -> list[tuple[int, float, str, str, str, int]]:
+        """
+        Retrieve all buildings whose centroids are contained within a specified area geometry.
 
-        self.cur.execute(query)
-        result = self.cur.fetchall()
+        Args:
+            area_geom (str): The area geometry which defines the boundary
+                             within which to search for buildings.
 
-        for res in result:
-            print(res)
+        Returns:
+            list[tuple[int, float, str, str, str, int]]: A list of tuples, where each tuple contains:
+                - id (int): Unique building identifier
+                - floor_area (float): Floor area of the building in square meters
+                - building_type (str): Type of building (e.g., 'SFH' for Single Family House)
+                - geom (str): Building geometry in PostGIS EWKB format as hex string
+                - center (str): Building centroid geometry in PostGIS EWKB format as hex string
+                - floor_number (int): Number of floors in the building
+        """
+
+        query = """
+            SELECT id, floor_area, COALESCE(building_type, building_use) as type,
+                   geom, ST_Centroid(geom) as center, floor_number
+            FROM pylovo_input.buildings
+            WHERE ST_Contains(%(area)s, ST_Centroid(geom))
+            AND building_use IN ('Commertial', 'Public', 'Residential')
+        """
+
+        self.cur.execute(query, {"area": area_geom})
+        result = list[tuple[int, float, str, str, str, int]](self.cur.fetchall())
+
+        return result
