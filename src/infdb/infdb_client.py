@@ -58,8 +58,10 @@ class InfdbClient:
             WHERE ST_Contains(%(area)s, ST_Centroid(geom))
             AND building_use IN ('Commertial', 'Public', 'Residential')
         """
-
         self.cur.execute(query, {"area": area_geom})
+        result = self.cur.fetchall()
+
+        assert (type(result) == list[tuple[int, float, str, str, str, int]])
         result = list[tuple[int, float, str, str, str, int]](self.cur.fetchall())
 
         return result

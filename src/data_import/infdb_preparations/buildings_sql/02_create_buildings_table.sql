@@ -12,6 +12,7 @@ CREATE TABLE pylovo_input.buildings
     occupants         int,
     households        int,
     construction_year text,
+    postcode          int,
     geom              geometry(MultiPolygon, 3035)
 );
 

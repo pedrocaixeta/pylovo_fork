@@ -29,3 +29,5 @@ ALTER TABLE pylovo_input.buildings
 ALTER TABLE pylovo_input.buildings
     ADD CONSTRAINT building_type_check CHECK (building_type IN
                                               ('AB', 'MFH', 'TH', 'SFH'));
+
+ALTER TABLE pylovo_input.buildings ALTER COLUMN postcode SET NOT NULL;

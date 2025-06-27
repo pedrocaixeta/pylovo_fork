@@ -29,8 +29,9 @@ SQL_FILES = [
     '09_fill_households.sql',
     '10_fill_construction_year.sql',
     '11_fill_building_type.sql',
-    '12_create_address_table.sql',
-    '13_add_constraints.sql'
+    '12_assign_postcode_to_buildings.sql',
+    '13_create_address_table.sql',
+    '14_add_constraints.sql'
 ]
 
 
