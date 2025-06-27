@@ -10,7 +10,7 @@ FROM pylovo_input.buildings b
          JOIN census2022.durchschn_haushaltsgroesse d
               ON ST_Intersects(d.geometry, b.geom)
 WHERE b.occupants IS NOT NULL
-  AND b.building_use = 'residential'; -- already ensured by above clause
+  AND b.building_use = 'Residential'; -- already ensured by above clause
 
 SELECT * FROM temp_building_hh_grid;
 
@@ -49,4 +49,4 @@ CROSS JOIN LATERAL (
 ) nearest
 JOIN temp_building_occupants bo ON b.id = bo.building_id
 JOIN temp_cell_weights cw ON nearest.bevoelkerungszahl_id = cw.bevoelkerungszahl_id
-WHERE b.occupants IS NULL AND b.building_use = 'residential';
+WHERE b.occupants IS NULL AND b.building_use = 'Residential';

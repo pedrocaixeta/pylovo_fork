@@ -8,7 +8,7 @@ SELECT b.id                    AS building_id,
        v.einwohner
 FROM pylovo_input.buildings b
          JOIN census2022.bevoelkerungszahl v ON ST_Contains(v.geometry, ST_CENTROID(b.geom))
-WHERE building_use = 'residential';
+WHERE building_use = 'Residential';
 
 -- Step 2: Create temp table for total weights per grid cell
 DROP TABLE IF EXISTS temp_cell_weights;
@@ -60,7 +60,7 @@ CROSS JOIN LATERAL (
 ) nearest
 JOIN temp_building_occupants bo ON b.id = bo.building_id
 JOIN temp_cell_weights cw ON nearest.bevoelkerungszahl_id = cw.bevoelkerungszahl_id
-WHERE b.occupants IS NULL AND b.building_use = 'residential';
+WHERE b.occupants IS NULL AND b.building_use = 'Residential';
 
 -- Step 6: Update the original building table with the nearest estimations
 UPDATE pylovo_input.buildings b

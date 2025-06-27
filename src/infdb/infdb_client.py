@@ -1,3 +1,5 @@
+from typing import Any
+
 import psycopg2 as psy
 
 from src import utils
@@ -33,13 +35,12 @@ class InfdbClient:
         self.cur.close()
         self.conn.close()
 
-    def get_relevant_buildings_in_area(self, area_geom: str) -> list[tuple[int, float, str, str, str, int]]:
+    def get_relevant_buildings_in_plz(self, plz: int) -> list[tuple]:
         """
-        Retrieve all buildings whose centroids are contained within a specified area geometry.
+        Retrieve all buildings whose centroids are contained within a specified postcode (PLZ).
 
         Args:
-            area_geom (str): The area geometry which defines the boundary
-                             within which to search for buildings.
+            plz (str): The plz of the buildings to get
 
         Returns:
             list[tuple[int, float, str, str, str, int]]: A list of tuples, where each tuple contains:
@@ -50,18 +51,14 @@ class InfdbClient:
                 - center (str): Building centroid geometry in PostGIS EWKB format as hex string
                 - floor_number (int): Number of floors in the building
         """
-
         query = """
             SELECT id, floor_area, COALESCE(building_type, building_use) as type,
                    geom, ST_Centroid(geom) as center, floor_number
             FROM pylovo_input.buildings
-            WHERE ST_Contains(%(area)s, ST_Centroid(geom))
-            AND building_use IN ('Commertial', 'Public', 'Residential')
+            WHERE postcode = %(p)s
+            AND building_use IN ('Commercial', 'Public', 'Residential')
         """
-        self.cur.execute(query, {"area": area_geom})
+        self.cur.execute(query, {"p": plz})
         result = self.cur.fetchall()
-
-        assert (type(result) == list[tuple[int, float, str, str, str, int]])
-        result = list[tuple[int, float, str, str, str, int]](self.cur.fetchall())
 
         return result

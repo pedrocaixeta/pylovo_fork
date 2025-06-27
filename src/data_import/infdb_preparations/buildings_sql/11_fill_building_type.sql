@@ -3,7 +3,7 @@
 -- Typically have <4+ floors and many neighbors> or <3+ floors and 3+ neighbors> or <floor area > 1500>
 UPDATE pylovo_input.buildings
 SET building_type = 'AB'
-WHERE building_use = 'residential'
+WHERE building_use = 'Residential'
   AND building_type IS NULL
   AND (floor_number >= 4
     OR (
@@ -30,7 +30,7 @@ $$
                                     WHERE nb.building_type = 'AB'
                                       --AND b1.floor_number >= 3
                                       --AND ABS(b1.height - nb.height)/GREATEST(b1.height, nb.height) < 0.2
-                                      AND b1.building_use = 'residential'
+                                      AND b1.building_use = 'Residential'
                                       AND b1.building_type IS NULL)
                 UPDATE pylovo_input.buildings b
                 SET building_type = 'AB'
@@ -47,7 +47,7 @@ $$;
 -- Typically have larger floor area, 1-2 floors, and few or no neighbors
 UPDATE pylovo_input.buildings
 SET building_type = 'SFH'
-WHERE building_use = 'residential'
+WHERE building_use = 'Residential'
   AND building_type IS NULL
   AND ((floor_area < 350 AND floor_number <= 3 AND
         NOT EXISTS (SELECT 1
@@ -74,7 +74,7 @@ $$
                                     WHERE b2.building_type = 'SFH'
                                       AND b1.floor_area < 100
                                       AND b1.floor_number <= 2
-                                      AND b1.building_use = 'residential'
+                                      AND b1.building_use = 'Residential'
                                       AND b1.building_type IS NULL)
                 UPDATE pylovo_input.buildings b
                 SET building_type = 'SFH'
@@ -92,7 +92,7 @@ $$;
 -- They also tend to have similar floor area to their neighbors (within 20%)
 UPDATE pylovo_input.buildings
 SET building_type = 'TH'
-WHERE building_use = 'residential'
+WHERE building_use = 'Residential'
   AND building_type IS NULL
   AND ((floor_area BETWEEN 80 AND 150 AND floor_number BETWEEN 2 AND 3 AND
         EXISTS (SELECT 1
@@ -120,7 +120,7 @@ $$
                                              JOIN pylovo_input.buildings b1 ON n.a_id = b1.id
                                     WHERE nb.building_type = 'TH'
                                       AND ABS(n.a_area - n.b_area) / GREATEST(n.a_area, n.b_area) < 0.25
-                                      AND b1.building_use = 'residential'
+                                      AND b1.building_use = 'Residential'
                                       AND b1.building_type IS NULL
                                     GROUP BY n.a_id
                                     HAVING COUNT(*) >= 2)
@@ -151,7 +151,7 @@ $$
                                       AND b1.floor_number = b2.floor_number
                                       AND ABS(b1.floor_area - b2.floor_area) / GREATEST(b1.floor_area, b2.floor_area) <
                                           0.2
-                                      AND b1.building_use = 'residential'
+                                      AND b1.building_use = 'Residential'
                                       AND b1.building_type IS NULL)
                 UPDATE pylovo_input.buildings b
                 SET building_type = 'TH'
@@ -169,7 +169,7 @@ $$;
 -- Often have some neighbors but not as many as apartment buildings
 UPDATE pylovo_input.buildings
 SET building_type = 'MFH'
-WHERE building_use = 'residential'
+WHERE building_use = 'Residential'
   AND building_type IS NULL
   AND ((floor_number BETWEEN 2 AND 3 OR
         (floor_area > 150 AND
@@ -193,7 +193,7 @@ $$
                                              JOIN pylovo_input.buildings b2 ON n.b_id = b2.id
                                     WHERE b2.building_type = 'MFH'
                                       --AND b1.floor_number BETWEEN 2 AND 3
-                                      AND b1.building_use = 'residential'
+                                      AND b1.building_use = 'Residential'
                                       AND b1.building_type IS NULL)
                 UPDATE pylovo_input.buildings b
                 SET building_type = 'MFH'
@@ -209,7 +209,7 @@ $$;
 -- Step 5: Set rest to AB
 UPDATE pylovo_input.buildings b
 SET building_type = 'AB'
-WHERE b.building_use = 'residential'
+WHERE b.building_use = 'Residential'
   AND b.building_type IS NULL;
 
 
@@ -273,7 +273,7 @@ WITH grid_current AS (
         COUNT(*) as total_buildings
     FROM pylovo_input.buildings b
     JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
-    WHERE b.building_use = 'residential' AND w.gitter_id_100m IS NOT NULL
+    WHERE b.building_use = 'Residential' AND w.gitter_id_100m IS NOT NULL
     GROUP BY w.gitter_id_100m
 )
 SELECT * FROM grid_current;
@@ -382,7 +382,7 @@ CREATE TABLE temp_building_rankings AS (
     FROM pylovo_input.buildings b
     JOIN census2022.wohnungen_nach_gebaeudetyp_groesse w ON ST_Contains(w.geometry, ST_Centroid(b.geom))
     JOIN temp_grid_comparison gc ON w.gitter_id_100m = gc.grid_id
-    WHERE b.building_use = 'residential'
+    WHERE b.building_use = 'Residential'
       AND gc.total_target > 0
 );
 

@@ -17,7 +17,6 @@ class ResultExistsError(Exception):
     "Raised when the PLZ has already been created."
     pass
 
-USE_INFDB = True
 
 class GridGenerator:
     """
@@ -138,8 +137,7 @@ class GridGenerator:
         INTO: buildings_tem
         """
         if USE_INFDB:
-            plz_geom = self.dbc.get_plz_geom(self.plz)
-            buildings_data = self.inf_dbc.get_relevant_buildings_in_area(plz_geom)
+            buildings_data = self.inf_dbc.get_relevant_buildings_in_plz(self.plz)
             self.dbc.set_buildings_table(buildings_data)
         else:
             self.dbc.set_residential_buildings_table(self.plz)

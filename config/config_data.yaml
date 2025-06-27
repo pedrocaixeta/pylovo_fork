@@ -1,3 +1,12 @@
+# If set to true ensure that you have the connection details in your .env file. Template:
+# // .env
+# INFDB_DBNAME='postgres'
+# INFDB_USER='postgres'
+# INFDB_HOST='00.000.00.00'
+# INFDB_PORT=1234
+# INFDB_PASSWORD='pw'
+USE_INFDB: False
+
 # Default Database connection configuration
 DBNAME: pylovo_db_local
 USER: postgres

@@ -56,32 +56,6 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         self.cur.execute(query, {"v": VERSION_ID, "p": plz})
 
-    def get_plz_geom(self, plz: int) -> str:
-        """
-       Retrieve the geometry data for a given postal code (PLZ).
-
-       Args:
-           plz (int): The postal code to look up.
-
-       Returns:
-           str: The geometry(MultiPolygon, 3035) data for the postal code
-
-       Raises:
-           ValueError: If the postal code is not found in the database.
-       """
-        query = """
-            SELECT post.geom
-            FROM postcode_result AS post
-            WHERE version_id = %(v)s AND postcode_result_plz = %(plz)s
-            LIMIT 1"""
-
-        self.cur.execute(query, {"v": VERSION_ID, "plz": plz})
-        result = self.cur.fetchone()
-        if result is None:
-            raise ValueError(f"Postal code {plz} not found in database")
-
-        return result[0]
-
     def set_residential_buildings_table(self, plz: int):
         """
         * Fills buildings_tem with residential buildings which are inside the plz area
@@ -103,7 +77,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         WHERE plz ISNULL;"""
         self.cur.execute(query, {"v": VERSION_ID, "plz": plz})
 
-    def set_buildings_table(self, buildings_data: list[tuple[int, float, str, str, str, int]]) -> None:
+    def set_buildings_table(self, buildings_data: list[tuple]) -> None:
         """
         Insert buildings data associated with a specific postal code into the database.
 
@@ -111,24 +85,18 @@ class PreprocessingMixin(BaseMixin, ABC):
         building with the given postal code. The temporary tables are then used when generating grids.
 
         Args:
-            plz (int): The postal code (Postleitzahl) to associate with the buildings.
             buildings_data (list[tuple[int, float, str, str, str, int]]): List of building tuples
                 containing (id, floor_area, building_type, geom, center_geom, floor_number).
 
         Returns:
             None
         """
-
-        # Prepare the insert query - assuming table name is 'plz_buildings'
-        # Adjust table name and column names as needed for your schema
         insert_query = """
             INSERT INTO buildings_tem
             (osm_id, area, type, geom, center, floors)
             VALUES (%s, %s, %s, %s, %s, %s)
         """
-
         self.cur.executemany(insert_query, buildings_data)
-        self.conn.commit()
 
     def set_other_buildings_table(self, plz: int):
         """

@@ -31,6 +31,7 @@ PORT = os.getenv("PORT", CONFIG_DATA["PORT"])
 PASSWORD = os.getenv("PASSWORD", CONFIG_DATA["PASSWORD"])
 TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATA["TARGET_SCHEMA"])
 
+USE_INFDB = True if os.getenv("USE_INFDB", CONFIG_DATA["USE_INFDB"]) in [True, "True"] else False
 INFDB_DBNAME = os.getenv("INFDB_DBNAME", "not set")
 INFDB_USER = os.getenv("INFDB_USER", "not set")
 INFDB_HOST = os.getenv("INFDB_HOST", "not set")

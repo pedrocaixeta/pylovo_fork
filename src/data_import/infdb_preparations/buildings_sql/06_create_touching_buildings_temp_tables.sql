@@ -8,8 +8,8 @@ SELECT a.id         AS a_id,
 FROM pylovo_input.buildings a
          JOIN pylovo_input.buildings b ON
     a.id != b.id AND
-    a.building_use = 'residential' AND
-    b.building_use = 'residential' AND
+    a.building_use = 'Residential' AND
+    b.building_use = 'Residential' AND
     a.geom && b.geom AND -- check for bbox intersection
     ST_DWithin(a.geom, b.geom, 0.01);
 
