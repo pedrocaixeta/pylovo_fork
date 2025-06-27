@@ -55,9 +55,11 @@ class GridGenerator:
         try:
             self.generate_grid()
             self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
+            self.dbc.commit_changes()
             if analyze_grids:
                 pc = ParameterCalculator()
                 pc.calc_parameters_per_plz(plz=self.plz)
+                self.dbc.commit_changes()  # commit the changes to the database
         except ResultExistsError:
             self.dbc.logger.info(f"Grid for the postcode area {plz} has already been generated.")
         except Exception as e:
@@ -67,9 +69,8 @@ class GridGenerator:
             self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
             traceback.print_exc()
             return
-
-        self.dbc.drop_temp_tables()  # drop temp tables
-        self.dbc.commit_changes()  # commit the changes to the database
+        finally:
+            self.dbc.drop_temp_tables()  # drop temp tables
 
         print('-------------------- end', self.plz, '-----------------------------')
 
