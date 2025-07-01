@@ -24,7 +24,8 @@ start_time = time.time()
 gg = GridGenerator(plz=plz)
 
 # import building data to the database and get information about the plz
-import_buildings_for_single_plz(gg)
+if not USE_INFDB:
+    import_buildings_for_single_plz(gg)
 
 # generate a grid for the specified region
 gg.generate_grid_for_single_plz(plz=plz, analyze_grids=ANALYZE_GRIDS)
