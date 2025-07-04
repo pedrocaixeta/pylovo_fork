@@ -13,6 +13,7 @@ CREATE TABLE pylovo_input.buildings
     households        int,
     construction_year text,
     postcode          int,
+    address_street_id bigint,
     geom              geometry(MultiPolygon, 3035)
 );
 
