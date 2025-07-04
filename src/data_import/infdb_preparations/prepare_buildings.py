@@ -31,7 +31,8 @@ SQL_FILES = [
     '11_fill_building_type.sql',
     '12_assign_postcode_to_buildings.sql',
     '13_create_address_table.sql',
-    '14_add_constraints.sql'
+    '14_assign_streets_to_buildings.sql',
+    '15_add_constraints.sql'
 ]
 
 
