@@ -51,6 +51,7 @@ class GridGenerator:
         print('-------------------- start', self.plz, '---------------------------')
 
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
+        self.dbc.reset_tables()  # Reset temporary tables
 
         try:
             self.generate_grid()
@@ -68,9 +69,8 @@ class GridGenerator:
             self.dbc.conn.rollback()  # rollback the transaction
             self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
             traceback.print_exc()
-            return
-        finally:
-            self.dbc.drop_temp_tables()  # drop temp tables
+
+        self.dbc.drop_temp_tables()  # drop temp tables
 
         print('-------------------- end', self.plz, '-----------------------------')
 
@@ -83,6 +83,7 @@ class GridGenerator:
         :type analyze_grids: bool
         """
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
+        self.dbc.reset_tables()  # Reset temporary tables
 
         for index, row in df_plz.iterrows():
             self.plz = int(row['plz'])
@@ -91,9 +92,11 @@ class GridGenerator:
                 self.generate_grid()
                 self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
                 self.dbc.reset_tables()  # Reset temporary tables
+                self.dbc.commit_changes()  # commit the changes to the database
                 if analyze_grids:
                     pc = ParameterCalculator()
                     pc.calc_parameters_per_plz(plz=self.plz)
+                    self.dbc.commit_changes()  # commit the changes to the database
             except ResultExistsError:
                 self.dbc.logger.info(f"Grid for the postcode area {self.plz} has already been generated.")
             except Exception as e:
