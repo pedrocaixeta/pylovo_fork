@@ -14,7 +14,7 @@ from src.grid_generator import GridGenerator
 from src.config_loader import ANALYZE_GRIDS
 
 # enter a plz to generate grid for:
-plz = "80803"
+plz = 80803
 plot_results = False
 
 # timing of the script
@@ -24,7 +24,8 @@ start_time = time.time()
 gg = GridGenerator(plz=plz)
 
 # import building data to the database and get information about the plz
-import_buildings_for_single_plz(gg)
+if not USE_INFDB:
+    import_buildings_for_single_plz(gg)
 
 # generate a grid for the specified region
 gg.generate_grid_for_single_plz(plz=plz, analyze_grids=ANALYZE_GRIDS)

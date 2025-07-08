@@ -7,7 +7,7 @@ import time
 from src.classification.sampling.sample import get_municipal_register_as_dataframe
 from src.data_import.import_buildings import import_buildings_for_multiple_plz
 from src.grid_generator import GridGenerator
-from src.config_loader import ANALYZE_GRIDS
+from src.config_loader import ANALYZE_GRIDS, USE_INFDB
 
 # start timing the script
 start_time = time.time()
@@ -15,11 +15,12 @@ start_time = time.time()
 # enter the PLZ for which the geodata is exported
 plz_list = [80802, 80687]
 
-# get ags info for plz areas
-municipal_register = get_municipal_register_as_dataframe()
-df_plz_ags = municipal_register[municipal_register['plz'].isin(plz_list)]
-# import buildings and generate grids
-import_buildings_for_multiple_plz(sample_plz=df_plz_ags)
+if not USE_INFDB:
+    # get ags info for plz areas
+    municipal_register = get_municipal_register_as_dataframe()
+    df_plz_ags = municipal_register[municipal_register['plz'].isin(plz_list)]
+    # import buildings and generate grids
+    import_buildings_for_multiple_plz(sample_plz=df_plz_ags)
 
 # initialize GridGenerator
 gg = GridGenerator()

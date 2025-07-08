@@ -1,4 +1,7 @@
 from abc import ABC, abstractmethod
+import psycopg2
+import logging
+import sqlalchemy
 
 class BaseMixin(ABC):
     def __init__(self):
@@ -9,16 +12,16 @@ class BaseMixin(ABC):
         self.sqla_engine = self.get_sqla_engine()
 
     @abstractmethod
-    def get_connection(self):
+    def get_connection(self) -> psycopg2.extensions.connection:
         """Subclass must provide database client"""
         pass
 
     @abstractmethod
-    def get_logger(self):
+    def get_logger(self) -> logging.Logger:
         """Subclass must provide logger"""
         pass
 
     @abstractmethod
-    def get_sqla_engine(self):
+    def get_sqla_engine(self) -> sqlalchemy.Engine:
         """Subclass must provide logger"""
         pass
