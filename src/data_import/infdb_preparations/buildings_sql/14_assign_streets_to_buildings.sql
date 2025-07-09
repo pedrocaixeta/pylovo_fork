@@ -10,14 +10,14 @@ DROP TABLE IF EXISTS temp_closest_ways;
 CREATE TEMP TABLE temp_closest_ways AS
 SELECT
     ba.building_id,
-    w.id AS way_id_by_address
+    w.way_id AS way_id_by_address
 FROM pylovo_input.building_addresses AS ba
 JOIN pylovo_input.buildings AS b ON ba.building_id = b.id
 JOIN pylovo_input.way_names wn ON ba.street = wn.name OR ba.street = wn.name_kurz
 JOIN LATERAL (
-    SELECT w.id, w.geom
+    SELECT w.way_id, w.geom
     FROM pylovo_input.ways AS w
-    WHERE w.id = wn.way_id
+    WHERE w.way_id = wn.way_id
     ORDER BY w.geom <-> b.geom
     LIMIT 1
 ) w ON true;

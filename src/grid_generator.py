@@ -51,7 +51,7 @@ class GridGenerator:
         print('-------------------- start', self.plz, '---------------------------')
 
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
-        self.dbc.reset_tables()  # Reset temporary tables
+        
 
         try:
             self.generate_grid()
@@ -71,6 +71,7 @@ class GridGenerator:
             traceback.print_exc()
 
         self.dbc.drop_temp_tables()  # drop temp tables
+        self.dbc.commit_changes()  # commit the changes to the database
 
         print('-------------------- end', self.plz, '-----------------------------')
 
@@ -83,7 +84,7 @@ class GridGenerator:
         :type analyze_grids: bool
         """
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
-        self.dbc.reset_tables()  # Reset temporary tables
+        
 
         for index, row in df_plz.iterrows():
             self.plz = int(row['plz'])
@@ -183,7 +184,14 @@ class GridGenerator:
         FROM: ways, buildings_tem
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
-        ways_count = self.dbc.set_ways_tem_table(self.plz)
+        if USE_INFDB:
+            plz_geom = self.dbc.get_plz_geometry(self.plz)
+            ways_rows = self.inf_dbc.fetch_ways_from_infdb(plz_geom)
+            ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows)
+        else:
+            ways_count = self.dbc.set_ways_tem_table(self.plz)
+
+        
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
         self.dbc.connect_unconnected_ways()
         self.logger.info("Ways connection finished in ways_tem")

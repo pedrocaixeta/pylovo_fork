@@ -2,21 +2,32 @@ import psycopg2
 import os
 import logging
 import time
+from src.config_loader import *
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DB_NAME = ''
-DB_USER = ''
-DB_HOST = ''  # Replace with database IP-address
-DB_PORT = 0
-DB_PASSWORD = ''
+DB_NAME = INFDB_DBNAME
+DB_USER = INFDB_USER
+DB_HOST = INFDB_HOST  # Replace with database IP-address
+DB_PORT = INFDB_PORT
+DB_PASSWORD = INFDB_PASSWORD
 
 # SQL files directory and list of files to execute in order
-SQL_DIR = 'buildings_sql'
-SQL_FILES = [
+WAYS_SQL_DIR = os.path.join(os.path.dirname(__file__), 'ways_sql')
+BUILDINGS_SQL_DIR = os.path.join(os.path.dirname(__file__), 'buildings_sql')
+
+
+WAYS_SQL_FILES = [
+    '00_cleanup.sql',
+    '01_create_functions.sql',
+    '02_create_ways_table.sql',
+    '03_fill_id_ways_table.sql',
+    '04_create_names_table.sql',
+]
+BUILDINGS_SQL_FILES = [
     '00_cleanup.sql',
     '01_create_functions.sql',
     '02_create_buildings_table.sql',
@@ -71,14 +82,14 @@ class PostgreSQLExecutor:
             self.connection.close()
         logger.info("Database connection closed")
 
-    def execute_sql_file(self, file_path):
+    def execute_sql_file(self, sql_dir, file_path):
         """Execute SQL commands from a file"""
         try:
-            full_path = os.path.join(SQL_DIR, file_path)
+            full_path = os.path.join(sql_dir, file_path)
             with open(full_path, 'r', encoding='utf-8') as file:
                 sql_content = file.read()
 
-            logger.info(f"Executing {file_path}")
+            logger.info(f"Executing {os.path.join(sql_dir, file_path)}")
             self.cursor.execute(sql_content)
             self.connection.commit()
             logger.info(f"✅ Successfully executed {file_path}")
@@ -88,7 +99,7 @@ class PostgreSQLExecutor:
             self.connection.rollback()
             raise
 
-    def execute_sql_scripts(self, script_files):
+    def execute_sql_scripts(self, sql_dir, script_files):
         """Execute multiple SQL script files in order"""
         try:
             self.connect()
@@ -97,14 +108,14 @@ class PostgreSQLExecutor:
             logger.info(f"Starting execution of {total_files} SQL scripts")
 
             for i, script_file in enumerate(script_files, 1):
-                if not os.path.exists(os.path.join(SQL_DIR, script_file)):
+                if not os.path.exists(os.path.join(sql_dir, script_file)):
                     msg = f"SQL file not found: {script_file}"
                     logger.error(msg)
                     raise FileNotFoundError(msg)
 
                 logger.info(f"[{i}/{total_files}] Executing script: {script_file}")
                 start_time = time.time()
-                self.execute_sql_file(script_file)
+                self.execute_sql_file(sql_dir, script_file)
                 logger.info(f"[{i}/{total_files}] Finished script: in {round(time.time() - start_time, 2)} seconds")
 
                 # Small delay between scripts
@@ -132,13 +143,24 @@ def main():
         )
 
         # Validate all SQL files exist before starting
-        missing_files = [f for f in SQL_FILES if not os.path.exists(os.path.join(SQL_DIR, f))]
-        if missing_files:
-            logger.error(f"Missing SQL files in {SQL_DIR}/: {missing_files}")
+        missing_ways = [f for f in WAYS_SQL_FILES if not os.path.exists(os.path.join(WAYS_SQL_DIR, f))]
+        missing_buildings = [f for f in BUILDINGS_SQL_FILES if not os.path.exists(os.path.join(BUILDINGS_SQL_DIR, f))]
+
+        if missing_ways or missing_buildings:
+            if missing_ways:
+                logger.error(f"Missing WAYS SQL files in {WAYS_SQL_DIR}/: {missing_ways}")
+            if missing_buildings:
+                logger.error(f"Missing BUILDINGS SQL files in {BUILDINGS_SQL_DIR}/: {missing_buildings}")
             return 1
 
-        # Execute all SQL scripts
-        db_executor.execute_sql_scripts(SQL_FILES)
+        
+        # Execute WAYS scripts first
+        logger.info("Running WAYS SQL scripts")
+        db_executor.execute_sql_scripts(WAYS_SQL_DIR, WAYS_SQL_FILES)
+
+        # Then BUILDINGS scripts
+        logger.info("Running BUILDINGS SQL scripts")
+        db_executor.execute_sql_scripts(BUILDINGS_SQL_DIR, BUILDINGS_SQL_FILES)
 
         print("🏠 Prepared buildings table successfully!")
         return 0

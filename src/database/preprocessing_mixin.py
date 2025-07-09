@@ -339,6 +339,49 @@ class PreprocessingMixin(BaseMixin, ABC):
                    WHERE ST_Within(center, (SELECT ungeom FROM union_table))
                      AND type = 'Transformer';"""
         self.cur.execute(query)
+    
+    def get_plz_geometry(self, plz: int):
+        """
+        Fetches the geometry for the given PLZ from local postcode_result table.
+        """
+        query = """
+            SELECT geom
+            FROM postcode_result
+            WHERE version_id = %(v)s AND postcode_result_plz = %(p)s
+        """
+        self.cur.execute(query, {"v": VERSION_ID, "p": plz})
+        row = self.cur.fetchone()
+
+        if not row:
+            raise ValueError(f"No geometry found in postcode_result for PLZ: {plz}")
+
+        return row[0]
+    
+    def set_ways_tem_table_infdb(self, ways_data: list[tuple]) -> int:
+        """
+        Insert remote ways into the local ways_tem table.
+
+        Args:
+            ways_data (list[tuple]): Each tuple should contain
+                (clazz, source, target, cost, reverse_cost, geom, way_id)
+
+        Returns:
+            int: Number of inserted ways
+        """
+        if not ways_data:
+            raise ValueError("No rows to insert into ways_tem")
+
+        insert_query = """
+            INSERT INTO ways_tem
+            (clazz, source, target, cost, reverse_cost, geom, way_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        self.cur.executemany(insert_query, ways_data)
+
+        self.cur.execute("SELECT COUNT(*) FROM ways_tem")
+        return self.cur.fetchone()[0]
+
+
 
     def set_ways_tem_table(self, plz: int) -> int:
         """

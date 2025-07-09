@@ -20,7 +20,7 @@ class InfdbClient:
                 password=pw,
                 host=host,
                 port=port,
-                options=f"-c search_path={TARGET_SCHEMA},public",
+                options=f"-c search_path={TARGET_SCHEMA_INFDB},public",
             )
             self.cur = self.conn.cursor()
             self.db_path = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{dbname}"
@@ -62,3 +62,22 @@ class InfdbClient:
         result = self.cur.fetchall()
 
         return result
+    
+    def fetch_ways_from_infdb(self, plz_geom) -> list:
+        """
+        Fetch ways from remote DB whose geometry intersects the given PLZ geometry.
+        Only the columns in ways_tem are selected.
+        """
+        query = """
+            SELECT clazz, source, target, cost, reverse_cost, geom, way_id
+            FROM ways
+            WHERE ST_Intersects(geom, %(g)s)
+        """
+        self.cur.execute(query, {"g": plz_geom})
+        rows = self.cur.fetchall()
+
+        if not rows:
+            raise ValueError("No ways found in remote DB intersecting the given PLZ geometry")
+
+        return rows
+
