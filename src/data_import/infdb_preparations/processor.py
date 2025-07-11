@@ -84,6 +84,7 @@ class PostgreSQLExecutor:
 
     def execute_sql_file(self, sql_dir, file_path):
         """Execute SQL commands from a file"""
+        start_time = time.time()
         try:
             full_path = os.path.join(sql_dir, file_path)
             with open(full_path, 'r', encoding='utf-8') as file:
@@ -92,12 +93,12 @@ class PostgreSQLExecutor:
             logger.info(f"Executing {os.path.join(sql_dir, file_path)}")
             self.cursor.execute(sql_content)
             self.connection.commit()
-            logger.info(f"✅ Successfully executed {file_path}")
+            logger.info(f"✅ Successfully executed {file_path} in {round(time.time() - start_time, 2)} seconds")
 
         except Exception as e:
-            logger.error(f"❌ Error executing {file_path}: {str(e)}")
+            logger.error(f"💥 Error executing {file_path} after {round(time.time() - start_time, 2)} seconds")
             self.connection.rollback()
-            raise
+            raise e
 
     def execute_sql_scripts(self, sql_dir, script_files):
         """Execute multiple SQL script files in order"""
@@ -114,19 +115,13 @@ class PostgreSQLExecutor:
                     raise FileNotFoundError(msg)
 
                 logger.info(f"[{i}/{total_files}] Executing script: {script_file}")
-                start_time = time.time()
                 self.execute_sql_file(sql_dir, script_file)
-                logger.info(f"[{i}/{total_files}] Finished script: in {round(time.time() - start_time, 2)} seconds")
 
                 # Small delay between scripts
                 if i < total_files:
                     time.sleep(0.5)
-
-            logger.info("🎉 All SQL scripts executed successfully!")
-
         except Exception as e:
-            logger.error(f"💥 Error during script execution: {str(e)}")
-            raise
+            raise e
         finally:
             self.disconnect()
 
@@ -162,13 +157,12 @@ def main():
         logger.info("Running BUILDINGS SQL scripts")
         db_executor.execute_sql_scripts(BUILDINGS_SQL_DIR, BUILDINGS_SQL_FILES)
 
-        print("🏠 Prepared buildings table successfully!")
-        return 0
+        logger.info("🏠 Prepared buildings and ways successfully!")
 
     except Exception as e:
-        print(f"❌ Preparation of buildings failed: {str(e)}")
-        return 1
+        logger.error(f"💥 Something went wrong: {str(e)}")
+        raise e
 
 
 if __name__ == "__main__":
-    exit(main())
+    main()
