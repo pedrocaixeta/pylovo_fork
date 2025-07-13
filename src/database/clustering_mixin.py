@@ -77,7 +77,7 @@ class ClusteringMixin(BaseMixin, ABC):
         WHERE id IN %(v)s;"""
         self.cur.execute(query, {"v": tuple(map(int, vertices))})
 
-    def get_connected_component_geometries(self, vertices: Union[list, tuple]) -> (np.ndarray, np.ndarray):
+    def get_connected_component_geometries(self, vertices: Union[list, tuple]) -> tuple[np.ndarray, np.ndarray]:
         """
         Gets the vertice IDs and coordinates of all buildings within a connected component
         :param vertices: vertice IDs of the connected component
