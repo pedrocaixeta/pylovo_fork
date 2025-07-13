@@ -77,29 +77,39 @@ class ClusteringMixin(BaseMixin, ABC):
         WHERE id IN %(v)s;"""
         self.cur.execute(query, {"v": tuple(map(int, vertices))})
 
-    def update_large_kmeans_cluster(self, vertices: Union[list, tuple], cluster_count: int):
+    def get_connected_component_geometries(self, vertices: Union[list, tuple]) -> (np.ndarray, np.ndarray):
         """
-        Applies k-means clustering to large components and updated values in buildings_tem
-        :param vertices:
-        :param cluster_count:
+        Gets the vertice IDs and coordinates of all buildings within a connected component
+        :param vertices: vertice IDs of the connected component
+        :return: (selected_vertices, coordinates) - vertice IDs and coordinates of the buildings within the connected component as tuple of two np.arrays
+        """
+        query = """
+                SELECT vertice_id, ST_AsText(center) as wkt 
+                FROM buildings_tem
+                WHERE vertice_id IN %(v)s
+                """
+        self.cur.execute(query, {"v": tuple(map(int, vertices))})
+        data = self.cur.fetchall()
+        selected_vertices = np.array([x[0] for x in data])
+        coordinates = np.float64(np.array([x[1].replace('POINT(', '').replace(')', '').split() for x in data]))
+
+        return selected_vertices, coordinates
+
+    def update_kmeans_cluster_multiple(self, vertices: np.ndarray, kcids: np.ndarray) -> None:
+        """
+        Assigns the given kcids to the buildings with the given vertice IDs.
+        Both inputs should have the same length and corresponding order.
+        :param vertices: np.array containing the vertice IDs of the buildings
+        :param kcids: np.array containing the kcids
         :return:
         """
         query = """
-                WITH kmean AS (SELECT osm_id,
-                                      ST_ClusterKMeans(center, %(ca)s)
-                                      OVER () AS cid
-                               FROM buildings_tem
-                               WHERE vertice_id IN %(v)s),
-                     maxk AS (SELECT MAX(kcid) AS max_k FROM buildings_tem)
-                UPDATE buildings_tem b
-                SET kcid = (CASE
-                                WHEN m.max_k ISNULL THEN k.cid + 1
-                                ELSE m.max_k + k.cid + 1
-                    END)
-                FROM kmean AS k,
-                     maxk AS m
-                WHERE b.osm_id = k.osm_id;"""
-        self.cur.execute(query, {"ca": cluster_count, "v": tuple(map(int, vertices))})
+                UPDATE buildings_tem
+                SET kcid = %(k)s
+                WHERE vertice_id IN %(v)s;
+                """
+        for kcid in np.unique(kcids):
+            self.cur.execute(query, {"k": int(kcid), "v": tuple(map(int, vertices[kcids == kcid]))})
 
     def update_kmeans_cluster(self, vertices: list) -> None:
         """

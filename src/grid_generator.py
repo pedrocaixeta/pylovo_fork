@@ -6,6 +6,7 @@ import numpy as np
 import pandapower as pp
 from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
+from sklearn.cluster import KMeans
 
 import src.database.database_client as dbc
 from src.parameter_calculator import ParameterCalculator
@@ -226,7 +227,10 @@ class GridGenerator:
         elif conn_building_count >= LARGE_COMPONENT_LOWER_BOUND:
             # K-means applied to large component to define subgroups with cluster ids
             cluster_count = int(conn_building_count / LARGE_COMPONENT_DIVIDER)
-            self.dbc.update_large_kmeans_cluster(vertices, cluster_count)
+            k_means = KMeans(n_clusters=cluster_count, random_state=K_MEANS_SEED, n_init="auto")
+            (selected_vertices, coordinates) = self.dbc.get_connected_component_geometries(vertices)
+            kcids = k_means.fit_predict(coordinates) + self.dbc.get_kcid_length() + 1
+            self.dbc.update_kmeans_cluster_multiple(selected_vertices, kcids)
             log_msg = f"Large component {component_index} clustered into {cluster_count} groups" if component_index is not None else f"Large component clustered into {cluster_count} groups"
             self.logger.debug(log_msg)
         else:
