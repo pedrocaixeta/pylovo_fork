@@ -20,7 +20,7 @@ class InfdbClient:
                 password=pw,
                 host=host,
                 port=port,
-                options=f"-c search_path={TARGET_SCHEMA_INFDB},public",
+                options=f"-c search_path={INFDB_TARGET_SCHEMA},public",
             )
             self.cur = self.conn.cursor()
             self.db_path = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{dbname}"
@@ -54,7 +54,7 @@ class InfdbClient:
         query = """
             SELECT id, floor_area, COALESCE(building_type, building_use) as type,
                    geom, ST_Centroid(geom) as center, floor_number
-            FROM pylovo_input.buildings
+            FROM buildings
             WHERE postcode = %(p)s
             AND building_use IN ('Commercial', 'Public', 'Residential')
         """

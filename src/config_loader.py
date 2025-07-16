@@ -37,7 +37,7 @@ INFDB_USER = os.getenv("INFDB_USER", "not set")
 INFDB_HOST = os.getenv("INFDB_HOST", "not set")
 INFDB_PORT = os.getenv("INFDB_PORT", "not set")
 INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", "not set")
-TARGET_SCHEMA_INFDB = os.getenv("TARGET_SCHEMA_INFDB", "public")
+INFDB_TARGET_SCHEMA = os.getenv("INFDB_TARGET_SCHEMA", "public")
 
 # Assign other variables from CONFIG_DATA
 RESULT_DIR = os.path.join(os.getcwd(), "results")
