@@ -78,15 +78,14 @@ class GridGenerator:
         :param analyze_grids: option to analyse the results after grid generation, defaults to False
         :type analyze_grids: bool
         """
-        self.dbc.create_temp_tables()  # create temp tables for the grid generation
 
         for index, row in df_plz.iterrows():
             self.plz = str(row['plz'])
             print('-------------------- start', self.plz, '---------------------------')
+            self.dbc.create_temp_tables()  # create temp tables for the grid generation
             try:
                 self.generate_grid()
                 self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
-                self.dbc.reset_tables()  # Reset temporary tables
                 if analyze_grids:
                     pc = ParameterCalculator()
                     pc.calc_parameters_per_plz(plz=self.plz)
@@ -99,9 +98,9 @@ class GridGenerator:
                 self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION),
                                                           self.plz)  # delete from sample set
                 continue
+            self.dbc.drop_temp_tables()  # drop temp tables
             print('-------------------- end', self.plz, '-----------------------------')
 
-        self.dbc.drop_temp_tables()  # drop temp tables
         self.dbc.commit_changes()  # commit the changes to the database
 
     def generate_grid(self):
