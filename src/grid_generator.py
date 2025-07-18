@@ -363,12 +363,25 @@ class GridGenerator:
         # We could calculate the total transformer cost by summing the costs of all selected transformers:
         # total_transformer_cost = sum([transformer2cost[v[1]] for v in valid_cluster_dict.values()])
 
+        # Reorder bcids for consistency
+        valid_cluster_dict = self._order_clusters_by_min_vertice(valid_cluster_dict)
+
         # Save results to database
         self.dbc.clear_grid_result_in_kmean_cluster(plz, kcid)
         for bcid, cluster_data in valid_cluster_dict.items():
             self.dbc.upsert_bcid(plz, kcid, bcid, vertices=cluster_data[0],
                                          transformer_rated_power=cluster_data[1])
         self.logger.debug(f"bcids for plz {plz} kcid {kcid} found...")
+
+    def _order_clusters_by_min_vertice(self, cluster_dict: dict) -> dict:
+        """
+        Helper function to reassign bcids of the given building clusters ordered by the smallest vertice IDs of the clusters.
+        Returns the same result for cluster distributions that are equivalent up to renaming.
+        :param cluster_dict: input clusters
+        :return: reordered clusters
+        """
+        ordered_vertices = sorted(cluster_dict.items(), key = lambda cluster: min(cluster[1][0]))
+        return {new_bcid: vertices for new_bcid, (_, vertices) in enumerate(ordered_vertices, start=1)}
 
     def position_brownfield_transformers(self, plz: int, kcid: int, transformer_list: list) -> None:
         """

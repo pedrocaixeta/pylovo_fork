@@ -6,7 +6,7 @@ from decimal import *
 from typing import *
 
 import numpy as np
-from scipy.cluster.hierarchy import fcluster
+from scipy.cluster.hierarchy import cut_tree
 
 from src import utils
 from src.config_loader import *
@@ -196,13 +196,13 @@ class ClusteringMixin(BaseMixin, ABC):
     def try_clustering(self, Z: np.ndarray, cluster_amount: int, localid2vid: dict, buildings: pd.DataFrame,
             consumer_cat_df: pd.DataFrame, transformer_capacities: np.ndarray, double_trans: np.ndarray, ) -> tuple[
         dict, dict, int]:
-        flat_groups = fcluster(Z, t=cluster_amount, criterion="maxclust")
+        flat_groups = cut_tree(Z, n_clusters=cluster_amount)
         cluster_ids = np.unique(flat_groups)
         cluster_count = len(cluster_ids)
         # Check if simultaneous load can be satisfied with possible transformers
         cluster_dict = {}
         invalid_cluster_dict = {}
-        for cluster_id in range(1, cluster_count + 1):
+        for cluster_id in range(cluster_count):
             vid_list = [localid2vid[lid[0]] for lid in np.argwhere(flat_groups == cluster_id)]
             total_sim_load = utils.simultaneousPeakLoad(buildings, consumer_cat_df, vid_list)
             if (total_sim_load >= max(transformer_capacities) and len(vid_list) >= 5):  # the cluster is too big
