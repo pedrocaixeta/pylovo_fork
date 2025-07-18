@@ -9,6 +9,7 @@ from scipy.spatial.distance import squareform
 from sklearn.cluster import KMeans
 
 import src.database.database_client as dbc
+from src.infdb.infdb_client import InfdbClient
 from src.parameter_calculator import ParameterCalculator
 from src import utils
 from src.config_loader import *
@@ -24,23 +25,26 @@ class GridGenerator:
     """
 
     def __init__(self, plz=999999, **kwargs):
-        self.plz = str(plz)
+        self.plz = plz
         self.dbc = dbc.DatabaseClient()
         self.dbc.insert_version_if_not_exists()
         self.dbc.insert_parameter_tables(consumer_categories=CONSUMER_CATEGORIES)
         self.logger = utils.create_logger(
             name="GridGenerator", log_file=kwargs.get("log_file", "log.txt"), log_level=LOG_LEVEL
         )
+        self.inf_dbc = None
+        if USE_INFDB:
+            self.inf_dbc = InfdbClient()
 
     def __del__(self):
         self.dbc.__del__()
 
-    def generate_grid_for_single_plz(self, plz: str, analyze_grids: bool = False) -> None:
+    def generate_grid_for_single_plz(self, plz: int, analyze_grids: bool = False) -> None:
         """
         Generates the grid for a single PLZ.
 
         :param plz: Postal code for which the grid should be generated.
-        :type plz: str
+        :type plz: int
         :param analyze_grids: Option to analyze the results after grid generation, defaults to False.
         :type analyze_grids: bool
         """
@@ -48,13 +52,16 @@ class GridGenerator:
         print('-------------------- start', self.plz, '---------------------------')
 
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
+        self.dbc.reset_tables()  # Reset temporary tables
 
         try:
             self.generate_grid()
             self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
+            self.dbc.commit_changes()
             if analyze_grids:
                 pc = ParameterCalculator()
                 pc.calc_parameters_per_plz(plz=self.plz)
+                self.dbc.commit_changes()  # commit the changes to the database
         except ResultExistsError:
             self.dbc.logger.info(f"Grid for the postcode area {plz} has already been generated.")
         except Exception as e:
@@ -63,10 +70,8 @@ class GridGenerator:
             self.dbc.conn.rollback()  # rollback the transaction
             self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
             traceback.print_exc()
-            return
 
         self.dbc.drop_temp_tables()  # drop temp tables
-        self.dbc.commit_changes()  # commit the changes to the database
 
         print('-------------------- end', self.plz, '-----------------------------')
 
@@ -78,17 +83,20 @@ class GridGenerator:
         :param analyze_grids: option to analyse the results after grid generation, defaults to False
         :type analyze_grids: bool
         """
-
+        
         for index, row in df_plz.iterrows():
-            self.plz = str(row['plz'])
+            self.plz = int(row['plz'])
             print('-------------------- start', self.plz, '---------------------------')
             self.dbc.create_temp_tables()  # create temp tables for the grid generation
             try:
                 self.generate_grid()
                 self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
+                self.dbc.reset_tables()  # Reset temporary tables
+                self.dbc.commit_changes()  # commit the changes to the database
                 if analyze_grids:
                     pc = ParameterCalculator()
                     pc.calc_parameters_per_plz(plz=self.plz)
+                    self.dbc.commit_changes()  # commit the changes to the database
             except ResultExistsError:
                 self.dbc.logger.info(f"Grid for the postcode area {self.plz} has already been generated.")
             except Exception as e:
@@ -132,8 +140,13 @@ class GridGenerator:
         FROM: res, oth
         INTO: buildings_tem
         """
-        self.dbc.set_residential_buildings_table(self.plz)
-        self.dbc.set_other_buildings_table(self.plz)
+        if USE_INFDB:
+            buildings_data = self.inf_dbc.get_relevant_buildings_in_plz(self.plz)
+            self.dbc.set_buildings_table(buildings_data)
+        else:
+            self.dbc.set_residential_buildings_table(self.plz)
+            self.dbc.set_other_buildings_table(self.plz)
+
         self.logger.info("Buildings_tem table prepared")
         self.dbc.remove_duplicate_buildings()
         self.logger.info("Duplicate buildings removed from buildings_tem")
@@ -964,7 +977,7 @@ class GridGenerator:
         Save one grid to file and to database
         """
         if SAVE_GRID_FOLDER:
-            savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", self.plz)
+            savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
             savepath_folder.mkdir(parents=True, exist_ok=True)
             filename = f"kcid{kcid}bcid{bcid}.json"
             savepath_file = Path(savepath_folder, filename)

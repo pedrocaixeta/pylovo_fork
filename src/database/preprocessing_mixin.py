@@ -77,6 +77,27 @@ class PreprocessingMixin(BaseMixin, ABC):
         WHERE plz ISNULL;"""
         self.cur.execute(query, {"v": VERSION_ID, "plz": plz})
 
+    def set_buildings_table(self, buildings_data: list[tuple]) -> None:
+        """
+        Insert buildings data associated with a specific postal code into the database.
+
+        This function takes building data and inserts it into a temporary buildings table, associating each
+        building with the given postal code. The temporary tables are then used when generating grids.
+
+        Args:
+            buildings_data (list[tuple[int, float, str, str, str, int]]): List of building tuples
+                containing (id, floor_area, building_type, geom, center_geom, floor_number).
+
+        Returns:
+            None
+        """
+        insert_query = """
+            INSERT INTO buildings_tem
+            (osm_id, area, type, geom, center, floors)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        self.cur.executemany(insert_query, buildings_data)
+
     def set_other_buildings_table(self, plz: int):
         """
         * Fills buildings_tem with other buildings which are inside the plz area
