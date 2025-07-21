@@ -61,6 +61,26 @@ Other required data files that are already included in the raw_data directory of
 - ``consumer_categories.csv``
 - ``equipment_data.csv``
 
+Using InfDB data for buildings and ways
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+If you wish to use InfDB as the datasource for buildings and ways make sure to run the processor in your InfDB instance.
+For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
+
+Then, before running the ``main_constructor.py`` script to initialize the database set the
+following parameters in your ``.env`` file of Pylovo.
+
+::
+
+    USE_INFDB=True                      # tell Pylovo to use InfDB
+    INFDB_DBNAME="citydb"               # replace
+    INFDB_USER="citydb_user"            # replace
+    INFDB_HOST="00.000.00.000"          # replace
+    INFDB_PORT=5432                     # replace
+    INFDB_PASSWORD="citydb_password"    # replace
+    INFDB_TARGET_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
+
+.. note::
+    If you decide to use buildings and ways from InfDB then you don't need to buildings and ways data locally.
 
 Load raw data to the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -143,7 +163,8 @@ If you want to fetch up-to-date data upon running ``runme/main_constructor.py`` 
 then change the ``RELATION_ID`` in ``src/data_import/import_transformers.py`` to the relation ID
 of the desired area.
 
-Note: Processing transformer data can take around 50 minutes for entire German states.
+.. note::
+    Processing transformer data can take around 50 minutes for entire German states.
 
 How to find desired relation ID
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
