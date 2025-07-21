@@ -85,16 +85,16 @@ class PreprocessingMixin(BaseMixin, ABC):
         building with the given postal code. The temporary tables are then used when generating grids.
 
         Args:
-            buildings_data (list[tuple[int, float, str, str, str, int]]): List of building tuples
-                containing (id, floor_area, building_type, geom, center_geom, floor_number).
+            buildings_data (list[tuple[int, float, str, str, str, int, int]]): List of building tuples
+                containing (id, floor_area, building_type, geom, center_geom, floor_number, households).
 
         Returns:
             None
         """
         insert_query = """
             INSERT INTO buildings_tem
-            (osm_id, area, type, geom, center, floors)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (osm_id, area, type, geom, center, floors, houses_per_building)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, buildings_data)
 
@@ -201,13 +201,16 @@ class PreprocessingMixin(BaseMixin, ABC):
                 UPDATE buildings_tem
                 SET area = ST_Area(geom);
                 UPDATE buildings_tem
-                SET houses_per_building = (CASE
-                                               WHEN type IN ('TH', 'Commercial', 'Public', 'Industrial') THEN 1
-                                               WHEN type = 'SFH' AND area < 160 THEN 1
-                                               WHEN type = 'SFH' AND area >= 160 THEN 2
-                                               WHEN type IN ('MFH', 'AB') THEN floor(area / 50) * floors
-                                               ELSE 0
-                    END);
+                SET houses_per_building = (
+                    CASE
+                    WHEN type IN ('TH', 'Commercial', 'Public', 'Industrial') THEN 1
+                    WHEN type = 'SFH' AND area < 160 THEN 1
+                    WHEN type = 'SFH' AND area >= 160 THEN 2
+                    WHEN type IN ('MFH', 'AB') THEN floor(area / 50) * floors
+                    ELSE 0
+                    END
+                )
+                WHERE houses_per_building IS NULL;
                 UPDATE buildings_tem b
                 SET peak_load_in_kw = (CASE
                                            WHEN b.type IN ('SFH', 'TH', 'MFH', 'AB') THEN b.houses_per_building *
