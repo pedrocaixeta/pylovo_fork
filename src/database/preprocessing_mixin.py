@@ -93,7 +93,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         insert_query = """
             INSERT INTO buildings_tem
-            (osm_id, area, type, geom, center, floors, houses_per_building)
+            (osm_id, area, type, geom, center, floors, households_per_building)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, buildings_data)
@@ -201,7 +201,10 @@ class PreprocessingMixin(BaseMixin, ABC):
                 UPDATE buildings_tem
                 SET area = ST_Area(geom);
                 UPDATE buildings_tem
-                SET houses_per_building = (
+                
+                -- Update households_per_building only if it has not been set already.
+                -- For InfDB data this is already set.
+                SET households_per_building = (
                     CASE
                     WHEN type IN ('TH', 'Commercial', 'Public', 'Industrial') THEN 1
                     WHEN type = 'SFH' AND area < 160 THEN 1
@@ -210,10 +213,11 @@ class PreprocessingMixin(BaseMixin, ABC):
                     ELSE 0
                     END
                 )
-                WHERE houses_per_building IS NULL;
+                WHERE households_per_building IS NULL;
+                
                 UPDATE buildings_tem b
                 SET peak_load_in_kw = (CASE
-                                           WHEN b.type IN ('SFH', 'TH', 'MFH', 'AB') THEN b.houses_per_building *
+                                           WHEN b.type IN ('SFH', 'TH', 'MFH', 'AB') THEN b.households_per_building *
                                                                                           (SELECT peak_load FROM consumer_categories WHERE definition = b.type)
                                            WHEN b.type IN ('Commercial', 'Public', 'Industrial') THEN b.area *
                                                                                                       (SELECT peak_load_per_m2

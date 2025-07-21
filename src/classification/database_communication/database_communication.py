@@ -194,7 +194,7 @@ class DatabaseCommunication:
         query = """WITH buildings(grid_result_id) AS (
                        SELECT DISTINCT grid_result_id
                        FROM buildings_result
-                       WHERE houses_per_building > %(h)s
+                       WHERE households_per_building > %(h)s
                    )
                    
                    UPDATE clustering_parameters c
