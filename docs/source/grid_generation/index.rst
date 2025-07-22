@@ -10,6 +10,7 @@ You can read about:
 * The main resources and interfaces to generate and visualise grids.
 * The steps of the building data import are explained.
 * There is a more detailed explanation of the grid generation process.
+* The underlying database structure of Pylovo.
 
 **Structure**
 
@@ -21,3 +22,4 @@ You can read about:
    explanation/resources
    explanation/building_data_import
    explanation/grid_generation_process
+   explanation/database
