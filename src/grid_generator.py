@@ -50,9 +50,7 @@ class GridGenerator:
         """
         self.plz = plz
         print('-------------------- start', self.plz, '---------------------------')
-
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
-        self.dbc.reset_tables()  # Reset temporary tables
 
         try:
             self.generate_grid()
@@ -72,7 +70,6 @@ class GridGenerator:
             traceback.print_exc()
 
         self.dbc.drop_temp_tables()  # drop temp tables
-
         print('-------------------- end', self.plz, '-----------------------------')
 
     def generate_grid_for_multiple_plz(self, df_plz: pd.DataFrame, analyze_grids: bool = False) -> None:
@@ -83,7 +80,6 @@ class GridGenerator:
         :param analyze_grids: option to analyse the results after grid generation, defaults to False
         :type analyze_grids: bool
         """
-        
         for index, row in df_plz.iterrows():
             self.plz = int(row['plz'])
             print('-------------------- start', self.plz, '---------------------------')
@@ -91,7 +87,6 @@ class GridGenerator:
             try:
                 self.generate_grid()
                 self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
-                self.dbc.reset_tables()  # Reset temporary tables
                 self.dbc.commit_changes()  # commit the changes to the database
                 if analyze_grids:
                     pc = ParameterCalculator()
@@ -106,9 +101,9 @@ class GridGenerator:
                 self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION),
                                                           self.plz)  # delete from sample set
                 continue
-            self.dbc.drop_temp_tables()  # drop temp tables
             print('-------------------- end', self.plz, '-----------------------------')
 
+        self.dbc.drop_temp_tables()  # drop temp tables
         self.dbc.commit_changes()  # commit the changes to the database
 
     def generate_grid(self):
