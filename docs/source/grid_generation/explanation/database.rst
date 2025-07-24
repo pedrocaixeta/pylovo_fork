@@ -3,7 +3,7 @@ The Database Architecture of Pylovo
 
 .. image:: ../../images/database/database_diagram.png
     :width: 100%
-    :alt: Default view
+    :alt: Database diagram
 
 The database follows a hierarchical structure:
 

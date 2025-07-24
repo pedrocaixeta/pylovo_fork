@@ -191,7 +191,7 @@ How to find desired relation ID
 
 .. image:: ../images/install/relation_id.png
     :width: 60%
-    :alt: Default view
+    :alt: Relation I.D. image
 
 How to add more transformer data after database has already been constructed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

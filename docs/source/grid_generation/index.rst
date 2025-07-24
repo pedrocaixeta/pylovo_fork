@@ -1,8 +1,8 @@
 Grid Generation
 ================
 
-The Grid Generation provides the main functionality of the pylovo Repository. It contains all the steps and logic to generate
-the LV-grids.
+The Grid Generation provides the main functionality of the pylovo Repository.
+It contains all the steps and logic to generate the LV-grids.
 You can read about:
 
 * How to use to tool to generate grids.
@@ -23,3 +23,4 @@ You can read about:
    explanation/building_data_import
    explanation/grid_generation_process
    explanation/database
+   explanation/infdb_buildings_processor
