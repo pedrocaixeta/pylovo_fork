@@ -80,7 +80,11 @@ following parameters in your ``.env`` file of Pylovo.
     INFDB_TARGET_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
 
 .. note::
-    If you decide to use buildings and ways from InfDB then you don't need to buildings and ways data locally.
+    If you decide to use buildings and ways from InfDB (``USE_INFDB`` is set to ``True``) then you don't need to
+    buildings and ways data locally.
+
+This is because during database setup (``main_constructor.py``) Pylovo will skip importing ways and before generation
+it will skip importing buildings, as it gets both directly from InfDB.
 
 Load raw data to the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
