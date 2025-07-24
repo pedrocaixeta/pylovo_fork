@@ -196,9 +196,8 @@ How to find desired relation ID
 How to add more transformer data after database has already been constructed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 To add more transformers from different areas after ``runme/main_constructor.py`` has been run, i.e. the database
-has been constructed, simply run the ``runme/import/import_transformers_via_relation_id.py`` script as shown in the example.
-
-Example:
+has been constructed, simply run the ``runme/import/import_transformers_via_relation_id.py``
+script as shown in the example below:
 
 ::
 
