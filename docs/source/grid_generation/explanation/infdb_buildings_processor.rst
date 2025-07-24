@@ -1,74 +1,74 @@
 InfDB Buildings Processor
 =========================
 
-In order for Pylovo to use the buildings data from InfDB, the data needs to be put into a single table first:
+To make buildings data from InfDB usable in Pylovo, it must first be combined into a single table:
 ``pylovo_input.buildings``.
-That is the purpose of the processor in InfDB.
+This is the role of the processor in InfDB.
 
 Data Sources
 ------------
 
-The processor uses three types of InfDB data:
+The processor uses three InfDB data sources:
 
 - **3DCityDBv5**: Building data
 - **Census**: Statistical data in 100m x 100m grids
-- **Basemap**: Mostly relevant for ways processing
+- **Basemap**: Mainly used for processing streets
 
-3DCityDBv5 lies in the ``citydb`` schema. Census and Basemap are located in the ``opendata`` schema.
+3DCityDBv5 resides in the ``citydb`` schema. Census and Basemap are located in the ``opendata`` schema.
 
-A visual overview of the column sources of ``pylovo_input.buildings`` can be seen in the following image:
+A visual overview of the column sources for ``pylovo_input.buildings`` is shown below:
 
 .. image:: ../../images/infdb/buildings_sources.jpg
     :width: 100%
     :alt: Data sources
 
-- The ``id`` column in ``pylovo_input.buildings`` is derived from the ``id`` column in the ``citydb.feature`` table.
-- The ``objectid`` column in ``pylovo_input.buildings`` comes from the ``objectid`` column in the ``citydb.feature`` table.
-- The ``geom`` column in ``pylovo_input.buildings`` is sourced from the ``geometry`` column in the ``citydb.geometry_data`` table.
-- The ``building_use_id``, ``building_use``, ``floor_area``, and ``height`` columns are from the corresponding ``val_*`` columns in the ``citydb.property`` table.
-- The ``floor_number`` column is derived from corresponding ``val_*`` columns in the ``citydb.property`` table and the ``height`` column in the ``pylovo_input.buildings`` itself when data is missing.
-- The ``construction_year`` column is taken from the ``opendata.cns22_100m_baujahr_jz`` table.
-- The ``building_type`` column is mapped from the ``opendata.cns22_100m_wohnung_gbtyp_groesse`` table combined with ``height`` and ``floor_area``.
-- The ``occupants_per_building`` column is taken from the ``opendata.cns22_100m_bevoelkerungszahl`` table.
-- The ``households_per_building`` column is derived from the ``opendata.cns22_100m_durchschn_haushaltsgroesse`` table.
-- The ``postcode`` column is sourced from the ``plz`` column in the ``opendata.plz_plz-5stellig`` table.
+- ``id``: From ``citydb.feature.id``
+- ``objectid``: From ``citydb.feature.objectid``
+- ``geom``: From ``citydb.geometry_data.geometry``
+- ``building_use_id``, ``building_use``, ``floor_area``, ``height``: From ``citydb.property.val_*``
+- ``floor_number``: From ``citydb.property.val_*`` or estimated from ``height`` if missing
+- ``construction_year``: From ``opendata.cns22_100m_baujahr_jz``
+- ``building_type``: Derived from ``opendata.cns22_100m_wohnung_gbtyp_groesse`` plus ``height`` and ``floor_area``
+- ``occupants_per_building``: From ``opendata.cns22_100m_bevoelkerungszahl``
+- ``households_per_building``: From ``opendata.cns22_100m_durchschn_haushaltsgroesse``
+- ``postcode``: From ``opendata.plz_plz-5stellig.plz``
 
 Column Roles
 ------------
 
-- **id**: ID of a building
-- **objectid**: Another unique ID of a building used in citydb
-- **geom**: 2D geometry of a building in EPSG:3035
-- **building_use_id**: ID of the role of the building
-- **building_use**: Can be ``'Residential'``, ``'Industrial'``, ``'Commercial'`` or ``'Public'``
-- **floor_area**: Area of the ground floor
-- **height**: Height of the building
-- **floor_number**: Number of floors the building has
-- **construction_year**: Can be ``'-1919'``, ``'1919-1948'``, ``'1949-1978'``, ``'1979-1990'``, ``'1991-2000'``, ``'2001-2010'``, ``'2011-2019'`` or ``'2020-'``
-- **building_type**: Can be ``'AB'`` (Apartment building), ``'MFH'`` (Multi-family house), ``'TH'`` (Terrace house), ``'SFH'`` (Single-family house)
-- **occupants_per_building**: Number of occupants assigned to a building
-- **households_per_building**: Number of households assigned to a building
-- **postcode**: Postcode that the centroid of the building is in
+- **id**: Building ID
+- **objectid**: Alternate unique ID (from citydb)
+- **geom**: 2D geometry in EPSG:3035
+- **building_use_id**: Internal ID for building use
+- **building_use**: One of ``Residential``, ``Industrial``, ``Commercial``, ``Public``
+- **floor_area**: Ground floor area
+- **height**: Building height
+- **floor_number**: Number of floors
+- **construction_year**: Ranges like ``'-1919'``, ``'1919-1948'`` up to ``'2020-'``
+- **building_type**: ``AB``, ``MFH``, ``TH``, or ``SFH``
+- **occupants_per_building**: Estimated number of residents
+- **households_per_building**: Estimated number of households
+- **postcode**: Postcode based on building centroid
 
-How data is filled
-------------------
+Data Filling Process
+--------------------
 
 An overview of the processing steps can be seen in the following visualization:
 
 .. image:: ../../images/infdb/buildings_steps.jpg
     :width: 100%
-    :alt: Data sources
+    :alt: Processing steps
 
-#. The ``buildings`` table is created.
-#. The columns ``id``, ``objectid``, ``building_use``, ``building_use_id``, ``height``, ``floor_area``, and ``geom`` are populated using CityDB.
-#. Buildings that are too small are deleted because they probably don't use electricity.
-#. The ``floor_number`` column is populated and the missing values are filled using the median in relation to the height of the building.
-#. The columns ``occupants``, ``households``, and ``construction_year`` are populated using CityDB, Census, ``height``, and ``floor_area`` data combined with the nearest grid with data when data is missing from the own grid.
-#. The column ``building_type`` is filled based on ``floor_number`` and ``floor_area`` combined with touching neighbors for type propagation.
-#. Inconsistencies are fixed, for example, a single-family house can only have one household.
-#. The ``building_type`` column is rebalanced according to the census data.
-#. Using PLZ geometry data, each building is assigned a postcode.
-#. Some buildings get assigned an ID of a way based on the address of the building in ``address_street_id``.
+#. Create the ``buildings`` table.
+#. Fill ``id``, ``objectid``, ``building_use``, ``building_use_id``, ``height``, ``floor_area``, and ``geom`` using CityDB.
+#. Remove buildings that are too small to reasonably use electricity.
+#. Fill ``floor_number`` directly or estimate using building height and median floor heights.
+#. Use CityDB, Census, and nearest-grid data to fill ``occupants``, ``households``, and ``construction_year``.
+#. Classify ``building_type`` using ``floor_number``, ``floor_area``, and neighbor analysis.
+#. Fix inconsistencies, e.g., SFHs must have only one household.
+#. Rebalance ``building_type`` distribution to match census data.
+#. Assign postcodes using PLZ geometry.
+#. Assign ``address_street_id`` using addresses from buildings and ways (nullable).
 
 Assumptions
 -----------
@@ -76,35 +76,35 @@ Assumptions
 Building Size
 ~~~~~~~~~~~~~
 
-- Floor area threshold: Buildings smaller than 12 m² are excluded (assumed not to need power/heating)
-- Height threshold: Buildings under 3.5m height are excluded (assumed to be non-habitable structures)
+- Buildings under 12 m² or 3.5 m tall are excluded (likely not habitable or consuming power).
 
 Spatial Relationships
 ~~~~~~~~~~~~~~~~~~~~~
 
-- Touching neighbor distance: Buildings within 0.01 meters are considered “neighbors” or rather touching and used for ``building_type`` propagation
-- Grid assignment: Building centroids are used to assign buildings to census grid cells
+- Buildings within 0.01 meters are considered "touching" and used in type propagation.
+- Census grid assignment is based on centroid location.
 
 Occupancy & Household Distribution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Population allocation: Residents are distributed proportionally based on building volume (floor_area * height) and census data
-- Household size: Average household size from census data is used to estimate number of households based on volume of building (floor_area * height)
-- Minimum households and occupants: At least 1 household and 1 occupant per residential building
-- Building type household thresholds: SFH has 1 household, MFH has between 2 and 4, AB has more than 1 household
+- Residents are distributed by volume (``floor_area * height``).
+- Households estimated using average census household size.
+- Minimum: 1 occupant and 1 household for residential buildings.
+- SFH = 1 household, MFH = 2–4, AB = 5+.
 
 Construction Year Assignment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Probabilistic assignment: Construction years are assigned using weighted random distribution based on census data
+- Census-based weighted random assignment of construction years.
+- Missing values filled using the nearest census grid.
 
-Initial Building Type Classification Logic
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Initial Building Type Classification
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Apartment Buildings (AB): 4+ floors OR (3+ floors + 3+ neighbors) OR floor area > 1500 m²
-- Single-Family Houses (SFH): Floor area < 350 m² + ≤3 floors + no neighbors OR floor area < 200 m² + ≤2 floors + <2 neighbors
-- Terraced Houses (TH): 80-150 m² floor area + 2-3 floors + 1-2 neighbors + similar size to neighbors (±20%)
-- Multi-Family Houses (MFH): 2-3 floors OR (floor area > 150 m² + 1-3 neighbors)
+- **AB**: 4+ floors, or 3+ floors + 3+ neighbors, or floor area > 1500 m²
+- **SFH**: <350 m² + ≤3 floors + no neighbors, or <200 m² + ≤2 floors + <2 neighbors
+- **TH**: 80–150 m², 2–3 floors, 1–2 neighbors, similar size to neighbors (±20%)
+- **MFH**: 2–3 floors, or >150 m² + 1–3 neighbors
 
 Processing Steps
 ----------------
@@ -112,73 +112,73 @@ Processing Steps
 Initial Data Import and Filtering
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Building extraction: Imports buildings from feature table with function codes starting with '31001_', meaning buildings only
-- Exclusions: Removes garages ('31001_2463') and water containers ('31001_2513')
-- Use classification: Converts building function IDs to building use
+- Load only buildings (codes starting with ``31001_``).
+- Exclude garages (``31001_2463``) and water tanks (``31001_2513``).
+- Map function codes to building uses.
 
 Height Processing
 ~~~~~~~~~~~~~~~~~
 
-- Height extraction: Retrieves building heights from nested property structure
-- Height filtering: Removes buildings below 3.5m height threshold
+- Extract height from nested ``val_*`` fields.
+- Filter out buildings under 3.5m.
 
-Geometry and Floor Area Processing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Geometry and Floor Area
+~~~~~~~~~~~~~~~~~~~~~~~
 
-- Ground surface matching: Links buildings to their ground surfaces using objectid patterns
-- Coordinate transformation: Converts geometries to EPSG:3035
-- Area filtering: Removes buildings below 12 m² floor area
+- Match buildings to ground surfaces via ``objectid``.
+- Convert to EPSG:3035.
+- Filter out buildings under 12 m².
 
-Floor Number Calculation
-~~~~~~~~~~~~~~~~~~~~~~~~
+Floor Number Estimation
+~~~~~~~~~~~~~~~~~~~~~~~
 
-- Direct extraction: Gets floor numbers from 'storeysAboveGround' property where available
-- Estimation: For missing values, calculates floors using median height-per-floor ratios by building type
+- Extract from ``storeysAboveGround`` if available.
+- Otherwise, estimate using typical floor heights by type.
 
-Touching Neighbors Analysis
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Touching Neighbors
+~~~~~~~~~~~~~~~~~~
 
-- Neighbor identification: Creates materialized view of buildings within proximity threshold
-- Neighbor counting: Counts neighbors for each building (including zero counts)
+- Create a view of buildings within 0.01 meters.
+- Count neighbors (zero allowed).
 
 Occupancy Estimation
 ~~~~~~~~~~~~~~~~~~~~
 
-- Population distribution: Distributes census population data proportionally based on building volume
-- Household calculation: Estimates households using average household size from census data
-- Residential focus: Only applies to buildings classified as residential
-- Missing values: Are estimated using the nearest grid that does have values
+- Distribute census population by building volume.
+- Estimate households using average household size.
+- Apply only to residential buildings.
+- Fill gaps with nearest grid that has data.
 
 Construction Year Assignment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Census data integration: Uses building age distribution from census
-- Weighted random assignment: Assigns years within ranges based on statistical distribution
-- Year ranges: -1919, 1919-1948, 1949-1978, 1979-1990, 1991-2000, 2001-2010, 2011-2019, 2020-
-- Missing values: Are estimated using the nearest grid that does have values
+- Use census data distributions to assign year ranges.
+- Assign missing values from nearest grid with data.
 
 Building Type Classification
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Initial classification according to rules in the assumptions above
-- Iterative updating: Buildings adjacent to classified buildings may inherit types based on similarity
-- Fallback classification: Remaining unclassified residential buildings default to Apartment Buildings
-- Household-based corrections: Adjusts types based on estimated household counts
-- Single-household buildings: Buildings with 1 household become SFH (no neighbors) or TH (with neighbors)
-- Multi-household adjustments: Buildings with 2-4 households become MFH, 5+ become AB
-- Census rebalancing: Final step to align building type distribution with census reference data
-- Reference mapping: Maps building types to census categories
-- Grid-level targets: Calculates target counts per census grid cell
-- Proportional scaling: Scales targets to match actual building counts per grid
-- Conversion rules:
-  - AB increases: Convert largest MFH and TH
-  - MFH increases: Convert largest TH and smallest AB
-  - TH increases: Convert smaller MFH
-  - SFH increases: Convert smaller TH and MFH
-- Household consistency: Maintains logical household count relationships
+- Classify based on the assumptions listed above.
+- Propagate types to neighbors when similar.
+- Default unclassified residential buildings to AB.
+- Refine types using household counts:
 
-Last Augmentations
-~~~~~~~~~~~~~~~~~~
+  - 1 household → SFH or TH
+  - 2–4 households → MFH
+  - 5+ → AB
 
-- PLZ: Assign a postcode to each building
-- Street ID: Assign a street ID to each building based on address of building and address of ways (possible null values)
+- Rebalance to match census targets per grid:
+
+  - AB up: Convert largest MFH or TH
+  - MFH up: Convert largest TH or smallest AB
+  - TH up: Convert smaller MFH
+  - SFH up: Convert smaller TH or MFH
+
+- Maintain consistency in household counts.
+
+Final Augmentations
+~~~~~~~~~~~~~~~~~~~
+
+- Assign postcode from PLZ geometry.
+- Assign street ID from address (nullable).
+
