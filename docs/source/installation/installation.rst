@@ -158,17 +158,22 @@ If you want more control over your input data follow instructions below:
 
 (Optional) Preprocess transformers from OSM data
 ------------------------------------------------
-By default the database is populated with preloaded data of transformers in Bavaria.
+By default the database is populated with preloaded data of transformers in Bavaria, which are directly available
+in the repository: ``raw_data/transformer_data/fetched_trafos/2145268_*.geojson``.
 
-If you want to fetch up-to-date data upon running ``runme/main_constructor.py`` data from OSM, delete the
-``raw_data/transformer_data/processed_trafos/*_trafos_processed.geojson`` file before running the script.
+If you want to fetch up-to-date data from OSM upon setting up the database with ``runme/main_constructor.py``, delete
+the ``raw_data/transformer_data/processed_trafos/*_trafos_processed.geojson`` file before running the script.
+Pylovo will then know to fetch new data before importing it.
+
+It is not necessary to delete ``raw_data/transformer_data/fetched_trafos/2145268_*.geojson``.
+Pylovo will fetch new data from OSM even if they are there, since the processing part afterwards takes much longer.
 
 If you want to fetch up-to-date data upon running ``runme/main_constructor.py`` from a different area
 then change the ``RELATION_ID`` in ``src/data_import/import_transformers.py`` to the relation ID
 of the desired area.
 
 .. note::
-    Processing transformer data can take around 50 minutes for entire German states.
+    Processing transformer data can take around **50 minutes** for entire German states.
 
 How to find desired relation ID
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -183,6 +188,10 @@ How to find desired relation ID
    **URL example:** https\://www.openstreetmap.org/relation/**62428**
 
    **Sidebar example:** Relation: Munich (**62428**)
+
+.. image:: ../images/install/relation_id.png
+    :width: 60%
+    :alt: Default view
 
 How to add more transformer data after database has already been constructed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
