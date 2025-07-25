@@ -345,24 +345,7 @@ class PreprocessingMixin(BaseMixin, ABC):
                    FROM buildings_tem
                    WHERE ST_Within(center, (SELECT ungeom FROM union_table))
                      AND type = 'Transformer';"""
-        self.cur.execute(query)
-    
-    def get_plz_geometry(self, plz: int):
-        """
-        Fetches the geometry for the given PLZ from local postcode_result table.
-        """
-        query = """
-            SELECT geom
-            FROM postcode_result
-            WHERE version_id = %(v)s AND postcode_result_plz = %(p)s
-        """
-        self.cur.execute(query, {"v": VERSION_ID, "p": plz})
-        row = self.cur.fetchone()
-
-        if not row:
-            raise ValueError(f"No geometry found in postcode_result for PLZ: {plz}")
-
-        return row[0]
+        self.cur.execute(query)   
     
     def set_ways_tem_table_infdb(self, ways_data: list[tuple]) -> int:
         """

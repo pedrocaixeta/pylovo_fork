@@ -64,17 +64,16 @@ class InfdbClient:
 
         return result
     
-    def fetch_ways_from_infdb(self, plz_geom) -> list:
+    def fetch_ways_from_infdb(self, postcode) -> list:
         """
-        Fetch ways from remote DB whose geometry intersects the given PLZ geometry.
-        Only the columns in ways_tem are selected.
+        Fetch ways from remote DB for a given postcode.
         """
         query = """
             SELECT clazz, source, target, cost, reverse_cost, geom, way_id
             FROM ways
-            WHERE ST_Intersects(geom, %(g)s)
+            WHERE postcode = %(postcode)s
         """
-        self.cur.execute(query, {"g": plz_geom})
+        self.cur.execute(query, {"postcode": postcode})
         rows = self.cur.fetchall()
 
         if not rows:
