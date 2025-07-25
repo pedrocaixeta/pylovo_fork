@@ -62,8 +62,8 @@ A short overview of the processing steps can be seen in the following visualizat
 #. Create the ``buildings`` table.
 #. Fill ``id``, ``objectid``, ``building_use``, ``building_use_id``, ``height``, ``floor_area``, and ``geom`` using CityDB.
 #. Remove buildings that are too small to be considered as residential buildings.
-#. Fill ``floor_number`` directly or estimate using building height and median floor heights.
-#. Use CityDB, Census, and nearest-grid data to fill ``occupants``, ``households``, and ``construction_year``.
+#. Fill ``floor_number`` directly or estimate using building height and median floor heights of all buildings that have ``floor_number`` data.
+#. Use CityDB, Census to fill ``occupants``, ``households``, and ``construction_year``. When Census data is missing the nearest grid with data to a building is used.
 #. Classify ``building_type`` using ``floor_number``, ``floor_area``, and neighbor analysis.
 #. Fix inconsistencies, e.g., SFHs must have only one household.
 #. Rebalance ``building_type`` distribution to match census data.
@@ -133,7 +133,7 @@ Floor Number Estimation
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 - Extract from ``storeysAboveGround`` if available.
-- Otherwise, estimate using typical floor heights by type.
+- Otherwise, estimate using median floor heights of grouped by type of all buildings that had ``storeysAboveGround`` data.
 
 Touching Neighbors
 ~~~~~~~~~~~~~~~~~~
