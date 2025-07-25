@@ -44,7 +44,7 @@ Column Roles
 - **floor_area**: Ground floor area
 - **height**: Building height
 - **floor_number**: Number of floors
-- **construction_year**: Ranges like ``'-1919'``, ``'1919-1948'`` up to ``'2020-'``
+- **construction_year**: Can be ranges ``'-1919'``, ``'1919-1948'``, ``'1949-1978'``, ``'1979-1990'``, ``'1991-2000'``, ``'2001-2010'``, ``'2011-2019'`` or ``'2020-'``
 - **building_type**: ``AB``, ``MFH``, ``TH``, or ``SFH``
 - **occupants_per_building**: Estimated number of residents
 - **households_per_building**: Estimated number of households
