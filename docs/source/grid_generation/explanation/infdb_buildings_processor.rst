@@ -4,20 +4,32 @@ InfDB Buildings Processor
 Motivation
 ----------
 
-Motivation here..
+The use of openly available infrastructure data provides a reliable foundation for developing tools in urban analysis and planning.
+By integrating this data, it becomes possible to support a more detailed understanding of the built environment.
 
-To make buildings data from InfDB usable in Pylovo, it must first be combined into a single table:
+To manage and utilize complex 3D city models, InfDB incorporates 3DCityDBv5.
+It supports the import of LoD2 datasets in the standardized CityGML format, enabling structured storage and retrieval of 3D geospatial data.
+The models can be enriched with statistical data from census sources, and spatial context is further improved through integration with the Basemap Project.
+Together, these components provide a flexible and scalable foundation for geospatial exploration, simulation, and infrastructure planning.
+They are all built into InfDB direcly.
+
+To make the above-mentioned data usable in Pylovo, it must first be combined into a single table:
 ``pylovo_input.buildings``.
-This is the role of the processor in InfDB.
+This is the purpose of the processor in InfDB.
 
 Data Sources
 ------------
 
 The processor uses three InfDB data sources:
 
-- **3DCityDBv5**: Building data
-- **Census**: Statistical data in 100m x 100m grids
-- **Basemap**: Mainly used for processing streets
+- `3DCityDBv5 <https://docs.3dcitydb.net/3dcitydb/>`_:
+  Provides detailed 3D building models in Level of Detail 2 (LOD2), including roofs, walls, and building functions. Useful for visualization, simulation, and spatial analysis tasks.  
+
+- `Census <https://ergebnisse.zensus2022.de/datenbank/online/>`_:
+  Statistical data in 100m x 100m grids which ontains demographic and housing statistics from Zensus 2022, such as population density, household types, and age structure.
+
+- `Basemap <https://basemap.de/data/produkte/web_vektor/anwendungsbeispiele/alkis-color.html>`_:  
+  Based on ALKIS data, this topographic base map includes streets, parcels, land cover, and administrative features. Supports background mapping and street-level geometry extraction.  
 
 3DCityDBv5 resides in the ``citydb`` schema. Census and Basemap are located in the ``opendata`` schema.
 
