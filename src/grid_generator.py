@@ -185,7 +185,6 @@ class GridGenerator:
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
         if USE_INFDB:
-            #plz_geom = self.dbc.get_plz_geometry(self.plz)
             ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
             ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows)
         else:
