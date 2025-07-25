@@ -53,7 +53,7 @@ Column Roles
 Data Filling Process
 --------------------
 
-An overview of the processing steps can be seen in the following visualization:
+A short overview of the processing steps can be seen in the following visualization:
 
 .. image:: ../../images/infdb/buildings_steps.jpg
     :width: 100%
@@ -61,7 +61,7 @@ An overview of the processing steps can be seen in the following visualization:
 
 #. Create the ``buildings`` table.
 #. Fill ``id``, ``objectid``, ``building_use``, ``building_use_id``, ``height``, ``floor_area``, and ``geom`` using CityDB.
-#. Remove buildings that are too small to reasonably use electricity.
+#. Remove buildings that are too small to be considered as residential buildings.
 #. Fill ``floor_number`` directly or estimate using building height and median floor heights.
 #. Use CityDB, Census, and nearest-grid data to fill ``occupants``, ``households``, and ``construction_year``.
 #. Classify ``building_type`` using ``floor_number``, ``floor_area``, and neighbor analysis.
