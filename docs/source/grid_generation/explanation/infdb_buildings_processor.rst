@@ -11,7 +11,7 @@ To manage and utilize complex 3D city models, InfDB incorporates 3DCityDBv5.
 It supports the import of LoD2 datasets in the standardized CityGML format, enabling structured storage and retrieval of 3D geospatial data.
 The models can be enriched with statistical data from census sources, and spatial context is further improved through integration with the Basemap Project.
 Together, these components provide a flexible and scalable foundation for geospatial exploration, simulation, and infrastructure planning.
-They are all built into InfDB direcly.
+They are all built into InfDB directly.
 
 To make the above-mentioned data usable in Pylovo, it must first be combined into a single table:
 ``pylovo_input.buildings``.
@@ -27,13 +27,12 @@ The processor uses three InfDB data sources:
   Useful for visualization, simulation, and spatial analysis tasks.
 
 - `Census <https://ergebnisse.zensus2022.de/datenbank/online/>`_:
-  Statistical data in 100m x 100m grids which ontains demographic and housing statistics from Zensus 2022, such as population density, household types, and age structure.
+  Statistical data in 100m x 100m grids which contains demographic and housing statistics from Zensus 2022, such as population density, household types, and age structure.
 
 - `Basemap <https://basemap.de/data/produkte/web_vektor/anwendungsbeispiele/alkis-color.html>`_:  
   Basemap includes streets, parcels, land cover, and administrative features.
   Supports background mapping and street-level geometry extraction.
  
-
 3DCityDBv5 resides in the ``citydb`` schema.
 Census and Basemap are located in the ``opendata`` schema.
 
@@ -77,7 +76,6 @@ An overview of the column sources and roles for ``pylovo_input.buildings`` is sh
 | ``address_street_id``        | Derived from ``pylovo_input.ways`` and ``citydb.address``                | Street ID corresponding to the building's address          |
 +------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
 
-
 Processing Steps
 ----------------
 
@@ -87,7 +85,7 @@ Create the Buildings Table
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 We begin by creating the ``pylovo_input.buildings`` table, which will hold all relevant attributes for each structure.
-Using CityDB, we populate ``id``, ``objectid``, ``building_use_id``, and ``building_use`` (mapped to from ``building_use_id``).
+Using CityDB, we populate ``id``, ``objectid``, ``building_use_id``, and ``building_use`` (mapped from ``building_use_id``).
 Only buildings with function codes starting with ``31001_`` are loaded.
 Garages (``31001_2463``) and water tanks (``31001_2513``) are excluded.
 
@@ -97,7 +95,7 @@ Import and Filter Geometry
 Geometry is linked to ground surfaces via the ``objectid`` and converted into EPSG:3035.
 The ``floor_area`` can also be extracted from the ground surface features.
 Any building smaller than 12 m² is filtered out, as such structures are assumed to be non-habitable.
-After ``height`` is imported from ``citydb`` buildings shorter than 3.5 meters are filtered out. 
+After ``height`` is imported from ``citydb``, buildings shorter than 3.5 m are filtered out. 
 
 Fill and Estimate Floor Numbers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -128,7 +126,7 @@ To support building type classification, we identify neighboring buildings.
 Structures within 0.01 meters are considered "touching".
 Each building is assigned a neighbor count.
 Zero neighbors are allowed.
-This is used for assignin building types.
+This is used for assigning building types.
 
 Classify Building Type
 ~~~~~~~~~~~~~~~~~~~~~~
