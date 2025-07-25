@@ -29,7 +29,7 @@ The processor uses three InfDB data sources:
   Statistical data in 100m x 100m grids which ontains demographic and housing statistics from Zensus 2022, such as population density, household types, and age structure.
 
 - `Basemap <https://basemap.de/data/produkte/web_vektor/anwendungsbeispiele/alkis-color.html>`_:  
-  Based on ALKIS data, this topographic base map includes streets, parcels, land cover, and administrative features. Supports background mapping and street-level geometry extraction.  
+  Basemap includes streets, parcels, land cover, and administrative features. Supports background mapping and street-level geometry extraction.  
 
 3DCityDBv5 resides in the ``citydb`` schema. Census and Basemap are located in the ``opendata`` schema.
 
@@ -78,10 +78,6 @@ Data Filling Process
 --------------------
 
 A short overview of the processing steps can be seen in the following visualization:
-
-.. image:: ../../images/infdb/buildings_steps.jpg
-    :width: 100%
-    :alt: Processing steps
 
 #. Create the ``buildings`` table.
 #. Fill ``id``, ``objectid``, ``building_use``, ``building_use_id``, ``height``, ``floor_area``, and ``geom`` using CityDB.
