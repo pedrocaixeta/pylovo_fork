@@ -1,6 +1,11 @@
 InfDB Buildings Processor
 =========================
 
+Motivation
+----------
+
+Motivation here..
+
 To make buildings data from InfDB usable in Pylovo, it must first be combined into a single table:
 ``pylovo_input.buildings``.
 This is the role of the processor in InfDB.
@@ -16,39 +21,46 @@ The processor uses three InfDB data sources:
 
 3DCityDBv5 resides in the ``citydb`` schema. Census and Basemap are located in the ``opendata`` schema.
 
-A visual overview of the column sources for ``pylovo_input.buildings`` is shown below:
+Column overview
+---------------
 
-.. image:: ../../images/infdb/buildings_sources.jpg
-    :width: 100%
-    :alt: Data sources
+An overview of the column sources and roles for ``pylovo_input.buildings`` is shown below:
 
-- ``id``: From ``citydb.feature.id``
-- ``objectid``: From ``citydb.feature.objectid``
-- ``geom``: From ``citydb.geometry_data.geometry``
-- ``building_use_id``, ``building_use``, ``floor_area``, ``height``: From ``citydb.property.val_*``
-- ``floor_number``: From ``citydb.property.val_*`` or estimated from ``height`` if missing
-- ``construction_year``: From ``opendata.cns22_100m_baujahr_jz``
-- ``building_type``: Derived from ``opendata.cns22_100m_wohnung_gbtyp_groesse`` plus ``height`` and ``floor_area``
-- ``occupants_per_building``: From ``opendata.cns22_100m_bevoelkerungszahl``
-- ``households_per_building``: From ``opendata.cns22_100m_durchschn_haushaltsgroesse``
-- ``postcode``: From ``opendata.plz_plz-5stellig.plz``
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| Column Name                  | Source                                                                   | Role                                                       |
++==============================+==========================================================================+============================================================+
+| ``id``                       | ``citydb.feature.id``                                                    | Building ID                                                |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``objectid``                 | ``citydb.feature.objectid``                                              | Alternate unique ID (from citydb)                          |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``geom``                     | ``citydb.geometry_data.geometry``                                        | 2D geometry in EPSG:3035                                   |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``building_use_id``          | ``citydb.property.val_*``                                                | Internal ID for building use                               |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``building_use``             | ``citydb.property.val_*``                                                | One of ``Residential``, ``Industrial``,                    |
+|                              |                                                                          | ``Commercial``, ``Public``                                 |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``floor_area``               | ``citydb.property.val_*``                                                | Ground floor area                                          |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``height``                   | ``citydb.property.val_*``                                                | Building height                                            |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``floor_number``             | ``citydb.property.val_*`` or estimated from ``height``                   | Number of floors                                           |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``construction_year``        | ``opendata.cns22_100m_baujahr_jz``                                       | Ranges: ``'-1919'``, ``'1919-1948'``,                      |
+|                              |                                                                          | ``'1949-1978'``, ``'1979-1990'``, etc.                     |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``building_type``            | Derived from ``opendata.cns22_100m_wohnung_gbtyp_groesse``,              | ``AB``, ``MFH``, ``TH``, or ``SFH``                        |
+|                              | plus ``height`` and ``floor_area``                                       |                                                            |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``occupants_per_building``   | ``opendata.cns22_100m_bevoelkerungszahl``                                | Estimated number of residents                              |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``households_per_building``  | ``opendata.cns22_100m_durchschn_haushaltsgroesse``                       | Estimated number of households                             |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``postcode``                 | ``opendata.plz_plz-5stellig.plz``                                        | Postcode based on building centroid                        |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
+| ``address_street_id``        | Derived from ``pylovo_input.ways`` and ``citydb.address``                | Street ID corresponding to the building's address          |
++------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
 
-Column Roles
-------------
-
-- **id**: Building ID
-- **objectid**: Alternate unique ID (from citydb)
-- **geom**: 2D geometry in EPSG:3035
-- **building_use_id**: Internal ID for building use
-- **building_use**: One of ``Residential``, ``Industrial``, ``Commercial``, ``Public``
-- **floor_area**: Ground floor area
-- **height**: Building height
-- **floor_number**: Number of floors
-- **construction_year**: Can be ranges ``'-1919'``, ``'1919-1948'``, ``'1949-1978'``, ``'1979-1990'``, ``'1991-2000'``, ``'2001-2010'``, ``'2011-2019'`` or ``'2020-'``
-- **building_type**: ``AB``, ``MFH``, ``TH``, or ``SFH``
-- **occupants_per_building**: Estimated number of residents
-- **households_per_building**: Estimated number of households
-- **postcode**: Postcode based on building centroid
 
 Data Filling Process
 --------------------
