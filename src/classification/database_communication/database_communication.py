@@ -173,6 +173,7 @@ class DatabaseCommunication:
         df_transformers_classified.to_sql(name='transformer_classified', con=self.dbc.sqla_engine,
                                           if_exists='append',
                                           index=False, dtype={'geom': Geometry(geometry_type='POINT', srid=3035)})
+        self.dbc.refresh_materialized_views()
         print(self.dbc.cur.statusmessage)
         self.dbc.conn.commit()
 

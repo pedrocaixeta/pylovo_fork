@@ -25,6 +25,10 @@ class UtilsMixin(BaseMixin, ABC):
             self.cur.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.cur.execute("DROP TABLE IF EXISTS ways_tem_vertices_pgr")
 
+    def refresh_materialized_views(self) -> None:
+        for query in REFRESH_QUERIES.values():
+            self.cur.execute(query)
+
     def commit_changes(self):
         self.conn.commit()
 

@@ -350,8 +350,22 @@ CREATE_QUERIES = {
         JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
     )
     """,
+    "transformer_positions_with_grid_materialized": """
+    CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_positions_with_grid_materialized AS (
+        SELECT tp.*, gr.kcid, gr.bcid, gr.plz
+        FROM transformer_positions tp
+        JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
+    )
+    """,
     "transformer_classified_with_grid": """
     CREATE OR REPLACE VIEW transformer_classified_with_grid AS (
+        SELECT tc.*, gr.version_id, gr.kcid, gr.bcid, gr.plz
+        FROM transformer_classified tc
+        JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
+    )
+    """,
+    "transformer_classified_with_grid_materialized": """
+    CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_classified_with_grid_materialized AS (
         SELECT tc.*, gr.version_id, gr.kcid, gr.bcid, gr.plz
         FROM transformer_classified tc
         JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
@@ -367,8 +381,34 @@ CREATE_QUERIES = {
         JOIN grid_result gr ON br.grid_result_id = gr.grid_result_id
     )
     """,
+    "buildings_result_with_grid_materialized": """
+    CREATE MATERIALIZED VIEW IF NOT EXISTS buildings_result_with_grid_materialized AS (
+        SELECT
+            (br.version_id || '_' || br.osm_id) AS id,
+            br.*,
+            gr.kcid, gr.bcid, gr.plz
+        FROM buildings_result br
+        JOIN grid_result gr ON br.grid_result_id = gr.grid_result_id
+    )
+    """,
     "lines_result_with_grid": """
     CREATE OR REPLACE VIEW lines_result_with_grid AS (
+        SELECT
+            lr.lines_result_id as id,
+            lr.grid_result_id,
+            lr.geom,
+            lr.line_name,
+            lr.std_type,
+            lr.from_bus,
+            lr.to_bus,
+            lr.length_km,
+            gr.version_id, gr.kcid, gr.bcid, gr.plz
+        FROM lines_result lr
+        JOIN grid_result gr ON lr.grid_result_id = gr.grid_result_id
+    )
+    """,
+    "lines_result_with_grid_materialized": """
+    CREATE MATERIALIZED VIEW IF NOT EXISTS lines_result_with_grid_materialized AS (
         SELECT
             lr.lines_result_id as id,
             lr.grid_result_id,
@@ -413,4 +453,19 @@ TEMP_CREATE_QUERIES = {
         way_id integer,
         plz integer
     )""",
+}
+
+REFRESH_QUERIES = {
+    "transformer_positions_with_grid_materialized": """
+    REFRESH MATERIALIZED VIEW transformer_positions_with_grid_materialized
+    """,
+    "transformer_classified_with_grid_materialized": """
+    REFRESH MATERIALIZED VIEW transformer_classified_with_grid_materialized
+    """,
+    "buildings_result_with_grid_materialized": """
+    REFRESH MATERIALIZED VIEW buildings_result_with_grid_materialized
+    """,
+    "lines_result_with_grid_materialized": """
+    REFRESH MATERIALIZED VIEW lines_result_with_grid_materialized
+    """,
 }

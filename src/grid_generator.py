@@ -71,6 +71,8 @@ class GridGenerator:
             traceback.print_exc()
 
         self.dbc.drop_temp_tables()  # drop temp tables
+        self.dbc.refresh_materialized_views() # update the materialized views to reflect changes in their base tables
+        self.dbc.commit_changes()  # commit the changes to the database
 
         print('-------------------- end', self.plz, '-----------------------------')
 
@@ -109,6 +111,7 @@ class GridGenerator:
             print('-------------------- end', self.plz, '-----------------------------')
 
         self.dbc.drop_temp_tables()  # drop temp tables
+        self.dbc.refresh_materialized_views()  # update the materialized views to reflect changes in their base tables
         self.dbc.commit_changes()  # commit the changes to the database
 
     def generate_grid(self):
