@@ -396,31 +396,66 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         return count
 
-    def connect_unconnected_ways(self) -> None:
+    def preprocess_ways(self) -> None:
         """
-        Updates ways_tem
-        :return:
+        Runs the geometric preprocessing steps for the ways_tem table using two core functions:
+
+        1. segment_intersecting_ways():
+        - Detects where roads intersect geometrically.
+        - Splits intersecting road segments into new segments at the intersection point.
+        - Inserts the resulting segments into the working table `ways_tem`.
+        - Internally uses: 
+            - insert_way_segment() for adding new segments
+
+        2. generate_building_to_way_connections():
+        - Connects each building to the closest road segment.
+        - For each building, generates a connection line to the corresponding way.
+        - Splits the road segment at the connection point and updates `ways_tem`.
+        - Uses:
+            - generate_building_way_connection_candidates() for finding potential connections
+            - insert_way_segment() for adding new segments
+            - split_way_at_connection_points() for splitting ways at connection points
+
+        These two functions are executed in sequence to ensure that:
+        - All intersecting ways are properly split.
+        - All buildings are connected to the network via dedicated segments.
+
+        When the flag USE_INFDB is set to "True", the function generate_building_to_way_connections_infdb() 
+        is used instead. This version utilizes the 'address_street_id' column in the infdb.buildings table, 
+        which stores the closest road segment assigned via address-level matching. 
+        If this column is null for a building, fallback to the traditional distance-based logic is applied.
         """
-        query = """SELECT draw_way_connections();"""
-        self.cur.execute(query)
+        self.cur.execute("SELECT segment_intersecting_ways();")
 
-    def draw_building_connection(self) -> None:
+        if USE_INFDB:
+            self.cur.execute("SELECT generate_building_to_way_connections_infdb();")
+        else:
+            self.cur.execute("SELECT generate_building_to_way_connections();")
+
+    def build_pgr_network_topology(self) -> None:
         """
-        Updates ways_tem, creates pgr network topology in new tables:
-        :return:
+        Builds the pgRouting-compatible network topology from the updated `ways_tem` table.
+
+        This includes:
+        1. pgr_createTopology():
+        - Adds `source` and `target` node columns to `ways_tem`.
+        - Assigns node IDs by analyzing the start and end points of each geometry.
+        - Required to enable routing and graph operations on the road network.
+
+        2. pgr_analyzeGraph():
+        - Verifies that the graph topology is valid and reports disconnected components.
+        - Helps ensure that the routing network is usable and clean.
+
+        These functions are required by pgRouting to transform a geometry-based table 
+        (`ways_tem`) into a routable network graph.
         """
-        connection_query = """ SELECT draw_home_connections(); """
-        self.cur.execute(connection_query)
+        self.cur.execute(
+            "SELECT pgr_createTopology('ways_tem', 0.01, id:='way_id', the_geom:='geom', clean:=true);"
+        )
+        self.cur.execute(
+            "SELECT pgr_analyzeGraph('ways_tem', 0.01, the_geom:='geom');"
+        )
 
-        topology_query = """select pgr_createTopology('ways_tem', 0.01, id:='way_id', the_geom:='geom', clean:=true) """
-        self.cur.execute(topology_query)
-
-        # add_buildings_query = '''SELECT add_buildings();'''
-        # self.cur.execute(add_buildings_query)
-        # self.conn.commit()
-
-        analyze_query = ("""SELECT pgr_analyzeGraph('ways_tem',0.01, the_geom:='geom'); """)
-        self.cur.execute(analyze_query)
 
     def update_ways_cost(self) -> None:
         """

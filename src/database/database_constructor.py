@@ -327,8 +327,8 @@ class DatabaseConstructor:
         print(f"Loading ways preprocessing functions into schema '{TARGET_SCHEMA}'.")
 
         function_paths = [
-            os.path.join("src", "ways_preprocessing", "utils"),
-            os.path.join("src", "ways_preprocessing", "core")
+            os.path.join("src", "ways_preprocessing_functions", "utils"),
+            os.path.join("src", "ways_preprocessing_functions", "core")
         ]
 
         try:

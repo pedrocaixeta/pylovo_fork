@@ -189,13 +189,15 @@ class GridGenerator:
             ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows)
         else:
             ways_count = self.dbc.set_ways_tem_table(self.plz)
-
-        
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
-        self.dbc.connect_unconnected_ways()
-        self.logger.info("Ways connection finished in ways_tem")
-        self.dbc.draw_building_connection()
-        self.logger.info("Building connection finished in ways_tem")
+
+        # Run preprocessing functions that segment roads and connect buildings
+        self.dbc.preprocess_ways()
+        print("Ways preprocessing completed in ways_tem.")
+
+        # Build pgRouting topology on the processed network
+        self.dbc.build_pgr_network_topology()
+        print("pgRouting network topology created from ways_tem.")
 
         self.dbc.update_ways_cost()
         unconn = self.dbc.set_vertice_id()
