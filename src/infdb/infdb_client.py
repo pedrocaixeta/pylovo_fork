@@ -20,7 +20,7 @@ class InfdbClient:
                 password=pw,
                 host=host,
                 port=port,
-                options=f"-c search_path={TARGET_SCHEMA},public",
+                options=f"-c search_path={INFDB_TARGET_SCHEMA},public",
             )
             self.cur = self.conn.cursor()
             self.db_path = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{dbname}"
@@ -43,18 +43,19 @@ class InfdbClient:
             plz (str): The plz of the buildings to get
 
         Returns:
-            list[tuple[int, float, str, str, str, int]]: A list of tuples, where each tuple contains:
+            list[tuple[int, float, str, str, str, int, int]]: A list of tuples, where each tuple contains:
                 - id (int): Unique building identifier
                 - floor_area (float): Floor area of the building in square meters
                 - building_type (str): Type of building (e.g., 'SFH' for Single Family House)
                 - geom (str): Building geometry in PostGIS EWKB format as hex string
                 - center (str): Building centroid geometry in PostGIS EWKB format as hex string
                 - floor_number (int): Number of floors in the building
+                - households (int): Number of households in the building
         """
         query = """
             SELECT id, floor_area, COALESCE(building_type, building_use) as type,
-                   geom, ST_Centroid(geom) as center, floor_number
-            FROM pylovo_input.buildings
+                   geom, ST_Centroid(geom) as center, floor_number, households
+            FROM buildings
             WHERE postcode = %(p)s
             AND building_use IN ('Commercial', 'Public', 'Residential')
         """
@@ -62,3 +63,21 @@ class InfdbClient:
         result = self.cur.fetchall()
 
         return result
+    
+    def fetch_ways_from_infdb(self, postcode) -> list:
+        """
+        Fetch ways from remote DB for a given postcode.
+        """
+        query = """
+            SELECT clazz, source, target, cost, reverse_cost, geom, way_id
+            FROM ways
+            WHERE postcode = %(postcode)s
+        """
+        self.cur.execute(query, {"postcode": postcode})
+        rows = self.cur.fetchall()
+
+        if not rows:
+            raise ValueError("No ways found in remote DB intersecting the given PLZ geometry")
+
+        return rows
+

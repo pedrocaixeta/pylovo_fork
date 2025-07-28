@@ -144,7 +144,7 @@ CREATE_QUERIES = {
         area numeric,
         type varchar(30),
         geom geometry(MultiPolygon,3035),
-        houses_per_building integer,
+        households_per_building integer,
         center geometry(Point,3035),
         peak_load_in_kw numeric,
         vertice_id integer,
@@ -392,7 +392,7 @@ TEMP_CREATE_QUERIES = {
         area numeric,
         type varchar(80),
         geom geometry(Geometry,3035),  -- needs to be geometry as multipoint & multipolygon get inserted here
-        houses_per_building integer,
+        households_per_building integer,
         center geometry(Point,3035),
         peak_load_in_kw numeric,
         plz integer,
