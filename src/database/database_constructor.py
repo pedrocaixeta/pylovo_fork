@@ -308,14 +308,43 @@ class DatabaseConstructor:
         et = time.time()
         print(f"Ways are successfully imported to db in {int(et - st)} s")
 
-    def dump_functions(self):
+
+    def load_ways_preprocessing_functions(self):
         """
-        Creates the SQL functions that are needed for the app to operate
+        Loads and executes SQL function definitions into the database.
+
+        The SQL files are grouped under two categories:
+        1. Utility functions (e.g., spatial helpers, geometry splitting)
+        2. Core functions (e.g., building-to-way connection logic, intersection segmentation)
+
+        SQL files are loaded from:
+            - src/ways_preprocessing/utils/
+            - src/ways_preprocessing/core/
         """
         cur = self.dbc.conn.cursor()
-        sc_path = os.path.join(os.getcwd(), "src", "postgres_dump_functions.sql")
-        with open(sc_path, 'r') as sc_file:
-            print(f"Executing postgres_dump_functions.sql script with schema '{TARGET_SCHEMA}'.")
-            sql = sc_file.read()
-            cur.execute(sql)
+
+        # Print once at the beginning
+        print(f"Loading ways preprocessing functions into schema '{TARGET_SCHEMA}'.")
+
+        function_paths = [
+            os.path.join("src", "ways_preprocessing", "utils"),
+            os.path.join("src", "ways_preprocessing", "core")
+        ]
+
+        try:
+            for path in function_paths:
+                abs_path = os.path.join(os.getcwd(), path)
+
+                for filename in sorted(os.listdir(abs_path)):
+                    if filename.endswith(".sql"):
+                        full_file_path = os.path.join(abs_path, filename)
+                        with open(full_file_path, 'r') as f:
+                            sql = f.read()
+                            cur.execute(sql)
+
             self.dbc.conn.commit()
+
+        except Exception as e:
+            print(f"[ERROR] Failed while executing SQL function from file '{filename}': {e}")
+            self.dbc.conn.rollback()
+            raise
