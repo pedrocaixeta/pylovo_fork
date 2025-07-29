@@ -61,8 +61,9 @@ An overview of the column sources and roles for ``pylovo_input.buildings`` is sh
 +------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
 | ``floor_number``             | ``citydb.property.val_*`` or estimated from ``height``                   | Number of floors                                           |
 +------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
-| ``construction_year``        | ``opendata.cns22_100m_baujahr_jz``                                       | Ranges: ``'-1919'``, ``'1919-1948'``,                      |
-|                              |                                                                          | ``'1949-1978'``, ``'1979-1990'``, etc.                     |
+| ``construction_year``        | ``opendata.cns22_100m_baujahr_jz``                                       | Ranges: ``'-1919'``, ``'1919-1948'``, ``'1949-1978'``,     |
+|                              |                                                                          | ``'1979-1990'``, ``'1991-2000'``, ``'2001-2010'``,         |
+|                              |                                                                          | ``'2011-2019'`` or ``'2020-'``                             |
 +------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
 | ``building_type``            | Derived from ``opendata.cns22_100m_wohnung_gbtyp_groesse``,              | ``AB``, ``MFH``, ``TH``, or ``SFH``                        |
 |                              | plus ``height`` and ``floor_area``                                       |                                                            |
@@ -76,7 +77,7 @@ An overview of the column sources and roles for ``pylovo_input.buildings`` is sh
 | ``address_street_id``        | Derived from ``pylovo_input.ways`` and ``citydb.address``                | Street ID corresponding to the building's address          |
 +------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
 
-Processing Steps
+Processing Steps``'-1919'``, ``'1919-1948'``, ``'1949-1978'``, ``'1979-1990'``, ``'1991-2000'``, ``'2001-2010'``, ``'2011-2019'`` or ``'2020-'``
 ----------------
 
 This section outlines the full data filling and processing flow for building data, combining building geometries and census data.
