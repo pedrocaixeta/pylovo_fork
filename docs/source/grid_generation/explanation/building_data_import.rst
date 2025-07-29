@@ -33,12 +33,12 @@ The imported buildings can be inspected using the QGIS visualisation :doc:`../..
 With InfDB
 ----------
 
-When ``USE_INFDB=True`` in the ``.env`` file, importing the building data is handled differently.
-The source for the building data is now the InfDB database.
+When ``USE_INFDB=True`` is set in the ``.env`` file, importing building data is handled differently.
+The source for the building data becomes the InfDB database.
 
-The InfDB processor puts the Pylovo relevant tables into the ``pylovo_input`` schema of the InfDB database.
-When a grid is generated in Pylovo, the building data for the specified postcode is imported from InfDB directly
-into the temporary tables, on which the grid generation is performed.
+The InfDB processor loads the Pylovo-relevant tables into the ``pylovo_input`` schema of the InfDB database.
+When a grid is generated in Pylovo, the building data for the specified postcode is imported directly from InfDB
+into temporary tables, which are then used for the grid generation process.
 
-This means that the buildings can in the end be viewed in the ``buildings_result`` table of Pylovo.
-To view the raw building data, ``pylovo_input.buildings`` can be used.
+As a result, the buildings can ultimately be viewed in the ``buildings_result`` table of Pylovo.
+To view the raw building data, the ``pylovo_input.buildings`` table in InfDB can be used.
