@@ -17,6 +17,7 @@ class UtilsMixin(BaseMixin, ABC):
         self.conn.close()
 
     def create_temp_tables(self) -> None:
+        self.drop_temp_tables()
         for query in TEMP_CREATE_QUERIES.values():
             self.cur.execute(query)
 

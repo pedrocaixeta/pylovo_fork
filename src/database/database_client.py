@@ -98,15 +98,6 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
         self.cur.execute(query, vars={"p": plz})
 
-    def reset_tables(self):
-        """
-        Clears the temporary tables.
-        """
-        self.cur.execute("TRUNCATE TABLE buildings_tem")
-        self.cur.execute("TRUNCATE TABLE ways_tem")
-        self.cur.execute("TRUNCATE TABLE ways_tem_vertices_pgr")
-        self.conn.commit()
-
     def delete_plz_from_all_tables(self, plz: int, version_id: str) -> None:
         """
         Deletes all entries of corresponding networks in all tables for the given Version ID and plz.

@@ -6,6 +6,7 @@ import numpy as np
 import pandapower as pp
 from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
+from sklearn.cluster import KMeans
 
 import src.database.database_client as dbc
 from src.infdb.infdb_client import InfdbClient
@@ -49,9 +50,7 @@ class GridGenerator:
         """
         self.plz = plz
         print('-------------------- start', self.plz, '---------------------------')
-
         self.dbc.create_temp_tables()  # create temp tables for the grid generation
-        
 
         try:
             self.generate_grid()
@@ -72,7 +71,6 @@ class GridGenerator:
 
         self.dbc.drop_temp_tables()  # drop temp tables
         self.dbc.commit_changes()  # commit the changes to the database
-
         print('-------------------- end', self.plz, '-----------------------------')
 
     def generate_grid_for_multiple_plz(self, df_plz: pd.DataFrame, analyze_grids: bool = False) -> None:
@@ -83,16 +81,13 @@ class GridGenerator:
         :param analyze_grids: option to analyse the results after grid generation, defaults to False
         :type analyze_grids: bool
         """
-        self.dbc.create_temp_tables()  # create temp tables for the grid generation
-        
-
         for index, row in df_plz.iterrows():
             self.plz = int(row['plz'])
             print('-------------------- start', self.plz, '---------------------------')
+            self.dbc.create_temp_tables()  # create temp tables for the grid generation
             try:
                 self.generate_grid()
                 self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
-                self.dbc.reset_tables()  # Reset temporary tables
                 self.dbc.commit_changes()  # commit the changes to the database
                 if analyze_grids:
                     pc = ParameterCalculator()
@@ -246,7 +241,10 @@ class GridGenerator:
         elif conn_building_count >= LARGE_COMPONENT_LOWER_BOUND:
             # K-means applied to large component to define subgroups with cluster ids
             cluster_count = int(conn_building_count / LARGE_COMPONENT_DIVIDER)
-            self.dbc.update_large_kmeans_cluster(vertices, cluster_count)
+            k_means = KMeans(n_clusters=cluster_count, random_state=K_MEANS_SEED, n_init="auto")
+            (selected_vertices, coordinates) = self.dbc.get_connected_component_geometries(vertices)
+            kcids = k_means.fit_predict(coordinates) + self.dbc.get_kcid_length() + 1
+            self.dbc.update_kmeans_cluster_multiple(selected_vertices, kcids)
             log_msg = f"Large component {component_index} clustered into {cluster_count} groups" if component_index is not None else f"Large component clustered into {cluster_count} groups"
             self.logger.debug(log_msg)
         else:
@@ -379,12 +377,25 @@ class GridGenerator:
         # We could calculate the total transformer cost by summing the costs of all selected transformers:
         # total_transformer_cost = sum([transformer2cost[v[1]] for v in valid_cluster_dict.values()])
 
+        # Reorder bcids for consistency
+        valid_cluster_dict = self._order_clusters_by_min_vertice(valid_cluster_dict)
+
         # Save results to database
         self.dbc.clear_grid_result_in_kmean_cluster(plz, kcid)
         for bcid, cluster_data in valid_cluster_dict.items():
             self.dbc.upsert_bcid(plz, kcid, bcid, vertices=cluster_data[0],
                                          transformer_rated_power=cluster_data[1])
         self.logger.debug(f"bcids for plz {plz} kcid {kcid} found...")
+
+    def _order_clusters_by_min_vertice(self, cluster_dict: dict) -> dict:
+        """
+        Helper function to reassign bcids of the given building clusters ordered by the smallest vertice IDs of the clusters.
+        Returns the same result for cluster distributions that are equivalent up to renaming.
+        :param cluster_dict: input clusters
+        :return: reordered clusters
+        """
+        ordered_vertices = sorted(cluster_dict.items(), key = lambda cluster: min(cluster[1][0]))
+        return {new_bcid: vertices for new_bcid, (_, vertices) in enumerate(ordered_vertices, start=1)}
 
     def position_brownfield_transformers(self, plz: int, kcid: int, transformer_list: list) -> None:
         """

@@ -23,6 +23,11 @@ SAVE_GRID_FOLDER: False
 # Logging configuration for PgReaderWriter & GridGenerator
 LOG_LEVEL: DEBUG
 
+# Seed for the initialization of the k-means clustering for transformer placement
+# Keeping the same seed ensures consistent behavior in multiple runs
+# Has to be an integer between 0 and 4294967295
+K_MEANS_SEED: 3329829316
+
 CLUSTERING_PARAMETERS:
   - version_id
   - plz
