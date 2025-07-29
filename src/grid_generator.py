@@ -70,6 +70,7 @@ class GridGenerator:
             traceback.print_exc()
 
         self.dbc.drop_temp_tables()  # drop temp tables
+        self.dbc.commit_changes()  # commit the changes to the database
         print('-------------------- end', self.plz, '-----------------------------')
 
     def generate_grid_for_multiple_plz(self, df_plz: pd.DataFrame, analyze_grids: bool = False) -> None:
@@ -178,7 +179,13 @@ class GridGenerator:
         FROM: ways, buildings_tem
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
-        ways_count = self.dbc.set_ways_tem_table(self.plz)
+        if USE_INFDB:
+            ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
+            ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows)
+        else:
+            ways_count = self.dbc.set_ways_tem_table(self.plz)
+
+        
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
         self.dbc.connect_unconnected_ways()
         self.logger.info("Ways connection finished in ways_tem")
@@ -671,12 +678,12 @@ class GridGenerator:
         load_type = {consumer: "SFH" for consumer in consumer_list}
 
         for row in buildings_df.itertuples():
-            load_units[row.vertice_id] = row.houses_per_building
+            load_units[row.vertice_id] = row.households_per_building
             load_type[row.vertice_id] = row.type
             gzf = CONSUMER_CATEGORIES.loc[CONSUMER_CATEGORIES.definition == row.type, "sim_factor"].item()
 
             # Determine simultaneous load of each building in MW
-            Pd[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.houses_per_building, gzf)
+            Pd[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.households_per_building, gzf)
 
         return Pd, load_units, load_type
 

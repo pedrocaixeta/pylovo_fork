@@ -182,7 +182,7 @@ class GridMixin(BaseMixin, ABC):
                                              AND plz = %(plz)s
                                              AND kcid = %(kcid)s
                                              AND bcid = %(bcid)s),
-                                          ST_SetSRID(%(geom)s::geometry, 3035),
+                                          ST_Transform(ST_SetSRID(%(geom)s::geometry, 4326), 3035),
                                           %(line_name)s,
                                           %(std_type)s,
                                           %(from_bus)s,

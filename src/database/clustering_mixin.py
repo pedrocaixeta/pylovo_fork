@@ -530,7 +530,7 @@ class ClusteringMixin(BaseMixin, ABC):
 
     def calculate_sim_load(self, conn_list: Union[tuple, list]) -> Decimal:
         residential = """WITH residential AS
-                                  (SELECT b.peak_load_in_kw AS load, b.houses_per_building AS count, c.sim_factor
+                                  (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                                    FROM buildings_tem AS b
                                             LEFT JOIN consumer_categories AS c
                                                       ON b.type = c.definition
@@ -553,7 +553,7 @@ class ClusteringMixin(BaseMixin, ABC):
             residential_sim_load = 0
         # TODO can the following 4 repetitions simplified with a general function?
         commercial = """WITH commercial AS
-                                 (SELECT b.peak_load_in_kw AS load, b.houses_per_building AS count, c.sim_factor
+                                 (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                                   FROM buildings_tem AS b
                                            LEFT JOIN consumer_categories AS c
                                                      ON c.definition = b.type
@@ -575,7 +575,7 @@ class ClusteringMixin(BaseMixin, ABC):
             commercial_sim_load = 0
 
         public = """WITH public AS
-                             (SELECT b.peak_load_in_kw AS load, b.houses_per_building AS count, c.sim_factor
+                             (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                               FROM buildings_tem AS b
                                        LEFT JOIN consumer_categories AS c
                                                  ON c.definition = b.type
@@ -596,7 +596,7 @@ class ClusteringMixin(BaseMixin, ABC):
             public_sim_load = 0
 
         industrial = """WITH industrial AS
-                                 (SELECT b.peak_load_in_kw AS load, b.houses_per_building AS count, c.sim_factor
+                                 (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                                   FROM buildings_tem AS b
                                            LEFT JOIN consumer_categories AS c
                                                      ON c.definition = b.type

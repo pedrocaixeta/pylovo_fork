@@ -81,9 +81,9 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         # Save building results
         query = f"""
                     INSERT INTO buildings_result
-                    (version_id, osm_id, grid_result_id, area, type, geom, houses_per_building, center,
+                    (version_id, osm_id, grid_result_id, area, type, geom, households_per_building, center,
                     peak_load_in_kw, vertice_id, floors, connection_point)
-                    SELECT '{VERSION_ID}' as version_id, osm_id, gr.grid_result_id, area, type, geom, houses_per_building,
+                    SELECT '{VERSION_ID}' as version_id, osm_id, gr.grid_result_id, area, type, geom, households_per_building,
                     center, peak_load_in_kw, vertice_id, floors, bt.connection_point
                     FROM buildings_tem bt
                     JOIN grid_result gr
