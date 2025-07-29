@@ -77,36 +77,36 @@ An overview of the column sources and roles for ``pylovo_input.buildings`` is sh
 | ``address_street_id``        | Derived from ``pylovo_input.ways`` and ``citydb.address``                | Street ID corresponding to the building's address          |
 +------------------------------+--------------------------------------------------------------------------+------------------------------------------------------------+
 
-Processing Steps``'-1919'``, ``'1919-1948'``, ``'1949-1978'``, ``'1979-1990'``, ``'1991-2000'``, ``'2001-2010'``, ``'2011-2019'`` or ``'2020-'``
+Processing Steps
 ----------------
 
 This section outlines the full data filling and processing flow for building data, combining building geometries and census data.
 
-Create the Buildings Table
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+1. Create the Buildings Table
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 We begin by creating the ``pylovo_input.buildings`` table, which will hold all relevant attributes for each structure.
 Using CityDB, we populate ``id``, ``objectid``, ``building_use_id``, and ``building_use`` (mapped from ``building_use_id``).
 Only buildings with function codes starting with ``31001_`` are loaded.
 Garages (``31001_2463``) and water tanks (``31001_2513``) are excluded.
 
-Import and Filter Geometry
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+2. Import and Filter Geometry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Geometry is linked to ground surfaces via the ``objectid`` and converted into EPSG:3035.
 The ``floor_area`` can also be extracted from the ground surface features.
 Any building smaller than 12 m² is filtered out, as such structures are assumed to be non-habitable.
 After ``height`` is imported from ``citydb``, buildings shorter than 3.5 m are filtered out. 
 
-Fill and Estimate Floor Numbers
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+3. Fill and Estimate Floor Numbers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``floor_number`` is taken from the ``storeysAboveGround`` attribute when available.
 If it's missing, we estimate it by dividing the total building height by the median height per floor.
 These medians are calculated from all buildings in InfDB where floor numbers were known and grouped by type.
 
-Estimate Occupancy and Households
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+4. Estimate Occupancy and Households
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Only residential buildings proceed to this step.
 We estimate the number of occupants by distributing census population data proportionally based on each building's volume (``floor_area * height``).
@@ -114,14 +114,14 @@ Households are then estimated using the average household size from census.
 Every residential building is enforced to have at least one occupant and one household.
 If census data is missing, the nearest census grid with data is used to fill in the values.
 
-Assign Construction Year
-~~~~~~~~~~~~~~~~~~~~~~~~
+5. Assign Construction Year
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Construction years are assigned randomly but weighted by the corresponding census grid data.
 Again, for buildings where the construction year is missing, we find the nearest grid with available data and assign based on those distributions.
 
-Count Touching Neighbors
-~~~~~~~~~~~~~~~~~~~~~~~~
+6. Count Touching Neighbors
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To support building type classification, we identify neighboring buildings.
 Structures within 0.01 meters are considered "touching".
@@ -129,8 +129,8 @@ Each building is assigned a neighbor count.
 Zero neighbors are allowed.
 This is used for assigning building types.
 
-Classify Building Type
-~~~~~~~~~~~~~~~~~~~~~~
+7. Classify Building Type
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Buildings are initially classified based on structural characteristics and neighborhood context.
 The following initial classification rules are applied:
@@ -153,8 +153,8 @@ Buildings with 2-3 floors touching MFH likely also MFH.
 If classification fails but the building is residential, it defaults to AB.
 This classification is then refined using household counts: one household implies SFH or TH, two to four households point to MFH, and five or more households suggest AB.
 
-Rebalance to Match Census
-~~~~~~~~~~~~~~~~~~~~~~~~~
+8. Rebalance to Match Census
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Once initial classification is complete, building type distributions are adjusted per census grid to match target proportions.
 Rebalancing follows a set of conversion rules:
@@ -166,8 +166,8 @@ Rebalancing follows a set of conversion rules:
 
 Household counts are kept consistent during these adjustments.
 
-Final Attribute Assignments
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+9. Final Attribute Assignments
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Postcodes are assigned using PLZ geometry overlays.
 Finally, ``address_street_id`` is linked using matching address data from buildings and ways.
