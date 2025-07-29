@@ -103,7 +103,7 @@ Fill and Estimate Floor Numbers
 
 The ``floor_number`` is taken from the ``storeysAboveGround`` attribute when available.
 If it's missing, we estimate it by dividing the total building height by the median height per floor.
-These medians are calculated from buildings where floor numbers were known and grouped by type to reflect realistic patterns.
+These medians are calculated from all buildings in InfDB where floor numbers were known and grouped by type.
 
 Estimate Occupancy and Households
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
