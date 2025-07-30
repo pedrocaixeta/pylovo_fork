@@ -1,7 +1,7 @@
 /*
  * FUNCTION PURPOSE AND OVERVIEW:
  * =============================
- * This function splits a single linear geometry (line, way, or path) into multiple 
+ * This function splits a single linear geometry of ways into multiple 
  * segments at specified point locations. It takes a line geometry and an array of 
  * point geometries, then returns each segment between consecutive points as separate 
  * geometric objects.

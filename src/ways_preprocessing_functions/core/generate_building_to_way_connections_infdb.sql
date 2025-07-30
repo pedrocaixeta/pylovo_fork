@@ -51,7 +51,7 @@ BEGIN
     -- PHASE 1: ANALYSIS - Generate Connection Candidates
     -- =====================================================================================
     -- Generate analysis of building-to-way connections
-    -- This creates temp_building_connection_candidates table with optimal connection points
+    -- This creates temp_building_connection_candidates_infdb table with optimal connection points
     PERFORM generate_building_way_connection_candidates_infdb();
 
     -- =====================================================================================
@@ -59,7 +59,7 @@ BEGIN
     -- =====================================================================================
     -- Iterate through each building that needs a way connection
     -- Handle special cases where connections are near way endpoints
-    FOR r IN SELECT * FROM temp_building_connection_candidates
+    FOR r IN SELECT * FROM temp_building_connection_candidates_infdb
     LOOP
         -- CASE 1: CONNECTION NEAR WAY START POINT
         -- If connection point is very close to the start of the existing way
@@ -73,7 +73,7 @@ BEGIN
 
             -- Remove this building from candidates since no way splitting is needed
             -- The connection uses the existing way endpoint
-            DELETE FROM temp_building_connection_candidates
+            DELETE FROM temp_building_connection_candidates_infdb
             WHERE osm_id = r.osm_id;
             
         -- CASE 2: CONNECTION NEAR WAY END POINT  
@@ -88,7 +88,7 @@ BEGIN
 
             -- Remove this building from candidates since no way splitting is needed
             -- The connection uses the existing way endpoint
-            DELETE FROM temp_building_connection_candidates
+            DELETE FROM temp_building_connection_candidates_infdb
             WHERE osm_id = r.osm_id;
 
         -- CASE 3: CONNECTION IN MIDDLE OF WAY
@@ -115,7 +115,7 @@ BEGIN
         -- Aggregate all connection points for this way, ordered by position along the way
         -- This ordering is crucial for proper segmentation
         ARRAY_AGG(connection_point ORDER BY ST_LineLocatePoint(old_geom, connection_point)) AS connection_points
-    FROM temp_building_connection_candidates  -- Only remaining candidates need way splitting
+    FROM temp_building_connection_candidates_infdb  -- Only remaining candidates need way splitting
     GROUP BY old_way_id, old_geom;           -- One group per unique way
 
     -- =====================================================================================
