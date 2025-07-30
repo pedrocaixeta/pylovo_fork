@@ -20,15 +20,20 @@ def main():
     logger.info("### CREATE ALL TABLES ###")
     sgc.create_table(table_name="all")
 
-    ### Add defined csv raw data from CSV_FILE_LIST to the database
-    logger.info("### POPULATE DB WITH CSV RAW DATA ###")
-    sgc.csv_to_db()
-
     ### Add transformer data from geojson to the database
     logger.info("### QUERY TRANSFORMERS AND INSERT THEM INTO DB (~50 min if processing new trafo data) ###")
     sgc.transformers_to_db()
 
+    if USE_INFDB:
+        ### Here atm only equipment_data are imported as postcodes are imported from infdb but keep this for modularity
+        logger.info("### POPULATE DB WITH EQUIPMENT DATA ###")
+        sgc.csv_to_db(CSV_FILE_LIST_INFDB)
+
     if not USE_INFDB:
+        ### Add defined csv raw data from CSV_FILE_LIST to the database
+        logger.info("### POPULATE DB WITH CSV RAW DATA ###")
+        sgc.csv_to_db(CSV_FILE_LIST)
+
         ### Create table with data from osm
         logger.info("### POPULATE public_2po_4pgr TABLE (~30 min) ###")
         sgc.create_public_2po_table()

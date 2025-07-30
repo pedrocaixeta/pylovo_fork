@@ -178,9 +178,9 @@ class DatabaseConstructor:
         ]
         self.ogr_to_db(trafo_dict)
 
-    def csv_to_db(self):
+    def csv_to_db(self, csv_file_list):
 
-        for file_dict in CSV_FILE_LIST:
+        for file_dict in csv_file_list:
             st = time.time()
             file_path = Path(file_dict["path"])
             assert file_path.exists(), file_path
