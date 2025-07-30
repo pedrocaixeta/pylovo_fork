@@ -61,6 +61,30 @@ Other required data files that are already included in the raw_data directory of
 - ``consumer_categories.csv``
 - ``equipment_data.csv``
 
+Using InfDB data for buildings and ways
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+If you wish to use InfDB as the datasource for buildings and ways make sure to run the processor in your InfDB instance.
+For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
+
+Then, before running the ``main_constructor.py`` script to initialize the database set the
+following parameters in your ``.env`` file of Pylovo.
+
+::
+
+    USE_INFDB=True                      # tell Pylovo to use InfDB
+    INFDB_DBNAME="citydb"               # replace
+    INFDB_USER="citydb_user"            # replace
+    INFDB_HOST="00.000.00.000"          # replace
+    INFDB_PORT=5432                     # replace
+    INFDB_PASSWORD="citydb_password"    # replace
+    INFDB_TARGET_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
+
+.. note::
+    If you decide to use buildings and ways from InfDB (``USE_INFDB`` is set to ``True``) then you don't need to
+    buildings and ways data locally.
+
+This is because during database setup (``main_constructor.py``) Pylovo will skip importing ways and before generation
+it will skip importing buildings, as it gets both directly from InfDB.
 
 Load raw data to the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -134,16 +158,22 @@ If you want more control over your input data follow instructions below:
 
 (Optional) Preprocess transformers from OSM data
 ------------------------------------------------
-By default the database is populated with preloaded data of transformers in Bavaria.
+By default the database is populated with preloaded data of transformers in Bavaria, which are directly available
+in the repository: ``raw_data/transformer_data/fetched_trafos/2145268_*.geojson``.
 
-If you want to fetch up-to-date data upon running ``runme/main_constructor.py`` data from OSM, delete the
-``raw_data/transformer_data/processed_trafos/*_trafos_processed.geojson`` file before running the script.
+If you want to fetch up-to-date data from OSM upon setting up the database with ``runme/main_constructor.py``, delete
+the ``raw_data/transformer_data/processed_trafos/*_trafos_processed.geojson`` file before running the script.
+Pylovo will then know to fetch new data before importing it.
+
+It is not necessary to delete ``raw_data/transformer_data/fetched_trafos/2145268_*.geojson``.
+Pylovo will fetch new data from OSM even if they are there, since the processing part afterwards takes much longer.
 
 If you want to fetch up-to-date data upon running ``runme/main_constructor.py`` from a different area
 then change the ``RELATION_ID`` in ``src/data_import/import_transformers.py`` to the relation ID
 of the desired area.
 
-Note: Processing transformer data can take around 50 minutes for entire German states.
+.. note::
+    Processing transformer data can take around **50 minutes** for entire German states.
 
 How to find desired relation ID
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -159,12 +189,15 @@ How to find desired relation ID
 
    **Sidebar example:** Relation: Munich (**62428**)
 
+.. image:: ../images/install/relation_id.png
+    :width: 60%
+    :alt: Relation I.D. image
+
 How to add more transformer data after database has already been constructed
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 To add more transformers from different areas after ``runme/main_constructor.py`` has been run, i.e. the database
-has been constructed, simply run the ``runme/import/import_transformers_via_relation_id.py`` script as shown in the example.
-
-Example:
+has been constructed, simply run the ``runme/import/import_transformers_via_relation_id.py``
+script as shown in the example below:
 
 ::
 

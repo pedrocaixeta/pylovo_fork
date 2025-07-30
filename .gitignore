@@ -29,6 +29,7 @@ venv.bak/
 # Documentation
 docs/_build/
 docs/meta/
+docs/build/
 
 # Distribution / packaging
 .Python
