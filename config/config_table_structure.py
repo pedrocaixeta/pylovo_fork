@@ -344,31 +344,34 @@ CREATE_QUERIES = {
     )
     """,
     "transformer_positions_with_grid": """
-    CREATE OR REPLACE VIEW transformer_positions_with_grid AS (
+    CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_positions_with_grid AS (
         SELECT tp.*, gr.kcid, gr.bcid, gr.plz
         FROM transformer_positions tp
         JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
-    )
+    );
+    CREATE INDEX idx_transformer_positions_with_grid_geom ON transformer_positions_with_grid USING gist (geom)
     """,
     "transformer_classified_with_grid": """
-    CREATE OR REPLACE VIEW transformer_classified_with_grid AS (
+    CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_classified_with_grid AS (
         SELECT tc.*, gr.version_id, gr.kcid, gr.bcid, gr.plz
         FROM transformer_classified tc
         JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
-    )
+    );
+    CREATE INDEX idx_transformer_classified_with_grid_geom ON transformer_classified_with_grid USING gist (geom)
     """,
     "buildings_result_with_grid": """
-    CREATE OR REPLACE VIEW buildings_result_with_grid AS (
+    CREATE MATERIALIZED VIEW IF NOT EXISTS buildings_result_with_grid AS (
         SELECT
             (br.version_id || '_' || br.osm_id) AS id,
             br.*,
             gr.kcid, gr.bcid, gr.plz
         FROM buildings_result br
         JOIN grid_result gr ON br.grid_result_id = gr.grid_result_id
-    )
+    );
+    CREATE INDEX idx_buildings_result_with_grid_geom ON buildings_result_with_grid USING gist (geom)
     """,
     "lines_result_with_grid": """
-    CREATE OR REPLACE VIEW lines_result_with_grid AS (
+    CREATE MATERIALIZED VIEW IF NOT EXISTS lines_result_with_grid AS (
         SELECT
             lr.lines_result_id as id,
             lr.grid_result_id,
@@ -381,7 +384,8 @@ CREATE_QUERIES = {
             gr.version_id, gr.kcid, gr.bcid, gr.plz
         FROM lines_result lr
         JOIN grid_result gr ON lr.grid_result_id = gr.grid_result_id
-    )
+    );
+    CREATE INDEX idx_lines_result_with_grid_geom ON lines_result_with_grid USING gist (geom)
     """
 }
 
@@ -413,4 +417,19 @@ TEMP_CREATE_QUERIES = {
         way_id integer,
         plz integer
     )""",
+}
+
+REFRESH_QUERIES = {
+    "transformer_positions_with_grid": """
+    REFRESH MATERIALIZED VIEW transformer_positions_with_grid
+    """,
+    "transformer_classified_with_grid": """
+    REFRESH MATERIALIZED VIEW transformer_classified_with_grid
+    """,
+    "buildings_result_with_grid": """
+    REFRESH MATERIALIZED VIEW buildings_result_with_grid
+    """,
+    "lines_result_with_grid": """
+    REFRESH MATERIALIZED VIEW lines_result_with_grid
+    """,
 }
