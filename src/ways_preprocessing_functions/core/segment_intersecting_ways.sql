@@ -40,8 +40,6 @@ declare
     -- Record to hold the intersecting street found for current way
     old_street        RECORD;
     
-    -- Counter variable to track remaining records after processing
-    lengthof INTEGER := 0;
     
 begin
     -- MAIN PROCESSING LOOP: Iterate through all ways in the temporary table
@@ -132,12 +130,7 @@ begin
 
         end loop; -- End of main processing loop
     
-    -- STEP 9: FINAL REPORTING
-    -- Count remaining records in the temporary table after processing
-    SELECT COUNT(*) INTO lengthof FROM ways_tem;
     
-    -- Output processing statistics and completion message
-    RAISE NOTICE 'Length of ways_tem after processing: %', lengthof;
     RAISE NOTICE 'Way connections have been successfully drawn and segmented.';
     
 end;

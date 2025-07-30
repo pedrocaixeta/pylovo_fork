@@ -18,7 +18,7 @@
  *
  * WORKFLOW INTEGRATION:
  * This function integrates with:
- * - generate_building_way_connection_candidates_infdb(): For spatial analysis
+ * - generate_building_way_connection_candidates_infdb(): For spatial analysis (with address-aware matching)
  * - insert_way_segment(): For adding new geometric segments
  * - split_way_at_connection_points(): For way segmentation
  *
@@ -51,7 +51,7 @@ BEGIN
     -- PHASE 1: ANALYSIS - Generate Connection Candidates
     -- =====================================================================================
     -- Generate analysis of building-to-way connections
-    -- This creates temp_building_connection_candidates_infdb table with optimal connection points
+    -- This creates temp_building_connection_candidates_infdb table with optimal connection points (with address-aware matching)
     PERFORM generate_building_way_connection_candidates_infdb();
 
     -- =====================================================================================
