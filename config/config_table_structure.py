@@ -106,7 +106,7 @@ CREATE_QUERIES = {
             REFERENCES postcode_result (version_id, postcode_result_plz)
             ON DELETE CASCADE
     );
-    CREATE INDEX idx_grid_result_version_id_plz_bcid_kcid
+    CREATE INDEX IF NOT EXISTS idx_grid_result_version_id_plz_bcid_kcid
     ON grid_result (version_id, plz, bcid, kcid)
     """,
     "lines_result": """
@@ -160,7 +160,7 @@ CREATE_QUERIES = {
             REFERENCES consumer_categories (definition)
             ON DELETE CASCADE
     );
-    CREATE INDEX idx_buildings_result_grid_result_id
+    CREATE INDEX IF NOT EXISTS idx_buildings_result_grid_result_id
     ON buildings_result (grid_result_id);
     """,
     "municipal_register": """CREATE TABLE IF NOT EXISTS municipal_register (
