@@ -400,7 +400,8 @@ TEMP_CREATE_QUERIES = {
         bcid integer,
         kcid integer,
         floors integer,
-        connection_point integer
+        connection_point integer,
+        address_street_id integer
     )""",
     "ways_tem": """CREATE TABLE IF NOT EXISTS ways_tem
     (
