@@ -82,4 +82,21 @@ class InfdbClient:
             raise ValueError("No ways found in remote DB intersecting the given PLZ geometry")
 
         return rows
+    
+    def fetch_postcode_data(self) -> list[tuple]:
+        """
+        Fetch postcode data from InfDB and return rows matching the local schema,
+        including geometry transformed to SRID 3035.
+        """
+        query = """
+            SELECT 
+                plz,
+                note,
+                qkm,
+                einwohner AS population,
+                ST_Transform(geometry, 3035) AS geom
+            FROM opendata."plz_plz-5stellig";
+        """
+        self.cur.execute(query)
+        return self.cur.fetchall()
 

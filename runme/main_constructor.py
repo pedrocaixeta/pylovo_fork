@@ -29,6 +29,10 @@ def main():
         logger.info("### POPULATE DB WITH EQUIPMENT DATA ###")
         sgc.csv_to_db(CSV_FILE_LIST_INFDB)
 
+        ### Fetch postcode data from InfDB and insert into local 'postcode' table
+        logger.info("### FETCH AND POPULATE POSTCODE DATA FROM INFDB ###")
+        sgc.load_postcode_from_infdb()
+
     if not USE_INFDB:
         ### Add defined csv raw data from CSV_FILE_LIST to the database
         logger.info("### POPULATE DB WITH CSV RAW DATA ###")

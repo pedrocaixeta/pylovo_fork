@@ -9,6 +9,7 @@ import sqlparse
 from src.config_loader import *
 from config.config_table_structure import *
 import src.database.database_client as dbc
+from src.infdb.infdb_client import InfdbClient
 from src.data_import.import_transformers import process_trafos, get_trafos_processed_3035_geojson_path, \
     fetch_trafos, RELATION_ID, EPSG, get_trafos_processed_geojson_path
 
@@ -203,6 +204,39 @@ class DatabaseConstructor:
 
             et = time.time()
             print(f"{file_name} is successfully imported to db in {int(et - st)} s")
+    
+    def load_postcode_from_infdb(self):
+        """
+        Load postcode data from InfDB and insert into local 'postcode' table in pylovo.
+        """
+        st = time.time()
+
+        # Create InfdbClient instance to connect to remote InfDB
+        infdb_client = InfdbClient()
+
+        # Fetch postcode data from InfDB
+        rows = infdb_client.fetch_postcode_data()
+
+        if not rows:
+            raise ValueError("No postcode data retrieved from InfDB")
+
+        # Optional: Clear existing data from local postcode table
+        if self.table_exists(table_name="postcode"):
+            with self.dbc.conn.cursor() as cur:
+                cur.execute("DELETE FROM postcode")
+                self.dbc.conn.commit()
+
+        # Insert rows into local DB using executemany
+        insert_query = """
+            INSERT INTO postcode (plz, note, qkm, population, geom)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        with self.dbc.conn.cursor() as cur:
+            cur.executemany(insert_query, rows)
+            self.dbc.conn.commit()
+
+        et = time.time()
+        print(f"Postcode data imported from InfDB in {int(et - st)} s")
 
 
     def create_public_2po_table(self):
