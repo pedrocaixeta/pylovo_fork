@@ -49,8 +49,9 @@ CLUSTERING_PARAMETERS = CONFIG_DATA["CLUSTERING_PARAMETERS"]
 MUNICIPAL_REGISTER = CONFIG_DATA["MUNICIPAL_REGISTER"]
 CSV_FILE_LIST = [
     {"path": os.path.join("raw_data", "equipment_data.csv"), "table_name": "equipment_data"},
-    {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},
-]
+    {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},]
+CSV_FILE_LIST_INFDB = [
+    {"path": os.path.join("raw_data", "equipment_data.csv"), "table_name": "equipment_data"},]
 
 # Assign all variables from CONFIG_VERSION
 VERSION_ID = CONFIG_VERSION["VERSION_ID"]

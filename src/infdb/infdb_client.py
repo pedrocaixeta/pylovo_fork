@@ -51,10 +51,11 @@ class InfdbClient:
                 - center (str): Building centroid geometry in PostGIS EWKB format as hex string
                 - floor_number (int): Number of floors in the building
                 - households (int): Number of households in the building
+                - address_street_id (int): id of the way that the building is connected to
         """
         query = """
             SELECT id, floor_area, COALESCE(building_type, building_use) as type,
-                   geom, ST_Centroid(geom) as center, floor_number, households
+                   geom, ST_Centroid(geom) as center, floor_number, households, address_street_id
             FROM buildings
             WHERE postcode = %(p)s
             AND building_use IN ('Commercial', 'Public', 'Residential')
@@ -67,11 +68,12 @@ class InfdbClient:
     def fetch_ways_from_infdb(self, postcode) -> list:
         """
         Fetch ways from remote DB for a given postcode.
+        Filter out clazz:72 (Rad- und Fußweg)
         """
         query = """
             SELECT clazz, source, target, cost, reverse_cost, geom, way_id
             FROM ways
-            WHERE postcode = %(postcode)s
+            WHERE postcode = %(postcode)s and clazz != 72
         """
         self.cur.execute(query, {"postcode": postcode})
         rows = self.cur.fetchall()
@@ -80,4 +82,21 @@ class InfdbClient:
             raise ValueError("No ways found in remote DB intersecting the given PLZ geometry")
 
         return rows
+    
+    def fetch_postcode_data(self) -> list[tuple]:
+        """
+        Fetch postcode data from InfDB and return rows matching the local schema,
+        including geometry transformed to SRID 3035.
+        """
+        query = """
+            SELECT 
+                plz,
+                note,
+                qkm,
+                einwohner AS population,
+                ST_Transform(geometry, 3035) AS geom
+            FROM opendata."plz_plz-5stellig";
+        """
+        self.cur.execute(query)
+        return self.cur.fetchall()
 
