@@ -66,18 +66,17 @@ Using InfDB data for buildings and ways
 If you wish to use InfDB as the datasource for buildings and ways make sure to run the processor in your InfDB instance.
 For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
 
-Then, before running the ``main_constructor.py`` script to initialize the database set the
-following parameters in your ``.env`` file of Pylovo.
+Then, before running the ``main_constructor.py`` script to initialize the database set the ``USE_INFDB: True`` in the
+``config_data.yaml`` file and set the following parameters in your ``.env`` file of Pylovo.
 
 ::
 
-    USE_INFDB=True                      # tell Pylovo to use InfDB
     INFDB_DBNAME="citydb"               # replace
     INFDB_USER="citydb_user"            # replace
     INFDB_HOST="00.000.00.000"          # replace
     INFDB_PORT=5432                     # replace
     INFDB_PASSWORD="citydb_password"    # replace
-    INFDB_TARGET_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
+    INFDB_SOURCE_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
 
 .. note::
     If you decide to use buildings and ways from InfDB (``USE_INFDB`` is set to ``True``) then you don't need to
