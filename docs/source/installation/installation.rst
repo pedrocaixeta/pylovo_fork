@@ -38,6 +38,7 @@ A. External users: Create your database
 
 ::
 
+    # PYLOVO Database
     DBNAME = "pylovo_db"
     USER = "postgres"
     HOST = "localhost"
@@ -67,10 +68,18 @@ If you wish to use InfDB as the datasource for buildings and ways make sure to r
 For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
 
 Then, before running the ``main_constructor.py`` script to initialize the database set the ``USE_INFDB: True`` in the
-``config_data.yaml`` file and set the following parameters in your ``.env`` file of Pylovo.
+``config_data.yaml`` file and add the INFDB configuration to your ``.env`` file below the pylovo configurations:
 
 ::
 
+    # PYLOVO Database
+    DBNAME = "pylovo_db"
+    USER = "postgres"
+    HOST = "localhost"
+    PORT = "5432"
+    PASSWORD = "yourpassword"
+
+    # InfDB Database (Input Data)
     INFDB_DBNAME="citydb"               # replace
     INFDB_USER="citydb_user"            # replace
     INFDB_HOST="00.000.00.000"          # replace
