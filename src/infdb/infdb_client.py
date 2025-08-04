@@ -20,7 +20,7 @@ class InfdbClient:
                 password=pw,
                 host=host,
                 port=port,
-                options=f"-c search_path={INFDB_TARGET_SCHEMA},public",
+                options=f"-c search_path={INFDB_SOURCE_SCHEMA},public",
             )
             self.cur = self.conn.cursor()
             self.db_path = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{dbname}"

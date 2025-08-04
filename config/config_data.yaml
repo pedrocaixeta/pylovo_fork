@@ -1,11 +1,11 @@
-# If set to true ensure that you have the connection details in your .env file. Template:
+# If set to True ensure that you have the connection details in your .env file. Template is below.
+USE_INFDB: False
 # // .env
-# INFDB_DBNAME='postgres'
-# INFDB_USER='postgres'
+# INFDB_DBNAME='citydb'
+# INFDB_USER='citydb_user'
 # INFDB_HOST='00.000.00.00'
-# INFDB_PORT=1234
-# INFDB_PASSWORD='pw'
-USE_INFDB: True
+# INFDB_PORT=5432
+# INFDB_PASSWORD='citydb_password'
 
 # Default Database connection configuration
 DBNAME: pylovo_db_local
