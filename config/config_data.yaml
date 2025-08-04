@@ -1,5 +1,5 @@
 # If set to True ensure that you have the connection details in your .env file. Template is below.
-USE_INFDB: False
+USE_INFDB: True
 # // .env
 # INFDB_DBNAME='citydb'
 # INFDB_USER='citydb_user'
