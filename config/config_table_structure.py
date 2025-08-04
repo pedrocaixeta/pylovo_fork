@@ -345,7 +345,7 @@ CREATE_QUERIES = {
     """,
     "transformer_positions_with_grid": """
     CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_positions_with_grid AS (
-        SELECT tp.*, gr.kcid, gr.bcid, gr.plz
+        SELECT tp.*, gr.kcid, gr.bcid, gr.plz, gr.transformer_rated_power
         FROM transformer_positions tp
         JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
     );
@@ -353,7 +353,7 @@ CREATE_QUERIES = {
     """,
     "transformer_classified_with_grid": """
     CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_classified_with_grid AS (
-        SELECT tc.*, gr.version_id, gr.kcid, gr.bcid, gr.plz
+        SELECT tc.*, gr.version_id, gr.kcid, gr.bcid, gr.plz, gr.transformer_rated_power
         FROM transformer_classified tc
         JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
     );
