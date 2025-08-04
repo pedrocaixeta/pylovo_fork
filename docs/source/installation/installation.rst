@@ -2,22 +2,54 @@ Installation
 ************
 
 Setup Repository and Environment
-==============
+============================
 | Start by cloning the repository from GitHub into a directory of your choice.
-| We recommend setting up a virtual environment to avoid conflicts with other packages. If you have installed the required Python version (Python3.12) on your system, you can create a virtual environment with the following command:
+| We recommend setting up a virtual environment to avoid conflicts with other packages.
+
+A. Installation with `uv <https://docs.astral.sh/uv/getting-started/>`_ project management
+----------------------------------------
+| We recomment to use uv to install and manage your Python environment. If you don't have uv installed,
+you can install it with the following command:
 
 ::
 
-    python3.12 -m venv pylovo-env
+    # For Linux and macOS
+    curl -LsSf https://astral.sh/uv/install.sh | sh
 
-Alternatively, you can use `pyenv <https://github.com/pyenv/pyenv>`_ or `virtualenv <https://virtualenv.pypa.io/en/latest/index.html#>`_ to use Python 3.12.
+    # For Windows (PowerShell)
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+| Initialize your uv project in the root directory of the cloned repository with:
+
+::
+
+    uv init
+
+| Get your virtual environment from the ``pyproject.toml`` file in the root directory of the repository with:
+
+::
+
+    uv sync
+
+
+B. Installation with virtual environments in python
+----------------------------------------
+Alternatively, you can also use virtual environments in python if you have installed the required Python version
+(Python3.12) on your system. You can create it with the following command:
+
+::
+
+    python3.12 -m venv venv
+
+If you don't have the correct python version, you can also use `pyenv <https://github.com/pyenv/pyenv>`_ or
+`virtualenv <https://virtualenv.pypa.io/en/latest/index.html#>`_ to use Python 3.12.
 
 Next, you can activate the environment with:
 
 ::
 
-    Linux: source pylovo-env/bin/activate
-    Windows: pylovo-env/Scripts/activate
+    Linux: source venv/bin/activate
+    Windows: venv/Scripts/activate
 
 After activating the virtual environment, install the required packages:
 
@@ -102,7 +134,7 @@ The ``main_constructor.py`` script initializes and populates the **pylovo** data
 
 ::
 
-    python3.12 executable_scripts/main_constructor.py
+    uv run python -m runme.main_constructor
 
 .. warning::
 
