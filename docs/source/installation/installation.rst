@@ -44,6 +44,7 @@ A. External users: Create your database
     HOST = "localhost"
     PORT = "5432"
     PASSWORD = "yourpassword"
+    TARGET_SCHEMA = "pylovo" # optional, default is "public"
 
 - `GDAL <https://gdal.org/en/stable/index.html>`_ is required for some geo-transformations. Ensure it is installed on your system. (e.g. for Ubuntu 24.04: ``sudo apt install gdal-bin``).
 
@@ -78,6 +79,7 @@ Then, before running the ``main_constructor.py`` script to initialize the databa
     HOST = "localhost"
     PORT = "5432"
     PASSWORD = "yourpassword"
+    TARGET_SCHEMA = "pylovo" # optional, default is "public"
 
     # InfDB Database (Input Data)
     INFDB_DBNAME="citydb"               # replace
