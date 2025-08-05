@@ -1,0 +1,38 @@
+[project]
+name = "pylovo"
+version = "0.3.0"
+description = "Python tool for generating synthetic low-voltage distribution grids"
+readme = "README.rst"
+requires-python = ">=3.12"
+dependencies = [
+    "contextily==1.6.2",
+    "factor-analyzer==0.5.1",
+    "geoalchemy2==0.17.1",
+    "geopandas==1.0.1",
+    "igraph==0.11.8",
+    "matplotlib==3.10.0",
+    "numpy==1.26.4",
+    "openpyxl==3.1.5",
+    "osm2geojson==0.2.6",
+    "pandapower==2.14.11",
+    "pandas==2.2.3",
+    "plotly==5.24.1",
+    "psycopg2-binary==2.9.10",
+    "python-dotenv==1.0.1",
+    "pyyaml==6.0.2",
+    "requests==2.32.3",
+    "scikit-learn==1.6.1",
+    "scikit-learn-extra==0.3.0",
+    "scipy==1.13.1",
+    "seaborn==0.13.2",
+    "setuptools==78.1.1",
+    "sphinx-autoapi==3.4.0",
+    "sphinx-js==4.0.0",
+    "sphinx-rtd-theme==3.0.2",
+    "sqlalchemy==2.0.36",
+    "sqlparse==0.5.3",
+    "xlrd==2.0.1",
+]
+
+[project.scripts]
+constructor = "runme.main_constructor:main"

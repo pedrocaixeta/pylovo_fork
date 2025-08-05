@@ -9,13 +9,17 @@ Configuration
 
 Create your first grid
 =========================================
-After defining your plz in the ``grid_generation_for_single_plz.py`` script, you can run:
+After defining your plz in the ``create_grid_single_plz.py`` script, you can run:
 
 ::
 
-    python3.12 executable_scripts/grid_generation_for_single_plz.py
+    uv run python -m runme.create.create_grid_single_plz
 
 If the grids for the given region and version are already generated, the code will terminate.
+
+.. note::
+When you run the scripts within your IDE make sure to set the working directory to the root of the pylovo project in
+your run configurations.
 
 Apart from this you can:
 

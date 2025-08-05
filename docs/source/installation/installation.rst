@@ -2,22 +2,50 @@ Installation
 ************
 
 Setup Repository and Environment
-==============
+============================
 | Start by cloning the repository from GitHub into a directory of your choice.
-| We recommend setting up a virtual environment to avoid conflicts with other packages. If you have installed the required Python version (Python3.12) on your system, you can create a virtual environment with the following command:
+| We recommend setting up a virtual environment to avoid conflicts with other packages.
+
+A. Installation with `uv <https://docs.astral.sh/uv/>`_ project management (recommended)
+----------------------------------------
+| We recommend to use uv to install and manage your Python environment. If you don't have uv installed, you can install it with the following command:
 
 ::
 
-    python3.12 -m venv pylovo-env
+    # For Linux and macOS
+    curl -LsSf https://astral.sh/uv/install.sh | sh
 
-Alternatively, you can use `pyenv <https://github.com/pyenv/pyenv>`_ or `virtualenv <https://virtualenv.pypa.io/en/latest/index.html#>`_ to use Python 3.12.
+    # For Windows (PowerShell)
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+| Next, get the environment from the ``pyproject.toml`` file in the root directory of the repository:
+
+::
+
+    uv sync
+
+That's it. If you use uv you can run all files with the ``uv run`` command as shown in later examples without additional need
+to care about the virtual environments.
+
+
+B. Installation with python virtual environments
+----------------------------------------
+Alternatively, you can also use virtual environments in python. If you have installed the required Python version
+(Python3.12) on your system. You can create it with the following command:
+
+::
+
+    python3.12 -m venv venv
+
+If you don't have the correct python version, you can also use `pyenv <https://github.com/pyenv/pyenv>`_ or
+`virtualenv <https://virtualenv.pypa.io/en/latest/index.html#>`_ to use Python 3.12.
 
 Next, you can activate the environment with:
 
 ::
 
-    Linux: source pylovo-env/bin/activate
-    Windows: pylovo-env/Scripts/activate
+    Linux: source venv/bin/activate
+    Windows: venv/Scripts/activate
 
 After activating the virtual environment, install the required packages:
 
@@ -27,11 +55,12 @@ After activating the virtual environment, install the required packages:
 
 Database Configuration
 =========================================
-A. External users: Create your database
+Create your database
 ----------------------------------------
 - Install `PostgreSQL <https://www.postgresql.org/download/>`_ on your machine and make sure to keep "Stack Builder"
   checked if you are using an installer.
 - Install `PostGIS <https://postgis.net/documentation/getting_started/>`_. If you installed Stack Builder use it to install PostGIS.
+- `GDAL <https://gdal.org/en/stable/index.html>`_ is required for some geo-transformations. Ensure it is installed on your system. (e.g. for Ubuntu 24.04: ``sudo apt install gdal-bin``).
 - Create your database with the appropriate configuration (dbname, user, password, host, port).
 - Create a ``.env`` file in the root directory of the repository with these configurations or adjust the connections parameters in the ``config_data.py``.
 - Your configurations might might look like this:
@@ -46,10 +75,11 @@ A. External users: Create your database
     PASSWORD = "yourpassword"
     TARGET_SCHEMA = "pylovo" # optional, default is "public"
 
-- `GDAL <https://gdal.org/en/stable/index.html>`_ is required for some geo-transformations. Ensure it is installed on your system. (e.g. for Ubuntu 24.04: ``sudo apt install gdal-bin``).
 
 Input data
-~~~~~~~~~~
+------------------
+A. Using file-based raw data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The minimum data requirements for the ``raw_data`` directory are described below.
 Some larger data files, which you can request from the maintainers at ENS, are not included in the repository due to their size (an online source will be available soon):
 
@@ -63,13 +93,16 @@ Other required data files that are already included in the raw_data directory of
 - ``consumer_categories.csv``
 - ``equipment_data.csv``
 
-Using InfDB data for buildings and ways
+B. Using InfDB data for buildings and ways (Recommended)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-If you wish to use InfDB as the datasource for buildings and ways make sure to run the processor in your InfDB instance.
-For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
+| As loading the shapefiles and SQL files is quite inefficient, we recommend using the InfDB database developed at our chair to get the buildings, ways and postcode data.
+To do so, setup the fully dockerized InfDB from the corresponding `GitHub repository <https://github.com/tum-ens/InfDB>`_
+Make sure to also run the processor in your InfDB instance. For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
 
-Then, before running the ``main_constructor.py`` script to initialize the database set the ``USE_INFDB: True`` in the
-``config_data.yaml`` file and add the INFDB configuration to your ``.env`` file below the pylovo configurations:
+| Then, before running the ``main_constructor.py`` script to initialize the pylovo database set the ``USE_INFDB: True`` in the
+``config_data.yaml`` file.
+| Next, the connection configurations set in the InfDB have to be added in the pylovo repository as
+well: add the InfDB configuration to your ``.env`` file below the pylovo configurations:
 
 ::
 
@@ -90,11 +123,8 @@ Then, before running the ``main_constructor.py`` script to initialize the databa
     INFDB_SOURCE_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
 
 .. note::
-    If you decide to use buildings and ways from InfDB (``USE_INFDB`` is set to ``True``) then you don't need to
-    buildings and ways data locally.
-
-This is because during database setup (``main_constructor.py``) Pylovo will skip importing ways and before generation
-it will skip importing buildings, as it gets both directly from InfDB.
+    If you want to keept it simple, you can also add the pylovo database as schema to the InfDB database by setting the same connection parameters and a
+    ``TARGET_SCHEMA`` such as ``pylovo`` in the ``.env`` file.
 
 Load raw data to the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -102,7 +132,7 @@ The ``main_constructor.py`` script initializes and populates the **pylovo** data
 
 ::
 
-    python3.12 executable_scripts/main_constructor.py
+    uv run python -m runme.main_constructor
 
 .. warning::
 
@@ -131,15 +161,6 @@ Below is a detailed outline of its functionality:
    - **Grid Generation**: The PLZ code (Postleitzahl) defines areas for grid creation.
    - **Building Dataset Import**: The AGS (Amtlicher Gemeindeschlüssel) is required for linking municipal data with building datasets (see :doc:`../../grid_generation/index`).
    - **Area Classification**: The Regiostar class is necessary for categorizing municipalities, enabling accurate analyses (see :doc:`../../classification/index`).
-
-B. ENS students and employees: Access ENS database
----------------------------------------------------
-- The pylovo tool is designed to work with a database hosted on the ENS server. The database is accessible from the ENS network, so you must be connected to the ENS network to access it.
-- If you are working from home, you also need to use a VPN to connect to the MWN network—a prerequisite for connecting to the database server. We recommend using EduVPN_. Follow the instructions in the link to set up a connection.
-
-.. _EduVPN: https://doku.lrz.de/vpn-eduvpn-installation-und-konfiguration-11491448.html?showLanguage=en_GB
-
-- To gain access to the pylovo database from your own machine, you will need to request a username and password from the ENS chair.
 
 
 Additional hints
