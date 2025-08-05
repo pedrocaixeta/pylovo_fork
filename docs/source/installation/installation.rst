@@ -8,7 +8,7 @@ Setup Repository and Environment
 
 A. Installation with `uv <https://docs.astral.sh/uv/>`_ project management (recommended)
 ----------------------------------------
-| We recomment to use uv to install and manage your Python environment. If you don't have uv installed, you can install it with the following command:
+| We recommend to use uv to install and manage your Python environment. If you don't have uv installed, you can install it with the following command:
 
 ::
 
