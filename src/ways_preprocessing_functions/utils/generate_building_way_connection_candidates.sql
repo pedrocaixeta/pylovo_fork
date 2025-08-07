@@ -27,6 +27,7 @@ CREATE OR REPLACE FUNCTION generate_building_way_connection_candidates() RETURNS
 BEGIN
     -- MAIN PROCESSING: Create temporary table with comprehensive connection analysis
     -- This table will contain all necessary data for building-to-way connections
+    DROP TABLE IF EXISTS temp_building_connection_candidates;
     CREATE TEMP TABLE temp_building_connection_candidates AS
     
     -- CTE 1: FILTER BUILDINGS REQUIRING CONNECTIONS

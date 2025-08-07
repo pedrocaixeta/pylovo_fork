@@ -108,6 +108,7 @@ BEGIN
     -- =====================================================================================
     -- Group remaining connection points by the ways they will split
     -- This ensures each way is split only once, even with multiple connections
+    DROP TABLE IF EXISTS grouped_splits;
     CREATE TEMP TABLE grouped_splits AS
     SELECT 
         old_way_id,                           -- ID of way that will be split
