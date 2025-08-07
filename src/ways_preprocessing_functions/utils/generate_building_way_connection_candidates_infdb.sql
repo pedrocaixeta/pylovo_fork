@@ -30,6 +30,7 @@ CREATE OR REPLACE FUNCTION generate_building_way_connection_candidates_infdb() R
 BEGIN
     -- MAIN PROCESSING: Create temporary table with comprehensive connection analysis
     -- This table will contain all necessary data for building-to-way connections
+    DROP TABLE IF EXISTS temp_building_connection_candidates_infdb;
     CREATE TEMP TABLE temp_building_connection_candidates_infdb AS
     
     -- CTE 1: FILTER BUILDINGS REQUIRING CONNECTIONS
