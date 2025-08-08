@@ -22,6 +22,7 @@ SAVE_GRID_FOLDER: False
 
 # Logging configuration for PgReaderWriter & GridGenerator
 LOG_LEVEL: DEBUG
+N_JOBS_PERCENT: 50  # Percentage of CPU cores to use for parallel grid generation
 
 # Seed for the initialization of the k-means clustering for transformer placement
 # Keeping the same seed ensures consistent behavior in multiple runs

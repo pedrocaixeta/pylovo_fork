@@ -44,6 +44,12 @@ RESULT_DIR = os.path.join(os.getcwd(), "results")
 ANALYZE_GRIDS = CONFIG_DATA["ANALYZE_GRIDS"]
 SAVE_GRID_FOLDER = CONFIG_DATA["SAVE_GRID_FOLDER"]
 LOG_LEVEL = CONFIG_DATA["LOG_LEVEL"]
+# Percentage of CPU cores to use for parallel execution
+N_JOBS_PERCENT = CONFIG_DATA.get("N_JOBS_PERCENT", 50)
+# Determine usable number of cores based on system capability
+AVAILABLE_CORES = os.cpu_count() or 1
+# Final number of workers rounded from the percentage of cores
+N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
 K_MEANS_SEED = CONFIG_DATA["K_MEANS_SEED"]
 CLUSTERING_PARAMETERS = CONFIG_DATA["CLUSTERING_PARAMETERS"]
 MUNICIPAL_REGISTER = CONFIG_DATA["MUNICIPAL_REGISTER"]

@@ -25,7 +25,7 @@ if not USE_INFDB:
 # initialize GridGenerator
 gg = GridGenerator()
 df_plz = pd.DataFrame(list(map(str,plz_list)), columns=['plz'])
-gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS)
+gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS, parallel=True)
 
 # end timing and print results
 elapsed_time = time.time() - start_time
