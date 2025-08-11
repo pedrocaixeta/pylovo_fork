@@ -433,7 +433,17 @@ class PreprocessingMixin(BaseMixin, ABC):
             self.cur.execute("SELECT generate_building_to_way_connections();")
 
     def build_pgr_network_topology(self, plz: int) -> None:
-        """Create pgRouting topology on PLZ specific network tables.
+        """Builds the pgRouting-compatible network topology from the updated `ways_tem` table.
+        This includes:
+        1. pgr_createTopology():
+        - Adds `source` and `target` node columns to `ways_tem`.
+        - Assigns node IDs by analyzing the start and end points of each geometry.
+        - Required to enable routing and graph operations on the road network.
+        2. pgr_analyzeGraph():
+        - Verifies that the graph topology is valid and reports disconnected components.
+        - Helps ensure that the routing network is usable and clean.
+        These functions are required by pgRouting to transform a geometry-based table
+        (`ways_tem`) into a routable network graph.
 
         :param plz: Postal code used to suffix temporary tables.
         :type plz: int
