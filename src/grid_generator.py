@@ -84,9 +84,10 @@ class GridGenerator:
     def generate_grid_for_multiple_plz(
         self, df_plz: pd.DataFrame, analyze_grids: bool = False, parallel: bool = True
     ) -> None:
-        """Generate grids for all PLZ entries, optionally using parallel workers.
-
-        Materialized views are refreshed once after all grids have been processed.
+        """Generate grids for all PLZ entries. Materialized views are refreshed once all grids have been processed.
+        :param df_plz: table that contains PLZ for grid generation
+        :param analyze_grids: option to analyse the results after grid generation, defaults to False
+        :param parallel: optionally use parallel workers, defaults to True
         """
         plz_list = [int(row["plz"]) for _, row in df_plz.iterrows()]
         if parallel and N_JOBS > 1:
