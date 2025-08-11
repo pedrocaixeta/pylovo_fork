@@ -1,6 +1,6 @@
 USE_INFDB: True # If True ensure that you have the connection details in your .env file. Template is below.
 PARALLEL: True # Toggles whether the grid generation uses multiple workers in parallel
-N_JOBS_PERCENT: 80  # Percentage of CPU cores to use for parallel grid generation
+N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generation
 ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
 SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
 LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
