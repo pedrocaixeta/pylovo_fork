@@ -432,28 +432,36 @@ class PreprocessingMixin(BaseMixin, ABC):
         else:
             self.cur.execute("SELECT generate_building_to_way_connections();")
 
-    def build_pgr_network_topology(self) -> None:
-        """
-        Builds the pgRouting-compatible network topology from the updated `ways_tem` table.
-
+    def build_pgr_network_topology(self, plz: int) -> None:
+        """Builds the pgRouting-compatible network topology from the updated `ways_tem` table.
         This includes:
         1. pgr_createTopology():
         - Adds `source` and `target` node columns to `ways_tem`.
         - Assigns node IDs by analyzing the start and end points of each geometry.
         - Required to enable routing and graph operations on the road network.
-
         2. pgr_analyzeGraph():
         - Verifies that the graph topology is valid and reports disconnected components.
         - Helps ensure that the routing network is usable and clean.
-
-        These functions are required by pgRouting to transform a geometry-based table 
+        These functions are required by pgRouting to transform a geometry-based table
         (`ways_tem`) into a routable network graph.
+
+        :param plz: Postal code used to suffix temporary tables.
+        :type plz: int
         """
+        edge_table = f"ways_tem_{plz}"
+        vertices_table = f"{edge_table}_vertices_pgr"
+        # create topology on the PLZ-specific ways table
         self.cur.execute(
-            "SELECT pgr_createTopology('ways_tem', 0.01, id:='way_id', the_geom:='geom', clean:=true);"
+            # specify column names positionally to avoid version-specific errors
+            f"SELECT pgr_createTopology('{edge_table}', 0.01, the_geom:='geom', id:='way_id', clean:=true);"
         )
+        # analyze the resulting graph using the same PLZ-specific table
         self.cur.execute(
-            "SELECT pgr_analyzeGraph('ways_tem', 0.01, the_geom:='geom');"
+            f"SELECT pgr_analyzeGraph('{edge_table}', 0.01, the_geom:='geom');"
+        )
+        # Expose vertices table through a session-local view for easier downstream queries
+        self.cur.execute(
+            f"CREATE TEMP VIEW ways_tem_vertices_pgr AS SELECT * FROM {vertices_table}"
         )
 
 
