@@ -10,6 +10,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 - Add new changes here before merging into the next official version.
+- 
+## [0.5.0] - 2025-08-11
+### Changed
+- Adjust grid generation to be completely deterministic
+- Rework ways preprocessing to be more performand and transparent
+- Update QGIS templates
+- Update docs
+
+### Added
+- Implement connection to InfDB (https://github.com/tum-ens/InfDB) with new LOD2 building Zensus2022, street (basemap) and postcode data
+- Add materialized views for better performance in QWC
+- Add uv with pyproject.toml file as alternative for installation
+- Add parallel grid generation depending on cores
+
+## [0.4.0] - 2025-06-26
+### Changed
+- Restructure database communication: split pgReaderWriter into multiple database modules for better organization
+- Restructure src and notebook directories
+- Restructure executable functions in runme categories
+- Adjust directory naming according to best practices
+- Convert configs into yaml files
+- Move parameter calculation class from classification into src to be used for validation
+
+### Fixed
+- Fix unique constraint issue when generating the same grid for different versions
+
+### Added
+- Add improved QGIS templates for local and remote visualization with QWC
+- Add modules for analyzing grid independent from grid generation
+- Add schema selection to config for more flexible database handling
+- Add warnings when analyzing grids
 
 ## [0.3.0] - 2025-05-23
 ### Changed
