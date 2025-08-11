@@ -8,7 +8,7 @@ import pandapower as pp
 from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
 from sklearn.cluster import KMeans
-from concurrent.futures import ProcessPoolExecutor  # lightweight parallel execution
+from concurrent.futures import ProcessPoolExecutor, as_completed  # lightweight parallel execution
 
 import src.database.database_client as dbc
 from src.infdb.infdb_client import InfdbClient
@@ -93,12 +93,24 @@ class GridGenerator:
         if parallel and N_JOBS > 1:
             # use concurrent workers when multiple cores are available
             with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
-                futures = [
-                    executor.submit(GridGenerator._worker, plz, analyze_grids)
+                # Create a dictionary that maps futures to their corresponding PLZ.
+                futures = {
+                    executor.submit(GridGenerator._worker, plz, analyze_grids): plz
                     for plz in plz_list
-                ]
-                for fut in futures:
-                    fut.result()
+                }
+                # as_completed returns futures as they complete. This allows processing
+                # results as they become available and handling exceptions from individual
+                # workers without blocking the entire process.
+                for future in as_completed(futures):
+                    plz = futures[future]
+                    try:
+                        # Calling future.result() will raise an exception if the worker process failed.
+                        future.result()
+                    except Exception as exc:
+                        # Log the exception to record the failed PLZ without stopping the execution
+                        # for other, potentially successful, PLZs.
+                        self.logger.error(f"PLZ {plz} generated an exception: {exc}")
+                        traceback.print_exc()
         else:
             for plz in plz_list:
                 # defer materialized view refresh until all PLZ are processed
@@ -1005,3 +1017,4 @@ class GridGenerator:
         self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string)
 
         self.logger.info(f"Grid with kcid:{kcid} bcid:{bcid} is stored. ")
+
