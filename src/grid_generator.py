@@ -127,7 +127,10 @@ class GridGenerator:
         """Worker process to generate a grid for a single PLZ."""
         log_dir = Path("log")
         log_dir.mkdir(exist_ok=True)
-        gg = GridGenerator(log_file=log_dir / f"log_{plz}.txt")  # dedicated logger per PLZ
+        log_file = log_dir / f"log_{plz}.txt"
+        if log_file.exists():
+            log_file.unlink()  # Overwrite log file if it exists
+        gg = GridGenerator(log_file=log_file)  # dedicated logger per PLZ
         gg.generate_grid_for_single_plz(
             plz=plz, analyze_grids=analyze_grids, refresh_mv=False
         )
