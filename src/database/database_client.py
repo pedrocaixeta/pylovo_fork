@@ -65,7 +65,8 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
     def save_tables(self, plz: int):
 
-        """Persist results from PLZ-specific temporary tables."""
+        """Saves building and ways results from ZIP code-specific temporary tables to the permanent results tables.
+           Removes duplicates from the temporary building table to avoid violating the unique constraint."""
 
         # suffixed table names for the current PLZ
         buildings_table = f"buildings_tem_{plz}"
