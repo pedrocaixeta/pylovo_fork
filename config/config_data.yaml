@@ -1,4 +1,18 @@
-# Database connection configuration
+USE_INFDB: True # If True ensure that you have the connection details in your .env file. Template is below.
+PARALLEL: True # Toggles whether the grid generation uses multiple workers in parallel
+N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generation
+ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
+SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
+LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
+
+# // .env
+# INFDB_DBNAME='citydb'
+# INFDB_USER='citydb_user'
+# INFDB_HOST='00.000.00.00'
+# INFDB_PORT=5432
+# INFDB_PASSWORD='citydb_password'
+
+# Default pylovo database connection configuration if no .env file is found
 DBNAME: pylovo_db_local
 USER: postgres
 HOST: localhost
@@ -6,41 +20,10 @@ PORT: 5432
 PASSWORD: postgres
 TARGET_SCHEMA: public
 
-# Toggles whether the results per plz are analyzed after grid generation (basic parameters, trafo analysis, cable counting)
-ANALYZE_GRIDS: True
-# Toggles whether the grid json files will be saved in a folder or just in the db
-SAVE_GRID_FOLDER: False
-
-# Logging configuration for PgReaderWriter & GridGenerator
-LOG_LEVEL: DEBUG
-
-CLUSTERING_PARAMETERS:
-  - version_id
-  - plz
-  - bcid
-  - kcid
-  - no_connection_buses
-  - no_branches
-  - no_house_connections
-  - no_house_connections_per_branch
-  - no_households
-  - no_household_equ
-  - no_households_per_branch
-  - max_no_of_households_of_a_branch
-  - house_distance_km
-  - transformer_mva
-  - osm_trafo
-  - max_trafo_dis
-  - avg_trafo_dis
-  - cable_length_km
-  - cable_len_per_house
-  - max_power_mw
-  - simultaneous_peak_load_mw
-  - resistance
-  - reactance
-  - ratio
-  - vsw_per_branch
-  - max_vsw_of_a_branch
+# Seed for the initialization of the k-means clustering for transformer placement
+# Keeping the same seed ensures consistent behavior in multiple runs
+# Has to be an integer between 0 and 4294967295
+K_MEANS_SEED: 3329829316
 
 MUNICIPAL_REGISTER:
   - plz

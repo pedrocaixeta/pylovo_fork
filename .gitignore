@@ -5,6 +5,7 @@
 src/classification/results
 tutorials/.ipynb_checkpoints/
 log.txt
+log/*.txt
 
 # Ignore all generated plots and images in classification/examples/
 classification/examples/**/*.pdf
@@ -29,6 +30,7 @@ venv.bak/
 # Documentation
 docs/_build/
 docs/meta/
+docs/build/
 
 # Distribution / packaging
 .Python

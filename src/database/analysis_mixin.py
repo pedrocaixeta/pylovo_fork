@@ -243,7 +243,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
         return gdf
 
-    def get_municipal_register_for_plz(self, plz: str) -> pd.DataFrame:
+    def get_municipal_register_for_plz(self, plz: int) -> pd.DataFrame:
         """get entry of table municipal register for given PLZ"""
         query = """SELECT *
                    FROM municipal_register

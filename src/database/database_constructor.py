@@ -9,6 +9,7 @@ import sqlparse
 from src.config_loader import *
 from config.config_table_structure import *
 import src.database.database_client as dbc
+from src.infdb.infdb_client import InfdbClient
 from src.data_import.import_transformers import process_trafos, get_trafos_processed_3035_geojson_path, \
     fetch_trafos, RELATION_ID, EPSG, get_trafos_processed_geojson_path
 
@@ -178,9 +179,9 @@ class DatabaseConstructor:
         ]
         self.ogr_to_db(trafo_dict)
 
-    def csv_to_db(self):
+    def csv_to_db(self, csv_file_list):
 
-        for file_dict in CSV_FILE_LIST:
+        for file_dict in csv_file_list:
             st = time.time()
             file_path = Path(file_dict["path"])
             assert file_path.exists(), file_path
@@ -203,6 +204,39 @@ class DatabaseConstructor:
 
             et = time.time()
             print(f"{file_name} is successfully imported to db in {int(et - st)} s")
+    
+    def load_postcode_from_infdb(self):
+        """
+        Load postcode data from InfDB and insert into local 'postcode' table in pylovo.
+        """
+        st = time.time()
+
+        # Create InfdbClient instance to connect to remote InfDB
+        infdb_client = InfdbClient()
+
+        # Fetch postcode data from InfDB
+        rows = infdb_client.fetch_postcode_data()
+
+        if not rows:
+            raise ValueError("No postcode data retrieved from InfDB")
+
+        # Optional: Clear existing data from local postcode table
+        if self.table_exists(table_name="postcode"):
+            with self.dbc.conn.cursor() as cur:
+                cur.execute("DELETE FROM postcode")
+                self.dbc.conn.commit()
+
+        # Insert rows into local DB using executemany
+        insert_query = """
+            INSERT INTO postcode (plz, note, qkm, population, geom)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        with self.dbc.conn.cursor() as cur:
+            cur.executemany(insert_query, rows)
+            self.dbc.conn.commit()
+
+        et = time.time()
+        print(f"Postcode data imported from InfDB in {int(et - st)} s")
 
 
     def create_public_2po_table(self):
@@ -308,14 +342,43 @@ class DatabaseConstructor:
         et = time.time()
         print(f"Ways are successfully imported to db in {int(et - st)} s")
 
-    def dump_functions(self):
+
+    def load_ways_preprocessing_functions(self):
         """
-        Creates the SQL functions that are needed for the app to operate
+        Loads and executes SQL function definitions into the database.
+
+        The SQL files are grouped under two categories:
+        1. Utility functions (e.g., spatial helpers, geometry splitting)
+        2. Core functions (e.g., building-to-way connection logic, intersection segmentation)
+
+        SQL files are loaded from:
+            - src/ways_preprocessing/utils/
+            - src/ways_preprocessing/core/
         """
         cur = self.dbc.conn.cursor()
-        sc_path = os.path.join(os.getcwd(), "src", "postgres_dump_functions.sql")
-        with open(sc_path, 'r') as sc_file:
-            print(f"Executing postgres_dump_functions.sql script with schema '{TARGET_SCHEMA}'.")
-            sql = sc_file.read()
-            cur.execute(sql)
+
+        # Print once at the beginning
+        print(f"Loading ways preprocessing functions into schema '{TARGET_SCHEMA}'.")
+
+        function_paths = [
+            os.path.join("src", "ways_preprocessing_functions", "utils"),
+            os.path.join("src", "ways_preprocessing_functions", "core")
+        ]
+
+        try:
+            for path in function_paths:
+                abs_path = os.path.join(os.getcwd(), path)
+
+                for filename in sorted(os.listdir(abs_path)):
+                    if filename.endswith(".sql"):
+                        full_file_path = os.path.join(abs_path, filename)
+                        with open(full_file_path, 'r') as f:
+                            sql = f.read()
+                            cur.execute(sql)
+
             self.dbc.conn.commit()
+
+        except Exception as e:
+            print(f"[ERROR] Failed while executing SQL function from file '{filename}': {e}")
+            self.dbc.conn.rollback()
+            raise

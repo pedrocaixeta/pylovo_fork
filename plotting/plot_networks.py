@@ -23,10 +23,10 @@ def get_network_info_for_plotting(df_network_info: pd.DataFrame) -> (str, int, i
     return plz, kcid, bcid
 
 
-def read_net_with_grid_generator(plz: str, kcid: int, bcid: int):
+def read_net_with_grid_generator(plz: int, kcid: int, bcid: int):
     gg = GridGenerator(plz=plz)
     dbc_client = gg.dbc
-    net = dbc_client.read_net(plz=str(int(plz)), kcid=kcid, bcid=bcid)
+    net = dbc_client.read_net(plz=plz, kcid=kcid, bcid=bcid)
     return net
 
 
@@ -43,11 +43,11 @@ def get_colormap_for_treegraph(networkx_graph):
     return color_map
 
 
-def plot_contextily(plz: str, kcid: int, bcid: int, zoomfactor: int = 19) -> None:
+def plot_contextily(plz: int, kcid: int, bcid: int, zoomfactor: int = 19) -> None:
     """plots a network with all its features (cables, houses and load, trafo) on a contextily basemap
 
     :param plz: PLZ of grid
-    :type plz: string
+    :type plz: int
     :param kcid: kmeans cluster id of grid
     :type kcid: int
     :param bcid: buildings cluster id of grid
@@ -56,7 +56,7 @@ def plot_contextily(plz: str, kcid: int, bcid: int, zoomfactor: int = 19) -> Non
     :type zoomfactor: int
     """
     gg = GridGenerator(plz=plz)
-    net = gg.dbc.read_net(plz=str(int(plz)), kcid=kcid, bcid=bcid)
+    net = gg.dbc.read_net(plz=plz, kcid=kcid, bcid=bcid)
     dbc_client = gg.dbc
     fig, ax = plt.subplots(figsize=(8, 8))
     ax.set_xticks([])
@@ -91,7 +91,7 @@ def plot_contextily(plz: str, kcid: int, bcid: int, zoomfactor: int = 19) -> Non
     fig
 
 
-def plot_with_generic_coordinates(plz: str, kcid: int, bcid: int) -> None:
+def plot_with_generic_coordinates(plz: int, kcid: int, bcid: int) -> None:
     net = read_net_with_grid_generator(plz, kcid, bcid)
     net.bus_geodata.drop(net.bus_geodata.index, inplace=True)
     net.line_geodata.drop(net.line_geodata.index, inplace=True)
@@ -100,7 +100,7 @@ def plot_with_generic_coordinates(plz: str, kcid: int, bcid: int) -> None:
     simple_plotly(generic_net, aspectratio=(1, 1))
 
 
-def plot_simple_grid(plz: str, kcid: int, bcid: int) -> None:
+def plot_simple_grid(plz: int, kcid: int, bcid: int) -> None:
     """
     plots network on a plank base
     """
@@ -108,7 +108,7 @@ def plot_simple_grid(plz: str, kcid: int, bcid: int) -> None:
     simple_plotly(net)
 
 
-def plot_grid_on_map(plz: str, kcid: int, bcid: int) -> None:
+def plot_grid_on_map(plz: int, kcid: int, bcid: int) -> None:
     """
     plots network on a basemap provided by plotly
     """
@@ -240,7 +240,7 @@ def draw_tree_network(G, width=1.):
     plt.show()
 
 
-def draw_tree_network_with_improved_spacing_from_grid_id(plz: str, kcid: int, bcid: int):
+def draw_tree_network_with_improved_spacing_from_grid_id(plz: int, kcid: int, bcid: int):
     """draws a tree graph of a networkx graph with improved spacing for large networks#
     from grid id"""
     net = read_net_with_grid_generator(plz=plz, kcid=kcid, bcid=bcid)

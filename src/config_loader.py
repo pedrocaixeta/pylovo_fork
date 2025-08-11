@@ -31,17 +31,32 @@ PORT = os.getenv("PORT", CONFIG_DATA["PORT"])
 PASSWORD = os.getenv("PASSWORD", CONFIG_DATA["PASSWORD"])
 TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATA["TARGET_SCHEMA"])
 
+USE_INFDB = True if CONFIG_DATA["USE_INFDB"] in [True, "True", "true", 1, "1", "on"] else False
+INFDB_DBNAME = os.getenv("INFDB_DBNAME", "not set")
+INFDB_USER = os.getenv("INFDB_USER", "not set")
+INFDB_HOST = os.getenv("INFDB_HOST", "not set")
+INFDB_PORT = os.getenv("INFDB_PORT", "not set")
+INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", "not set")
+INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", "public")
+
 # Assign other variables from CONFIG_DATA
 RESULT_DIR = os.path.join(os.getcwd(), "results")
 ANALYZE_GRIDS = CONFIG_DATA["ANALYZE_GRIDS"]
 SAVE_GRID_FOLDER = CONFIG_DATA["SAVE_GRID_FOLDER"]
 LOG_LEVEL = CONFIG_DATA["LOG_LEVEL"]
-CLUSTERING_PARAMETERS = CONFIG_DATA["CLUSTERING_PARAMETERS"]
+# Percentage of CPU cores to use for parallel execution
+N_JOBS_PERCENT = CONFIG_DATA.get("N_JOBS_PERCENT", 50)
+# Determine usable number of cores based on system capability
+AVAILABLE_CORES = os.cpu_count() or 1
+# Final number of workers rounded from the percentage of cores
+N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
+K_MEANS_SEED = CONFIG_DATA["K_MEANS_SEED"]
 MUNICIPAL_REGISTER = CONFIG_DATA["MUNICIPAL_REGISTER"]
 CSV_FILE_LIST = [
     {"path": os.path.join("raw_data", "equipment_data.csv"), "table_name": "equipment_data"},
-    {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},
-]
+    {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},]
+CSV_FILE_LIST_INFDB = [
+    {"path": os.path.join("raw_data", "equipment_data.csv"), "table_name": "equipment_data"},]
 
 # Assign all variables from CONFIG_VERSION
 VERSION_ID = CONFIG_VERSION["VERSION_ID"]
@@ -69,6 +84,7 @@ REGIOSTAR7_DICT = CONFIG_CLASSIFICATION["REGIOSTAR7_DICT"]
 REGIO7_REGIO5_GEM_DICT = CONFIG_CLASSIFICATION["REGIO7_REGIO5_GEM_DICT"]
 
 # Assign all variables from CONFIG_CLUSTERING
+CLUSTERING_PARAMETERS = CONFIG_CLUSTERING["CLUSTERING_PARAMETERS"]
 LIST_OF_CLUSTERING_PARAMETERS = CONFIG_CLUSTERING["LIST_OF_CLUSTERING_PARAMETERS"]
 N_CLUSTERS_KMEDOID = CONFIG_CLUSTERING["N_CLUSTERS_KMEDOID"]
 N_CLUSTERS_KMEANS = CONFIG_CLUSTERING["N_CLUSTERS_KMEANS"]

@@ -16,14 +16,27 @@ class UtilsMixin(BaseMixin, ABC):
         self.cur.close()
         self.conn.close()
 
-    def create_temp_tables(self) -> None:
-        for query in TEMP_CREATE_QUERIES.values():
-            self.cur.execute(query)
+    def create_temp_tables(self, plz: int) -> None:
+        """Create PLZ-suffixed temporary tables and session-local views."""
+        self.drop_temp_tables(plz)
+        for base_name, query in TEMP_CREATE_QUERIES.items():
+            table_name = f"{base_name}_{plz}"
+            # create a dedicated table for each PLZ
+            self.cur.execute(query.replace(base_name, table_name))
+            # expose a session-local view with the common name
+            self.cur.execute(f"CREATE TEMP VIEW {base_name} AS SELECT * FROM {table_name}")
 
-    def drop_temp_tables(self) -> None:
-        for table_name in TEMP_CREATE_QUERIES.keys():
-            self.cur.execute(f"DROP TABLE IF EXISTS {table_name}")
-        self.cur.execute("DROP TABLE IF EXISTS ways_tem_vertices_pgr")
+    def drop_temp_tables(self, plz: int) -> None:
+        """Drop PLZ-suffixed tables and their views."""
+        for base_name in TEMP_CREATE_QUERIES.keys():
+            self.cur.execute(f"DROP VIEW IF EXISTS {base_name}")
+            self.cur.execute(f"DROP TABLE IF EXISTS {base_name}_{plz}")
+        self.cur.execute("DROP VIEW IF EXISTS ways_tem_vertices_pgr")
+        self.cur.execute(f"DROP TABLE IF EXISTS ways_tem_vertices_pgr_{plz}")
+
+    def refresh_materialized_views(self) -> None:
+        for query in REFRESH_QUERIES.values():
+            self.cur.execute(query)
 
     def commit_changes(self):
         self.conn.commit()

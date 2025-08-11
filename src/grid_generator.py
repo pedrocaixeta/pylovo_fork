@@ -3,11 +3,15 @@ import warnings
 from pathlib import Path
 
 import numpy as np
+import pandas as pd  # type: ignore
 import pandapower as pp
 from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
+from sklearn.cluster import KMeans
+from concurrent.futures import ProcessPoolExecutor, as_completed  # lightweight parallel execution
 
 import src.database.database_client as dbc
+from src.infdb.infdb_client import InfdbClient
 from src.parameter_calculator import ParameterCalculator
 from src import utils
 from src.config_loader import *
@@ -23,37 +27,44 @@ class GridGenerator:
     """
 
     def __init__(self, plz=999999, **kwargs):
-        self.plz = str(plz)
+        self.plz = plz
         self.dbc = dbc.DatabaseClient()
         self.dbc.insert_version_if_not_exists()
         self.dbc.insert_parameter_tables(consumer_categories=CONSUMER_CATEGORIES)
         self.logger = utils.create_logger(
             name="GridGenerator", log_file=kwargs.get("log_file", "log.txt"), log_level=LOG_LEVEL
         )
+        self.inf_dbc = None
+        if USE_INFDB:
+            self.inf_dbc = InfdbClient()
 
     def __del__(self):
         self.dbc.__del__()
 
-    def generate_grid_for_single_plz(self, plz: str, analyze_grids: bool = False) -> None:
-        """
-        Generates the grid for a single PLZ.
+    def generate_grid_for_single_plz(
+        self, plz: int, analyze_grids: bool = False, refresh_mv: bool = True
+    ) -> None:
+        """Generates the grid for a single PLZ.
 
         :param plz: Postal code for which the grid should be generated.
-        :type plz: str
+        :type plz: int
         :param analyze_grids: Option to analyze the results after grid generation, defaults to False.
         :type analyze_grids: bool
+        :param refresh_mv: Refresh materialized views after processing, defaults to True.
+        :type refresh_mv: bool
         """
         self.plz = plz
         print('-------------------- start', self.plz, '---------------------------')
-
-        self.dbc.create_temp_tables()  # create temp tables for the grid generation
+        self.dbc.create_temp_tables(plz)  # create PLZ-suffixed temp tables
 
         try:
             self.generate_grid()
             self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
+            self.dbc.commit_changes()
             if analyze_grids:
                 pc = ParameterCalculator()
                 pc.calc_parameters_per_plz(plz=self.plz)
+                self.dbc.commit_changes()  # commit the changes to the database
         except ResultExistsError:
             self.dbc.logger.info(f"Grid for the postcode area {plz} has already been generated.")
         except Exception as e:
@@ -62,46 +73,67 @@ class GridGenerator:
             self.dbc.conn.rollback()  # rollback the transaction
             self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
             traceback.print_exc()
-            return
 
-        self.dbc.drop_temp_tables()  # drop temp tables
+        self.dbc.drop_temp_tables(plz)  # drop PLZ-suffixed temp tables
+        if refresh_mv:
+            # update the materialized views to reflect changes in their base tables
+            self.dbc.refresh_materialized_views()
         self.dbc.commit_changes()  # commit the changes to the database
-
         print('-------------------- end', self.plz, '-----------------------------')
 
-    def generate_grid_for_multiple_plz(self, df_plz: pd.DataFrame, analyze_grids: bool = False) -> None:
-        """generates grid for all plz contained in the column 'plz' of df_samples
-
+    def generate_grid_for_multiple_plz(
+        self, df_plz: pd.DataFrame, analyze_grids: bool = False, parallel: bool = True
+    ) -> None:
+        """Generate grids for all PLZ entries. Materialized views are refreshed once all grids have been processed.
         :param df_plz: table that contains PLZ for grid generation
-        :type df_plz: pd.DataFrame
         :param analyze_grids: option to analyse the results after grid generation, defaults to False
-        :type analyze_grids: bool
+        :param parallel: optionally use parallel workers, defaults to True
         """
-        self.dbc.create_temp_tables()  # create temp tables for the grid generation
+        plz_list = [int(row["plz"]) for _, row in df_plz.iterrows()]
+        if parallel and N_JOBS > 1:
+            # use concurrent workers when multiple cores are available
+            with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
+                # Create a dictionary that maps futures to their corresponding PLZ.
+                futures = {
+                    executor.submit(GridGenerator._worker, plz, analyze_grids): plz
+                    for plz in plz_list
+                }
+                # as_completed returns futures as they complete. This allows processing
+                # results as they become available and handling exceptions from individual
+                # workers without blocking the entire process.
+                for future in as_completed(futures):
+                    plz = futures[future]
+                    try:
+                        # Calling future.result() will raise an exception if the worker process failed.
+                        future.result()
+                    except Exception as exc:
+                        # Log the exception to record the failed PLZ without stopping the execution
+                        # for other, potentially successful, PLZs.
+                        self.logger.error(f"PLZ {plz} generated an exception: {exc}")
+                        traceback.print_exc()
+        else:
+            for plz in plz_list:
+                # defer materialized view refresh until all PLZ are processed
+                self.generate_grid_for_single_plz(
+                    plz=plz, analyze_grids=analyze_grids, refresh_mv=False
+                )
 
-        for index, row in df_plz.iterrows():
-            self.plz = str(row['plz'])
-            print('-------------------- start', self.plz, '---------------------------')
-            try:
-                self.generate_grid()
-                self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
-                self.dbc.reset_tables()  # Reset temporary tables
-                if analyze_grids:
-                    pc = ParameterCalculator()
-                    pc.calc_parameters_per_plz(plz=self.plz)
-            except ResultExistsError:
-                self.dbc.logger.info(f"Grid for the postcode area {self.plz} has already been generated.")
-            except Exception as e:
-                self.logger.error(f"Error during grid generation for PLZ {self.plz}: {e}")
-                self.logger.info(f"Skipped PLZ {self.plz} due to generation error.")
-                self.dbc.conn.rollback()  # rollback the transaction
-                self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION),
-                                                          self.plz)  # delete from sample set
-                continue
-            print('-------------------- end', self.plz, '-----------------------------')
+        # refresh materialized views once after all grids have been generated
+        self.dbc.refresh_materialized_views()
+        self.dbc.commit_changes()
 
-        self.dbc.drop_temp_tables()  # drop temp tables
-        self.dbc.commit_changes()  # commit the changes to the database
+    @staticmethod
+    def _worker(plz: int, analyze_grids: bool) -> None:
+        """Worker process to generate a grid for a single PLZ."""
+        log_dir = Path("log")
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / f"log_{plz}.txt"
+        if log_file.exists():
+            log_file.unlink()  # Overwrite log file if it exists
+        gg = GridGenerator(log_file=log_file)  # dedicated logger per PLZ
+        gg.generate_grid_for_single_plz(
+            plz=plz, analyze_grids=analyze_grids, refresh_mv=False
+        )
 
     def generate_grid(self):
         if self.dbc.is_grid_generated(self.plz):
@@ -132,8 +164,13 @@ class GridGenerator:
         FROM: res, oth
         INTO: buildings_tem
         """
-        self.dbc.set_residential_buildings_table(self.plz)
-        self.dbc.set_other_buildings_table(self.plz)
+        if USE_INFDB:
+            buildings_data = self.inf_dbc.get_relevant_buildings_in_plz_from_infdb(self.plz)
+            self.dbc.set_buildings_table(buildings_data)
+        else:
+            self.dbc.set_residential_buildings_table(self.plz)
+            self.dbc.set_other_buildings_table(self.plz)
+
         self.logger.info("Buildings_tem table prepared")
         self.dbc.remove_duplicate_buildings()
         self.logger.info("Duplicate buildings removed from buildings_tem")
@@ -170,12 +207,20 @@ class GridGenerator:
         FROM: ways, buildings_tem
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
-        ways_count = self.dbc.set_ways_tem_table(self.plz)
+        if USE_INFDB:
+            ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
+            ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows)
+        else:
+            ways_count = self.dbc.set_ways_tem_table(self.plz)
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
-        self.dbc.connect_unconnected_ways()
-        self.logger.info("Ways connection finished in ways_tem")
-        self.dbc.draw_building_connection()
-        self.logger.info("Building connection finished in ways_tem")
+
+        # Run preprocessing functions that segment roads and connect buildings
+        self.dbc.preprocess_ways()
+        print("Ways preprocessing completed in ways_tem.")
+
+        # Build pgRouting topology on the processed network
+        self.dbc.build_pgr_network_topology(self.plz)
+        print("pgRouting network topology created from ways_tem.")
 
         self.dbc.update_ways_cost()
         unconn = self.dbc.set_vertice_id()
@@ -226,7 +271,10 @@ class GridGenerator:
         elif conn_building_count >= LARGE_COMPONENT_LOWER_BOUND:
             # K-means applied to large component to define subgroups with cluster ids
             cluster_count = int(conn_building_count / LARGE_COMPONENT_DIVIDER)
-            self.dbc.update_large_kmeans_cluster(vertices, cluster_count)
+            k_means = KMeans(n_clusters=cluster_count, random_state=K_MEANS_SEED, n_init="auto")
+            (selected_vertices, coordinates) = self.dbc.get_connected_component_geometries(vertices)
+            kcids = k_means.fit_predict(coordinates) + self.dbc.get_kcid_length() + 1
+            self.dbc.update_kmeans_cluster_multiple(selected_vertices, kcids)
             log_msg = f"Large component {component_index} clustered into {cluster_count} groups" if component_index is not None else f"Large component clustered into {cluster_count} groups"
             self.logger.debug(log_msg)
         else:
@@ -359,12 +407,25 @@ class GridGenerator:
         # We could calculate the total transformer cost by summing the costs of all selected transformers:
         # total_transformer_cost = sum([transformer2cost[v[1]] for v in valid_cluster_dict.values()])
 
+        # Reorder bcids for consistency
+        valid_cluster_dict = self._order_clusters_by_min_vertice(valid_cluster_dict)
+
         # Save results to database
         self.dbc.clear_grid_result_in_kmean_cluster(plz, kcid)
         for bcid, cluster_data in valid_cluster_dict.items():
             self.dbc.upsert_bcid(plz, kcid, bcid, vertices=cluster_data[0],
                                          transformer_rated_power=cluster_data[1])
         self.logger.debug(f"bcids for plz {plz} kcid {kcid} found...")
+
+    def _order_clusters_by_min_vertice(self, cluster_dict: dict) -> dict:
+        """
+        Helper function to reassign bcids of the given building clusters ordered by the smallest vertice IDs of the clusters.
+        Returns the same result for cluster distributions that are equivalent up to renaming.
+        :param cluster_dict: input clusters
+        :return: reordered clusters
+        """
+        ordered_vertices = sorted(cluster_dict.items(), key = lambda cluster: min(cluster[1][0]))
+        return {new_bcid: vertices for new_bcid, (_, vertices) in enumerate(ordered_vertices, start=1)}
 
     def position_brownfield_transformers(self, plz: int, kcid: int, transformer_list: list) -> None:
         """
@@ -647,12 +708,12 @@ class GridGenerator:
         load_type = {consumer: "SFH" for consumer in consumer_list}
 
         for row in buildings_df.itertuples():
-            load_units[row.vertice_id] = row.houses_per_building
+            load_units[row.vertice_id] = row.households_per_building
             load_type[row.vertice_id] = row.type
             gzf = CONSUMER_CATEGORIES.loc[CONSUMER_CATEGORIES.definition == row.type, "sim_factor"].item()
 
             # Determine simultaneous load of each building in MW
-            Pd[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.houses_per_building, gzf)
+            Pd[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.households_per_building, gzf)
 
         return Pd, load_units, load_type
 
@@ -948,7 +1009,7 @@ class GridGenerator:
         Save one grid to file and to database
         """
         if SAVE_GRID_FOLDER:
-            savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", self.plz)
+            savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
             savepath_folder.mkdir(parents=True, exist_ok=True)
             filename = f"kcid{kcid}bcid{bcid}.json"
             savepath_file = Path(savepath_folder, filename)
@@ -959,3 +1020,4 @@ class GridGenerator:
         self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string)
 
         self.logger.info(f"Grid with kcid:{kcid} bcid:{bcid} is stored. ")
+

@@ -173,6 +173,7 @@ class DatabaseCommunication:
         df_transformers_classified.to_sql(name='transformer_classified', con=self.dbc.sqla_engine,
                                           if_exists='append',
                                           index=False, dtype={'geom': Geometry(geometry_type='POINT', srid=3035)})
+        self.dbc.refresh_materialized_views()
         print(self.dbc.cur.statusmessage)
         self.dbc.conn.commit()
 
@@ -194,7 +195,7 @@ class DatabaseCommunication:
         query = """WITH buildings(grid_result_id) AS (
                        SELECT DISTINCT grid_result_id
                        FROM buildings_result
-                       WHERE houses_per_building > %(h)s
+                       WHERE households_per_building > %(h)s
                    )
                    
                    UPDATE clustering_parameters c

@@ -42,7 +42,7 @@ def simultaneousPeakLoad(buildings_df, consumer_cat_df, vertice_ids):
         # Aggregate total installed power from the category cat
         installed_power = subset_df[subset_df['type'].isin(cat)]["peak_load_in_kw"].values.sum()  # n*P_0
         # building amount from cat
-        load_count = subset_df[subset_df['type'].isin(cat)]['houses_per_building'].values.sum()
+        load_count = subset_df[subset_df['type'].isin(cat)]['households_per_building'].values.sum()
         if load_count == 0:
             continue
 

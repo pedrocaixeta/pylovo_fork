@@ -77,6 +77,27 @@ class PreprocessingMixin(BaseMixin, ABC):
         WHERE plz ISNULL;"""
         self.cur.execute(query, {"v": VERSION_ID, "plz": plz})
 
+    def set_buildings_table(self, buildings_data: list[tuple]) -> None:
+        """
+        Insert buildings data associated with a specific postal code into the database.
+
+        This function takes building data and inserts it into a temporary buildings table, associating each
+        building with the given postal code. The temporary tables are then used when generating grids.
+
+        Args:
+            buildings_data (list[tuple[int, float, str, str, str, int, int]]): List of building tuples
+                containing (id, floor_area, building_type, geom, center_geom, floor_number, households).
+
+        Returns:
+            None
+        """
+        insert_query = """
+            INSERT INTO buildings_tem
+            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        self.cur.executemany(insert_query, buildings_data)
+
     def set_other_buildings_table(self, plz: int):
         """
         * Fills buildings_tem with other buildings which are inside the plz area
@@ -180,16 +201,23 @@ class PreprocessingMixin(BaseMixin, ABC):
                 UPDATE buildings_tem
                 SET area = ST_Area(geom);
                 UPDATE buildings_tem
-                SET houses_per_building = (CASE
-                                               WHEN type IN ('TH', 'Commercial', 'Public', 'Industrial') THEN 1
-                                               WHEN type = 'SFH' AND area < 160 THEN 1
-                                               WHEN type = 'SFH' AND area >= 160 THEN 2
-                                               WHEN type IN ('MFH', 'AB') THEN floor(area / 50) * floors
-                                               ELSE 0
-                    END);
+                
+                -- Update households_per_building only if it has not been set already.
+                -- For InfDB data this is already set.
+                SET households_per_building = (
+                    CASE
+                    WHEN type IN ('TH', 'Commercial', 'Public', 'Industrial') THEN 1
+                    WHEN type = 'SFH' AND area < 160 THEN 1
+                    WHEN type = 'SFH' AND area >= 160 THEN 2
+                    WHEN type IN ('MFH', 'AB') THEN floor(area / 50) * floors
+                    ELSE 0
+                    END
+                )
+                WHERE households_per_building IS NULL;
+                
                 UPDATE buildings_tem b
                 SET peak_load_in_kw = (CASE
-                                           WHEN b.type IN ('SFH', 'TH', 'MFH', 'AB') THEN b.houses_per_building *
+                                           WHEN b.type IN ('SFH', 'TH', 'MFH', 'AB') THEN b.households_per_building *
                                                                                           (SELECT peak_load FROM consumer_categories WHERE definition = b.type)
                                            WHEN b.type IN ('Commercial', 'Public', 'Industrial') THEN b.area *
                                                                                                       (SELECT peak_load_per_m2
@@ -317,7 +345,33 @@ class PreprocessingMixin(BaseMixin, ABC):
                    FROM buildings_tem
                    WHERE ST_Within(center, (SELECT ungeom FROM union_table))
                      AND type = 'Transformer';"""
-        self.cur.execute(query)
+        self.cur.execute(query)   
+    
+    def set_ways_tem_table_infdb(self, ways_data: list[tuple]) -> int:
+        """
+        Insert remote ways into the local ways_tem table.
+
+        Args:
+            ways_data (list[tuple]): Each tuple should contain
+                (clazz, source, target, cost, reverse_cost, geom, way_id)
+
+        Returns:
+            int: Number of inserted ways
+        """
+        if not ways_data:
+            raise ValueError("No rows to insert into ways_tem")
+
+        insert_query = """
+            INSERT INTO ways_tem
+            (clazz, source, target, cost, reverse_cost, geom, way_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        self.cur.executemany(insert_query, ways_data)
+
+        self.cur.execute("SELECT COUNT(*) FROM ways_tem")
+        return self.cur.fetchone()[0]
+
+
 
     def set_ways_tem_table(self, plz: int) -> int:
         """
@@ -342,31 +396,74 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         return count
 
-    def connect_unconnected_ways(self) -> None:
+    def preprocess_ways(self) -> None:
         """
-        Updates ways_tem
-        :return:
+        Runs the geometric preprocessing steps for the ways_tem table using two core functions:
+
+        1. segment_intersecting_ways():
+        - Detects where roads intersect geometrically.
+        - Splits intersecting road segments into new segments at the intersection point.
+        - Inserts the resulting segments into the working table `ways_tem`.
+        - Internally uses: 
+            - insert_way_segment() for adding new segments
+
+        2. generate_building_to_way_connections():
+        - Connects each building to the closest road segment.
+        - For each building, generates a connection line to the corresponding way.
+        - Splits the road segment at the connection point and updates `ways_tem`.
+        - Uses:
+            - generate_building_way_connection_candidates() for finding potential connections
+            - insert_way_segment() for adding new segments
+            - split_way_at_connection_points() for splitting ways at connection points
+
+        These two functions are executed in sequence to ensure that:
+        - All intersecting ways are properly split.
+        - All buildings are connected to the network via dedicated segments.
+
+        When the flag USE_INFDB is set to "True", the function generate_building_to_way_connections_infdb() 
+        is used instead. This version utilizes the 'address_street_id' column in the infdb.buildings table, 
+        which stores the closest road segment assigned via address-level matching. 
+        If this column is null for a building, fallback to the traditional distance-based logic is applied.
         """
-        query = """SELECT draw_way_connections();"""
-        self.cur.execute(query)
+        self.cur.execute("SELECT segment_intersecting_ways();")
 
-    def draw_building_connection(self) -> None:
+        if USE_INFDB:
+            self.cur.execute("SELECT generate_building_to_way_connections_infdb();")
+        else:
+            self.cur.execute("SELECT generate_building_to_way_connections();")
+
+    def build_pgr_network_topology(self, plz: int) -> None:
+        """Builds the pgRouting-compatible network topology from the updated `ways_tem` table.
+        This includes:
+        1. pgr_createTopology():
+        - Adds `source` and `target` node columns to `ways_tem`.
+        - Assigns node IDs by analyzing the start and end points of each geometry.
+        - Required to enable routing and graph operations on the road network.
+        2. pgr_analyzeGraph():
+        - Verifies that the graph topology is valid and reports disconnected components.
+        - Helps ensure that the routing network is usable and clean.
+        These functions are required by pgRouting to transform a geometry-based table
+        (`ways_tem`) into a routable network graph.
+
+        :param plz: Postal code used to suffix temporary tables.
+        :type plz: int
         """
-        Updates ways_tem, creates pgr network topology in new tables:
-        :return:
-        """
-        connection_query = """ SELECT draw_home_connections(); """
-        self.cur.execute(connection_query)
+        edge_table = f"ways_tem_{plz}"
+        vertices_table = f"{edge_table}_vertices_pgr"
+        # create topology on the PLZ-specific ways table
+        self.cur.execute(
+            # specify column names positionally to avoid version-specific errors
+            f"SELECT pgr_createTopology('{edge_table}', 0.01, the_geom:='geom', id:='way_id', clean:=true);"
+        )
+        # analyze the resulting graph using the same PLZ-specific table
+        self.cur.execute(
+            f"SELECT pgr_analyzeGraph('{edge_table}', 0.01, the_geom:='geom');"
+        )
+        # Expose vertices table through a session-local view for easier downstream queries
+        self.cur.execute(
+            f"CREATE TEMP VIEW ways_tem_vertices_pgr AS SELECT * FROM {vertices_table}"
+        )
 
-        topology_query = """select pgr_createTopology('ways_tem', 0.01, id:='way_id', the_geom:='geom', clean:=true) """
-        self.cur.execute(topology_query)
-
-        # add_buildings_query = '''SELECT add_buildings();'''
-        # self.cur.execute(add_buildings_query)
-        # self.conn.commit()
-
-        analyze_query = ("""SELECT pgr_analyzeGraph('ways_tem',0.01, the_geom:='geom'); """)
-        self.cur.execute(analyze_query)
 
     def update_ways_cost(self) -> None:
         """

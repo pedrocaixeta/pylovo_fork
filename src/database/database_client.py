@@ -65,14 +65,21 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
     def save_tables(self, plz: int):
 
+        """Saves building and ways results from ZIP code-specific temporary tables to the permanent results tables.
+           Removes duplicates from the temporary building table to avoid violating the unique constraint."""
+
+        # suffixed table names for the current PLZ
+        buildings_table = f"buildings_tem_{plz}"
+        ways_table = f"ways_tem_{plz}"
+
         # finding duplicates that violate the buildings_result_pkey constraint
         # the key of building result is (version_id, osm_id, plz)
-        query = """
+        query = f"""
                 DELETE
-                FROM buildings_tem a USING (SELECT MIN(ctid) as ctid, osm_id, plz
-                                            FROM buildings_tem
-                                            GROUP BY (osm_id, plz)
-                                            HAVING COUNT(*) > 1) b
+                FROM {buildings_table} a USING (SELECT MIN(ctid) as ctid, osm_id, plz
+                                                FROM {buildings_table}
+                                                GROUP BY (osm_id, plz)
+                                                HAVING COUNT(*) > 1) b
                 WHERE a.osm_id = b.osm_id
                   AND a.plz = b.plz
                   AND a.ctid <> b.ctid;"""
@@ -81,11 +88,11 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         # Save building results
         query = f"""
                     INSERT INTO buildings_result
-                    (version_id, osm_id, grid_result_id, area, type, geom, houses_per_building, center,
+                    (version_id, osm_id, grid_result_id, area, type, geom, households_per_building, center,
                     peak_load_in_kw, vertice_id, floors, connection_point)
-                    SELECT '{VERSION_ID}' as version_id, osm_id, gr.grid_result_id, area, type, geom, houses_per_building,
+                    SELECT '{VERSION_ID}' as version_id, osm_id, gr.grid_result_id, area, type, geom, households_per_building,
                     center, peak_load_in_kw, vertice_id, floors, bt.connection_point
-                    FROM buildings_tem bt
+                    FROM {buildings_table} bt
                     JOIN grid_result gr
                     ON bt.plz = gr.plz AND bt.kcid = gr.kcid AND bt.bcid = gr.bcid and gr.version_id = '{VERSION_ID}'
                     WHERE peak_load_in_kw != 0 AND peak_load_in_kw != -1;"""
@@ -94,18 +101,9 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         # Save ways results
         query = f"""INSERT INTO ways_result
                         SELECT '{VERSION_ID}' as version_id, clazz, source, target, cost, reverse_cost, geom, way_id,
-                        %(p)s as plz FROM ways_tem;"""
+                        %(p)s as plz FROM {ways_table};"""
 
         self.cur.execute(query, vars={"p": plz})
-
-    def reset_tables(self):
-        """
-        Clears the temporary tables.
-        """
-        self.cur.execute("TRUNCATE TABLE buildings_tem")
-        self.cur.execute("TRUNCATE TABLE ways_tem")
-        self.cur.execute("TRUNCATE TABLE ways_tem_vertices_pgr")
-        self.conn.commit()
 
     def delete_plz_from_all_tables(self, plz: int, version_id: str) -> None:
         """
