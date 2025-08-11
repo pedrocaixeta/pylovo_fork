@@ -443,13 +443,13 @@ class PreprocessingMixin(BaseMixin, ABC):
         # create topology on the PLZ-specific ways table
         self.cur.execute(
             # specify column names positionally to avoid version-specific errors
-            f"SELECT pgr_createTopology('{edge_table}', 0.01, 'geom', 'way_id', 'source', 'target', 'true', true);"
+            f"SELECT pgr_createTopology('{edge_table}', 0.01, the_geom:='geom', id:='way_id', clean:=true);"
         )
         # analyze the resulting graph using the same PLZ-specific table
         self.cur.execute(
-            f"SELECT pgr_analyzeGraph('{edge_table}', 0.01, 'geom', 'way_id', 'source', 'target');"
+            f"SELECT pgr_analyzeGraph('{edge_table}', 0.01, the_geom:='geom');"
         )
-        # expose vertices table through a session-local view for downstream queries
+        # Expose vertices table through a session-local view for easier downstream queries
         self.cur.execute(
             f"CREATE TEMP VIEW ways_tem_vertices_pgr AS SELECT * FROM {vertices_table}"
         )
