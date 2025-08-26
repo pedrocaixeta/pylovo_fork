@@ -3,13 +3,20 @@ This script creates a src database and fills with raw data from referenced files
 Do not use DatabaseConstructor class unless you want to create a new database.
 """
 
+import shutil
+from pathlib import Path
 from raw_data.municipal_register.join_regiostar_gemeindeverz import create_municipal_register
 from src.database.database_constructor import DatabaseConstructor
 from src import utils
 from src.config_loader import *
 
+# Log-Verzeichnis komplett löschen und neu anlegen (einfachere Variante)
+log_dir = Path("log")
+if log_dir.exists():
+    shutil.rmtree(log_dir)
+log_dir.mkdir(parents=True, exist_ok=True)
 
-logger = utils.create_logger(name="main_constructor", log_file="log.txt", log_level=LOG_LEVEL)
+logger = utils.create_logger(name="main_constructor", log_file=log_dir / "log.txt", log_level=LOG_LEVEL)
 
 
 def main():
@@ -50,9 +57,9 @@ def main():
         logger.info("### PROCESS WAYS AND INSERTING THEM INTO ways TABLE ###")
         sgc.ways_to_db()
 
-   # Load PostGIS SQL functions required for preprocessing ways
-    logger.info("### LOAD POSTGIS FUNCTIONS FOR WAYS PREPROCESSING ###")
-    sgc.load_ways_preprocessing_functions()
+        # Load PostGIS SQL functions required for preprocessing ways
+        logger.info("### LOAD POSTGIS FUNCTIONS FOR WAYS PREPROCESSING ###")
+        sgc.load_ways_preprocessing_functions()
 
     ### Create table with entries of all German municipalities and cities
     logger.info("### FILL municipal_register TABLE ###")
