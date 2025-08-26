@@ -125,9 +125,7 @@ class GridGenerator:
     @staticmethod
     def _worker(plz: int, analyze_grids: bool) -> None:
         """Worker process to generate a grid for a single PLZ."""
-        log_dir = Path("log")
-        log_dir.mkdir(exist_ok=True)
-        log_file = log_dir / f"log_{plz}.txt"
+        log_file = Path("log") / f"log_{plz}.txt"
         if log_file.exists():
             log_file.unlink()  # Overwrite log file if it exists
         gg = GridGenerator(log_file=log_file)  # dedicated logger per PLZ
