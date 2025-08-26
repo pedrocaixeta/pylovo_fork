@@ -5,6 +5,7 @@ from pathlib import Path
 
 import psycopg2 as psy
 import sqlparse
+import pandas as pd
 
 from src.config_loader import *
 from config.config_table_structure import *

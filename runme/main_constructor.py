@@ -10,7 +10,7 @@ from src.database.database_constructor import DatabaseConstructor
 from src import utils
 from src.config_loader import *
 
-# Log-Verzeichnis komplett löschen und neu anlegen (einfachere Variante)
+# Delete and recreate the log directory
 log_dir = Path("log")
 if log_dir.exists():
     shutil.rmtree(log_dir)
