@@ -32,6 +32,18 @@ class DatabaseConstructor:
         else:
             self.dbc = dbc.DatabaseClient()
 
+    def create_schema(self):
+        """
+        Creates the target schema if it doesn't exist.
+        """
+        try:
+            with self.dbc.conn.cursor() as cur:
+                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {TARGET_SCHEMA}")
+                self.dbc.conn.commit()
+                print(f"Schema '{TARGET_SCHEMA}' created or already exists.")
+        except (Exception, psy.DatabaseError) as error:
+            print(f"Error creating schema: {error}")
+            raise error
 
     def get_table_name_list(self):
         with self.dbc.conn.cursor() as cur:

@@ -16,6 +16,10 @@ def main():
     ### Create constructor class
     sgc = DatabaseConstructor()
 
+    ### Create schema if it doesn't exist
+    logger.info(f"### CREATING SCHEMA {TARGET_SCHEMA} IF NOT EXISTS ###")
+    sgc.create_schema()
+
     ### Create database with predefined table structure
     logger.info("### CREATE ALL TABLES ###")
     sgc.create_table(table_name="all")
