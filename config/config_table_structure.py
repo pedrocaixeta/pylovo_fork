@@ -265,6 +265,7 @@ CREATE_QUERIES = {
         CONSTRAINT fk_tp_osm_id
             FOREIGN KEY (osm_id)
             REFERENCES transformers (osm_id)
+            ON DELETE CASCADE
     )
     """,
     "transformer_classified": """
