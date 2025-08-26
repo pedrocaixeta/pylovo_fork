@@ -182,10 +182,10 @@ class GridGenerator:
             f"buildings_tem"
         )
         too_large_consumers = self.dbc.update_too_large_consumers_to_zero()
-        self.logger.info(f"{too_large_consumers} too large consumers removed from buildings_tem")
+        self.logger.debug(f"{too_large_consumers} too large consumers removed from buildings_tem")
 
         self.dbc.assign_close_buildings()
-        self.logger.info("All close buildings assigned and removed from buildings_tem")
+        self.logger.debug("All close buildings assigned and removed from buildings_tem")
 
     def prepare_transformers(self):
         """
@@ -312,7 +312,7 @@ class GridGenerator:
                     self.create_bcid_for_kcid(self.plz, kcid) #TODO: name should include transformer_size allocation
                 else:
                     self.dbc.delete_isolated_building(self.plz, kcid) #TODO: check approach with isolated buildings
-                self.logger.debug("rest building cluster finished")
+                self.logger.debug("Rest building cluster finished")
 
             # Process unfinished clusters
             for bcid in self.dbc.get_greenfield_bcids(self.plz, kcid):
@@ -321,7 +321,7 @@ class GridGenerator:
                     self.position_greenfield_transformers(self.plz, kcid, bcid)
                     self.logger.debug(f"Transformer positioning for kcid{kcid}, bcid{bcid} finished")
                     self.dbc.update_transformer_rated_power(self.plz, kcid, bcid, 1)
-                    self.logger.debug("transformer_rated_power in grid_result is updated.")
+                    self.logger.debug("Transformer_rated_power in grid_result is updated.")
 
     def create_bcid_for_kcid(self, plz: int, kcid: int) -> None:
         """
@@ -374,7 +374,7 @@ class GridGenerator:
             # Check if clustering is complete
             if not invalid_trans_cluster_dict:
                 self.logger.info(
-                    f"Found {len(valid_cluster_dict)} single transformer clusters for PLZ: {plz}, KCID: {kcid}")
+                    f"Found {len(valid_cluster_dict)} single transformer clusters for KCID: {kcid} (postcode: {plz})")
                 break
             else:
                 # Process too large clusters by re-clustering them
@@ -433,7 +433,7 @@ class GridGenerator:
             kcid: K-means cluster ID
             transformer_list: List of transformer IDs
         """
-        self.logger.debug(f"{len(transformer_list)} transformers found")
+        self.logger.info(f"{len(transformer_list)} transformers found for {kcid}")
 
         # Get cost dataframe between consumers and transformers
         cost_df = self.dbc.get_consumer_to_transformer_df(kcid, transformer_list)
@@ -467,13 +467,13 @@ class GridGenerator:
 
                 # Exit if all transformers are full
                 if len(full_transformer_list) == len(transformer_list):
-                    self.logger.info("All transformers full")
+                    self.logger.debug("All transformers full")
                     break
             else:
                 # Mark consumer as assigned
                 assigned_consumer_list.append(start_consumer_id)
 
-        self.logger.debug("Transformer selection finished")
+        self.logger.info("Transformer selection finished")
 
         # Create building clusters for each transformer
         building_cluster_count = 0
@@ -500,7 +500,7 @@ class GridGenerator:
             self.dbc.update_building_cluster(transformer_id, pre_result_dict[transformer_id], building_cluster_count, kcid,
                 plz, transformer_rated_power)
 
-        self.logger.debug("Brownfield clusters completed")
+        self.logger.info("Brownfield clusters completed")
 
     def position_greenfield_transformers(self, plz, kcid, bcid):
         """
@@ -536,6 +536,8 @@ class GridGenerator:
 
         # Update the database with the selected transformer position
         self.dbc.upsert_transformer_selection(plz, kcid, bcid, ont_connection_id)
+
+        self.logger.info("Greenfield clusters completed")
 
     def install_cables(self):
         """
@@ -573,8 +575,7 @@ class GridGenerator:
 
         for id in cluster_list:
             kcid, bcid = id
-            self.logger.debug(f"working on kcid {kcid}, bcid {bcid}")
-
+            self.logger.info(f"Start cable installation for PLZ {self.plz} kcid {kcid} bcid {bcid}")
             # Get data for this cluster
             vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes = (
                 self.prepare_vertices_list(self.plz, kcid, bcid)
@@ -589,14 +590,22 @@ class GridGenerator:
             self.create_transformer(self.plz, kcid, bcid, net)
             self.create_connection_bus(connection_nodes, net)
             self.create_consumer_bus_and_load(consumer_list, load_units, net, load_type, buildings_df)
+            self.logger.info(
+                f"Pandapower net initialised (buses={len(net.bus)}, loads={len(net.load)}, transformer_rated_power={self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)} kVA)"
+            )
 
             # Install cables branch by branch
             branch_deviation = 0
             connection_node_list = connection_nodes
+            branch_index = 0
 
             while connection_node_list:
                 # Handle single remaining node case
                 if len(connection_node_list) == 1:
+                    remaining = connection_node_list[0]
+                    self.logger.debug(
+                        f"Final remaining connection node {remaining} (kcid={kcid}, bcid={bcid}); installing direct connection."
+                    )
                     sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, connection_node_list)
                     Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
 
@@ -621,17 +630,19 @@ class GridGenerator:
                             net, vertices_dict, cable, count, ont_vertice
                         )
                         local_length_dict[cable] += length
-
-                    self.deviate_bus_geodata(connection_node_list, branch_deviation, net)
-                    self.logger.debug("main street cable installation finished")
+                        self.logger.info(
+                            f"Final branch backbone installed (PLZ={self.plz}, kcid={kcid}, bcid={bcid}, start_node={connection_node_list[0]}, cable={cable}, parallels={count}, length_km={length:.4f})"
+                        )
                     break
 
-                # Process multiple nodes as branches
                 furthest_node_path_list = self.find_furthest_node_path_list(
                     connection_node_list, vertices_dict, ont_vertice
                 )
                 branch_node_list, Imax = self.determine_maximum_load_branch(
                     furthest_node_path_list, buildings_df, consumer_df
+                )
+                self.logger.debug(
+                    f"Selected branch {branch_index} (nodes={len(branch_node_list)}, first={branch_node_list[0]}, last={branch_node_list[-1]}, Imax={Imax:.3f} kA)"
                 )
 
                 # Install cables for this branch
@@ -658,12 +669,18 @@ class GridGenerator:
                     self.create_line_ont_to_lv_bus(
                         self.plz, bcid, kcid, branch_start_node, branch_deviation, net, cable, count
                     )
+                    self.logger.debug(
+                        f"Branch {branch_index} connected directly to transformer (cable={cable}, parallels={count})."
+                    )
                 else:
                     length = self.create_line_start_to_lv_bus(
                         self.plz, bcid, kcid, branch_start_node, branch_deviation,
                         net, vertices_dict, cable, count, ont_vertice
                     )
                     local_length_dict[cable] += length
+                    self.logger.debug(
+                        f"Branch {branch_index} connected to LV bus (cable={cable}, parallels={count}, length_km={length:.4f})."
+                    )
 
                 # Update processed nodes and visualization
                 for vertice in branch_node_list:
@@ -671,6 +688,18 @@ class GridGenerator:
 
                 self.deviate_bus_geodata(branch_node_list, branch_deviation, net)
                 branch_deviation += 1
+                branch_index += 1
+
+            # Cluster summary
+            total_length = sum(local_length_dict.values())
+            used_cables = {k: v for k, v in local_length_dict.items() if v > 0}
+            if used_cables:
+                cable_summary = ", ".join([f"{k}:{v:.3f} km" for k, v in sorted(used_cables.items(), key=lambda x: -x[1])])
+            else:
+                cable_summary = "no cables installed"
+            self.logger.info(
+                f"Finished cluster kcid={kcid}, bcid={bcid}: branches={branch_index}, lines={len(net.line)}, total_length={total_length:.3f} km ({cable_summary})"
+            )
 
             # Track and report progress
             ci_count += 1
@@ -681,7 +710,8 @@ class GridGenerator:
                 ci_process += progress_increment
                 ci_count = 0
                 self.logger.info(
-                    f"Cable installation: {min(ci_process, 100)}% complete ({ci_process // progress_increment}/{progress_increment})")
+                    f"Cable installation: {min(ci_process, 100)}% complete ({ci_process // progress_increment}/{progress_increment})"
+                )
 
             self.save_net(net, kcid, bcid)
 
