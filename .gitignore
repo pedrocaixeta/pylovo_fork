@@ -4,6 +4,7 @@
 /raw_data/postcode.csv
 src/classification/results
 tutorials/.ipynb_checkpoints/
+validation
 log.txt
 log/*.txt
 
