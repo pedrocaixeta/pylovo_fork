@@ -57,9 +57,9 @@ def main():
         logger.info("### PROCESS WAYS AND INSERTING THEM INTO ways TABLE ###")
         sgc.ways_to_db()
 
-        # Load PostGIS SQL functions required for preprocessing ways
-        logger.info("### LOAD POSTGIS FUNCTIONS FOR WAYS PREPROCESSING ###")
-        sgc.load_ways_preprocessing_functions()
+    # Load PostGIS SQL functions required for preprocessing ways
+    logger.info("### LOAD POSTGIS FUNCTIONS FOR WAYS PREPROCESSING ###")
+    sgc.load_ways_preprocessing_functions()
 
     ### Create table with entries of all German municipalities and cities
     logger.info("### FILL municipal_register TABLE ###")
