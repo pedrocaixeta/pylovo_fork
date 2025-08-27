@@ -73,9 +73,11 @@ CREATE_QUERIES = {
     CREATE TABLE IF NOT EXISTS postcode_result (   
         version_id varchar(10) NOT NULL,
         postcode_result_plz integer NOT NULL,
-        settlement_type integer,
         geom geometry(MultiPolygon,3035),
-        house_distance numeric,
+        house_distance double precision,
+        avg_households_per_building double precision,
+        settlement_type integer,
+        
         CONSTRAINT "postcode_result_pkey" PRIMARY KEY (version_id, postcode_result_plz),
         CONSTRAINT fk_postcode_result_version_id
             FOREIGN KEY (version_id)
