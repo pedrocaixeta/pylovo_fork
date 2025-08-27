@@ -146,50 +146,108 @@ class PreprocessingMixin(BaseMixin, ABC):
                      AND osm_id LIKE '%copy%';"""
         self.cur.execute(query)
 
-    def set_plz_settlement_type(self, plz: int) -> None:
+    # def set_plz_settlement_type(self, plz: int) -> None:
+    #     """
+    #     Determine settlement_type in postcode_result table based on the house_distance metric for a given plz
+    #     :param plz: Postleitzahl (postal code)
+    #     :return: None
+    #     """
+    #     # Get average distance between buildings by sampling 50 random buildings
+    #     # and finding their 4 nearest neighbors
+    #     distance_query = """WITH some_buildings AS (SELECT osm_id, center
+    #                                                 FROM buildings_tem
+    #                                                 ORDER BY RANDOM()
+    #                                                 LIMIT 50)
+    #                         SELECT b.osm_id, d.dist
+    #                         FROM some_buildings AS b
+    #                                  LEFT JOIN LATERAL (
+    #                             SELECT ST_Distance(b.center, b2.center) AS dist
+    #                             FROM buildings_tem AS b2
+    #                             WHERE b.osm_id <> b2.osm_id
+    #                             ORDER BY b.center <-> b2.center
+    #                             LIMIT 4) AS d
+    #                                            ON TRUE;"""
+    #     self.cur.execute(distance_query)
+    #     data = self.cur.fetchall()
+    #
+    #     if not data:
+    #         raise ValueError("There is no building in the buildings_tem table!")
+    #
+    #     # Calculate average distance
+    #     distance = [t[1] for t in data]
+    #     avg_dis = int(sum(distance) / len(distance))
+    #
+    #     # Update database with average distance and set settlement types based on threshold
+    #     query = """
+    #             UPDATE postcode_result
+    #             SET house_distance  = %(avg)s,
+    #                 settlement_type = CASE
+    #                                       WHEN %(avg)s < 25 THEN 3
+    #                                       WHEN %(avg)s < 45 THEN 2
+    #                                       ELSE 1
+    #                     END
+    #             WHERE version_id = %(v)s
+    #               AND postcode_result_plz = %(p)s;"""
+    #
+    #     self.cur.execute(query, {"v": VERSION_ID, "avg": avg_dis, "p": plz})
+
+    def set_plz_settlement_type_by_household_ratio(self, plz: int, thresholds: dict) -> float:
         """
-        Determine settlement_type in postcode_result table based on the house_distance metric for a given plz
-        :param plz: Postleitzahl (postal code)
-        :return: None
+        Determines the settlement_type for a postcode entry based on the average number of households per building.
+
+        Logic:
+        1. Computes the average of households_per_building for residential building types (SFH, TH, MFH, AB) inside the postcode.
+        2. Classifies the settlement structure (settlement_type) by density:
+           - Higher households per building => denser => higher settlement_type (consistent with previous logic, where 3 is the densest).
+        3. Writes the value to the column postcode_result.avg_households_per_building (creating it beforehand externally if needed) and updates settlement_type.
+
+        Default thresholds (approximate for typical German settlement patterns):
+           < 2  => predominantly single-/two-family houses          => settlement_type = 1 (rural)
+           2–4  => mixed / suburban structure                       => settlement_type = 2 (suburban)
+           >= 5 => multi-family / block development                 => settlement_type = 3 (urban)
+
+        Parameters
+        ----------
+        plz : int
+            Postal code
+        thresholds : dict - Example: {'rural_max': 2, 'urban_min': 5}
+
+        Returns
+        -------
+        float
+            The computed average (avg_households_per_building)
         """
-        # Get average distance between buildings by sampling 50 random buildings
-        # and finding their 4 nearest neighbors
-        distance_query = """WITH some_buildings AS (SELECT osm_id, center
-                                                    FROM buildings_tem
-                                                    ORDER BY RANDOM()
-                                                    LIMIT 50)
-                            SELECT b.osm_id, d.dist
-                            FROM some_buildings AS b
-                                     LEFT JOIN LATERAL (
-                                SELECT ST_Distance(b.center, b2.center) AS dist
-                                FROM buildings_tem AS b2
-                                WHERE b.osm_id <> b2.osm_id
-                                ORDER BY b.center <-> b2.center
-                                LIMIT 4) AS d
-                                               ON TRUE;"""
-        self.cur.execute(distance_query)
-        data = self.cur.fetchall()
 
-        if not data:
-            raise ValueError("There is no building in the buildings_tem table!")
+        # Compute average
+        avg_query = """
+            SELECT AVG(households_per_building)::DOUBLE PRECISION
+            FROM buildings_tem
+            WHERE plz = %(p)s
+              AND households_per_building IS NOT NULL
+              AND type IN ('SFH','TH','MFH','AB');"""
+        self.cur.execute(avg_query, {"p": plz})
+        avg_val = self.cur.fetchone()[0]
 
-        # Calculate average distance
-        distance = [t[1] for t in data]
-        avg_dis = int(sum(distance) / len(distance))
+        if avg_val is None:
+            raise ValueError(f"No residential buildings with household data available for postcode {plz}.")
 
-        # Update database with average distance and set settlement types based on threshold
-        query = """
-                UPDATE postcode_result
-                SET house_distance  = %(avg)s,
-                    settlement_type = CASE
-                                          WHEN %(avg)s < 25 THEN 3
-                                          WHEN %(avg)s < 45 THEN 2
-                                          ELSE 1
-                        END
-                WHERE version_id = %(v)s
-                  AND postcode_result_plz = %(p)s;"""
+        # Classification
+        if avg_val >= thresholds["urban_min"]:
+            settlement_type = 3
+        elif avg_val >= thresholds["rural_max"]:
+            settlement_type = 2
+        else:
+            settlement_type = 1
 
-        self.cur.execute(query, {"v": VERSION_ID, "avg": avg_dis, "p": plz})
+        update_query = """
+            UPDATE postcode_result
+            SET avg_households_per_building = %(avg)s,
+                settlement_type = %(stype)s
+            WHERE version_id = %(v)s
+              AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(update_query, {"avg": avg_val, "stype": settlement_type, "v": VERSION_ID, "p": plz})
+
+        return float(avg_val)
 
     def set_building_peak_load(self) -> int:
         """

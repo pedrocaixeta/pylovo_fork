@@ -173,8 +173,9 @@ class GridGenerator:
         self.dbc.remove_duplicate_buildings()
         self.logger.info("Duplicate buildings removed from buildings_tem")
 
-        self.dbc.set_plz_settlement_type(self.plz)
-        self.logger.info("House_distance and settlement_type in postcode_result")
+        # self.dbc.set_plz_settlement_type(self.plz)
+        self.dbc.set_plz_settlement_type_by_household_ratio(self.plz, thresholds = {"rural_max": RURAL_MAX_THRESHOLD, "suburban_max": URBAN_MIN_THRESHOLD})
+        self.logger.info("Household ratio and related settlement_type in postcode_result")
 
         unloadcount = self.dbc.set_building_peak_load()
         self.logger.info(

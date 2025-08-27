@@ -161,11 +161,6 @@ class ClusteringMixin(BaseMixin, ABC):
         cost_arr = cost_df.to_numpy()
         et = time.time()
         self.logger.debug(f"Elapsed time for SQL to cost_arr: {et - st}")
-        # Speichere die echte vertices_ids mit neuen Indexen
-        # 0 5346
-        # 1 3263
-        # 2 3653
-        # ...
         localid2vid = dict(enumerate(cost_df["start_vid"].unique()))
         vid2localid = {y: x for x, y in localid2vid.items()}
 
@@ -479,15 +474,15 @@ class ClusteringMixin(BaseMixin, ABC):
     def get_transformer_data(self, settlement_type: int = None) -> tuple[np.array, dict]:
         """
         Args:
-            Settlement type: 1=City, 2=Village, 3=Rural
+            Settlement type: 1=Urban, 2=Semi-urban, 3=Rural
         Returns: Typical transformer capacities and costs depending on the settlement type
         """
         if settlement_type == 1:
             application_area_tuple = (1, 2, 3)
         elif settlement_type == 2:
-            application_area_tuple = (2, 3, 4)
+            application_area_tuple = (2, 3, 4, 5)
         elif settlement_type == 3:
-            application_area_tuple = (3, 4, 5)
+            application_area_tuple = (4, 5)
         else:
             self.logger.info("Incorrect settlement type number specified.")
             return
