@@ -220,10 +220,10 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         # Compute average
         avg_query = """
-            SELECT AVG(households_per_building)::DOUBLE PRECISION
+            SELECT AVG(households)::DOUBLE PRECISION
             FROM buildings_tem
             WHERE plz = %(p)s
-              AND households_per_building IS NOT NULL
+              AND households IS NOT NULL
               AND type IN ('SFH','TH','MFH','AB');"""
         self.cur.execute(avg_query, {"p": plz})
         avg_val = self.cur.fetchone()[0]
