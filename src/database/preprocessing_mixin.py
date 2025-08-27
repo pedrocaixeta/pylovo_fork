@@ -221,7 +221,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         # Compute average
         avg_query = """
             SELECT AVG(households_per_building)::DOUBLE PRECISION
-            FROM buildings_tem
+            FROM buildings_result_with_grid
             WHERE plz = %(p)s
               AND households_per_building IS NOT NULL
               AND type IN ('SFH','TH','MFH','AB');"""
