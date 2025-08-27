@@ -2,24 +2,24 @@
 CREATE_QUERIES = {
     "res": """CREATE TABLE IF NOT EXISTS res (
         osm_id varchar PRIMARY KEY,
-        area numeric(23, 15),
+        area double precision,
         use varchar(80),
         comment varchar(80),
         free_walls integer,
         building_t varchar(80),
-        occupants numeric(23, 15),
+        occupants double precision,
         floors integer,
         constructi varchar(80),
-        refurb_wal numeric(23, 15),
-        refurb_roo numeric(23, 15),
-        refurb_bas numeric(23, 15),
-        refurb_win numeric(23, 15),
+        refurb_wal double precision,
+        refurb_roo double precision,
+        refurb_bas double precision,
+        refurb_win double precision,
         geom geometry(MultiPolygon,3035)
     )
     """,
     "oth": """CREATE TABLE IF NOT EXISTS oth (
         osm_id varchar PRIMARY KEY,
-        area numeric(23, 15),
+        area double precision,
         use varchar(80),
         comment varchar(80),
         free_walls integer,
@@ -118,7 +118,7 @@ CREATE_QUERIES = {
         std_type varchar(15),
         from_bus integer,
         to_bus integer,
-        length_km numeric,
+        length_km double precision,
         CONSTRAINT fk_lines_result_grid_result
             FOREIGN KEY (grid_result_id)
             REFERENCES grid_result (grid_result_id)
@@ -129,11 +129,11 @@ CREATE_QUERIES = {
     CREATE TABLE IF NOT EXISTS consumer_categories (
         consumer_category_id integer PRIMARY KEY,
         definition varchar(30) UNIQUE NOT NULL,
-        peak_load numeric(10,2),
-        yearly_consumption numeric(10,2),
-        peak_load_per_m2 numeric(10,2),
-        yearly_consumption_per_m2 numeric(10,2),
-        sim_factor numeric(10,2) NOT NULL
+        peak_load double precision,
+        yearly_consumption double precision,
+        peak_load_per_m2 double precision,
+        yearly_consumption_per_m2 double precision,
+        sim_factor double precision NOT NULL
     )
     """,
     "buildings_result": """
@@ -141,12 +141,12 @@ CREATE_QUERIES = {
         version_id varchar(10) NOT NULL,
         osm_id varchar NOT NULL,
         grid_result_id bigint NOT NULL,
-        area numeric,
+        area double precision,
         type varchar(30),
         geom geometry(MultiPolygon,3035),
         households_per_building integer,
         center geometry(Point,3035),
-        peak_load_in_kw numeric,
+        peak_load_in_kw double precision,
         vertice_id integer,
         floors integer,
         connection_point integer,
@@ -183,10 +183,10 @@ CREATE_QUERIES = {
         plz integer NOT NULL,
         ags bigint,
         bin_no int,
-        bins numeric,
-        perc_bin numeric,
-        count numeric,
-        perc numeric,
+        bins double precision,
+        perc_bin double precision,
+        count double precision,
+        perc double precision,
         CONSTRAINT sample_set_pkey PRIMARY KEY (classification_id, plz),
         CONSTRAINT fk_sample_set_classification_id
             FOREIGN KEY (classification_id)
@@ -205,30 +205,30 @@ CREATE_QUERIES = {
         no_branches integer,
         
         no_house_connections integer,
-        no_house_connections_per_branch numeric,
+        no_house_connections_per_branch double precision,
         no_households integer,
-        no_household_equ numeric,
-        no_households_per_branch numeric,
-        max_no_of_households_of_a_branch numeric,
-        house_distance_km numeric,
+        no_household_equ double precision,
+        no_households_per_branch double precision,
+        max_no_of_households_of_a_branch double precision,
+        house_distance_km double precision,
         
-        transformer_mva numeric,
+        transformer_mva double precision,
         osm_trafo bool,
         
-        max_trafo_dis numeric,
-        avg_trafo_dis numeric,
+        max_trafo_dis double precision,
+        avg_trafo_dis double precision,
         
-        cable_length_km numeric,
-        cable_len_per_house numeric,
+        cable_length_km double precision,
+        cable_len_per_house double precision,
         
-        max_power_mw numeric,
-        simultaneous_peak_load_mw numeric,
+        max_power_mw double precision,
+        simultaneous_peak_load_mw double precision,
         
-        resistance numeric,
-        reactance numeric,
-        ratio numeric,
-        vsw_per_branch numeric,
-        max_vsw_of_a_branch numeric,
+        resistance double precision,
+        reactance double precision,
+        ratio double precision,
+        vsw_per_branch double precision,
+        max_vsw_of_a_branch double precision,
         
         filtered boolean,
         CONSTRAINT fk_clustering_parameters_grid_result
@@ -394,12 +394,12 @@ TEMP_CREATE_QUERIES = {
     "buildings_tem": """CREATE TABLE IF NOT EXISTS buildings_tem
     (
         osm_id varchar,
-        area numeric,
+        area double precision,
         type varchar(80),
         geom geometry(Geometry,3035),  -- needs to be geometry as multipoint & multipolygon get inserted here
         households_per_building integer,
         center geometry(Point,3035),
-        peak_load_in_kw numeric,
+        peak_load_in_kw double precision,
         plz integer,
         vertice_id bigint,
         bcid integer,
