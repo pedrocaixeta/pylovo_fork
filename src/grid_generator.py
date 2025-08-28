@@ -176,8 +176,16 @@ class GridGenerator:
         self.logger.info("Duplicate buildings removed from buildings_tem")
 
         # self.dbc.set_plz_settlement_type(self.plz)
-        self.dbc.set_plz_settlement_type_by_household_ratio(self.plz, thresholds = {"rural_max": RURAL_MAX_THRESHOLD, "suburban_max": URBAN_MIN_THRESHOLD})
-        self.logger.info("Household ratio and related settlement_type in postcode_result")
+        # Alte Logik durch neue zweistufige Klassifikation ersetzt
+        try:
+            avg_hh = self.dbc.compute_avg_households_per_building(self.plz)
+            house_dist = self.dbc.compute_house_distance_metric(self.plz)
+            settlement_type = self.dbc.set_settlement_type_per_plz(self.plz, household_thresholds = {"rural_max": RURAL_MAX_THRESHOLD, "urban_min": URBAN_MIN_THRESHOLD})
+            self.logger.info(
+                f"Siedlungstyp bestimmt (avg_households_per_building={avg_hh:.2f}, house_distance={house_dist:.1f} m, settlement_type={settlement_type})"
+            )
+        except Exception as e:
+            self.logger.warning(f"Siedlungstyp-Klassifikation fehlgeschlagen: {e}")
 
         unloadcount = self.dbc.set_building_peak_load()
         self.logger.info(

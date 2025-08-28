@@ -191,63 +191,125 @@ class PreprocessingMixin(BaseMixin, ABC):
     #
     #     self.cur.execute(query, {"v": VERSION_ID, "avg": avg_dis, "p": plz})
 
-    def set_plz_settlement_type_by_household_ratio(self, plz: int, thresholds: dict) -> float:
+    def compute_house_distance_metric(self, plz: int, sample_size: int = 50, k_nearest: int = 4) -> float:
+        """Ermittelt den durchschnittlichen Hausabstand (Meter) basierend auf einer Stichprobe
+        und schreibt house_distance in postcode_result. Liefert den berechneten Wert zurück.
         """
-        Determines the settlement_type for a postcode entry based on the average number of households per building.
+        distance_query = f"""WITH some_buildings AS (SELECT osm_id, center
+                                                    FROM buildings_tem
+                                                    ORDER BY RANDOM()
+                                                    LIMIT {sample_size})
+                            SELECT b.osm_id, d.dist
+                            FROM some_buildings AS b
+                                     LEFT JOIN LATERAL (
+                                SELECT ST_Distance(b.center, b2.center) AS dist
+                                FROM buildings_tem AS b2
+                                WHERE b.osm_id <> b2.osm_id
+                                ORDER BY b.center <-> b2.center
+                                LIMIT {k_nearest}) AS d
+                                               ON TRUE;"""
+        self.cur.execute(distance_query)
+        data = self.cur.fetchall()
+        if not data:
+            raise ValueError("Keine Gebäude in buildings_tem für Berechnung des Hausabstands.")
+        distance_vals = [t[1] for t in data if t[1] is not None]
+        if not distance_vals:
+            raise ValueError("Hausabstands-Berechnung ergab keine Distanzen.")
+        avg_dis = float(sum(distance_vals) / len(distance_vals))
+        update_query = """
+            UPDATE postcode_result
+            SET house_distance = %(avg)s
+            WHERE version_id = %(v)s
+              AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(update_query, {"avg": avg_dis, "v": VERSION_ID, "p": plz})
+        return avg_dis
 
-        Logic:
-        1. Computes the average of households_per_building for residential building types (SFH, TH, MFH, AB) inside the postcode.
-        2. Classifies the settlement structure (settlement_type) by density:
-           - Higher households per building => denser => higher settlement_type (consistent with previous logic, where 3 is the densest).
-        3. Writes the value to the column postcode_result.avg_households_per_building (creating it beforehand externally if needed) and updates settlement_type.
-
-        Default thresholds (approximate for typical German settlement patterns):
-           < 2  => predominantly single-/two-family houses          => settlement_type = 1 (rural)
-           2–4  => mixed / suburban structure                       => settlement_type = 2 (suburban)
-           >= 5 => multi-family / block development                 => settlement_type = 3 (urban)
-
-        Parameters
-        ----------
-        plz : int
-            Postal code
-        thresholds : dict - Example: {'rural_max': 2, 'urban_min': 5}
-
-        Returns
-        -------
-        float
-            The computed average (avg_households_per_building)
+    def compute_avg_households_per_building(self, plz: int) -> float:
+        """Berechnet den Durchschnitt der Haushalte pro (Wohn-)Gebäude aus buildings_tem
+        und schreibt avg_households_per_building in postcode_result. Liefert den Wert zurück.
+        (Nutzen von buildings_tem, da Klassifikation früh im Prozess benötigt wird.)
         """
-
-        # Compute average
         avg_query = """
             SELECT AVG(households_per_building)::DOUBLE PRECISION
-            FROM buildings_result_with_grid
-            WHERE plz = %(p)s
-              AND households_per_building IS NOT NULL
+            FROM buildings_tem
+            WHERE households_per_building IS NOT NULL
               AND type IN ('SFH','TH','MFH','AB');"""
         self.cur.execute(avg_query, {"p": plz})
         avg_val = self.cur.fetchone()[0]
-
         if avg_val is None:
-            raise ValueError(f"No residential buildings with household data available for postcode {plz}.")
+            raise ValueError(f"Keine Wohngebäude mit Haushaltsdaten für PLZ {plz}.")
+        update_query = """
+            UPDATE postcode_result
+            SET avg_households_per_building = %(avg)s
+            WHERE version_id = %(v)s
+              AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(update_query, {"avg": avg_val, "v": VERSION_ID, "p": plz})
+        return float(avg_val)
 
-        # Classification
-        if avg_val >= thresholds["urban_min"]:
-            settlement_type = 3
-        elif avg_val >= thresholds["rural_max"]:
-            settlement_type = 2
+    def set_settlement_type_per_plz(
+        self,
+        plz: int,
+        household_thresholds: dict | None = None,
+        distance_thresholds: dict | None = None,
+    ) -> int:
+        """Bestimmt settlement_type (1=rural,2=semi-urban,3=urban) mittels gewichteter (kontinuierlicher) Kombination
+        zweier Metriken:
+          - avg_households_per_building (dichter => urbaner)
+          - house_distance (kleiner => urbaner)
+
+        Vorgehen (weighted only):
+          1. Normierung Haushaltsdichte auf [0,1]:
+               0 bei avg <= rural_max, 1 bei avg >= urban_min, linear dazwischen
+          2. Normierung Abstand auf [0,1]:
+               1 bei distance <= urban_max, 0 bei distance >= suburban_max, linear dazwischen (invertiert)
+          3. Score = 0.5 * hh_norm + 0.5 * dist_norm
+          4. Diskretisierung: Score < 1/3 -> 1, < 2/3 -> 2, sonst 3
+
+        Parameter können kalibriert werden, Defaults stammen aus Konfiguration.
+        """
+        if household_thresholds is None:
+            household_thresholds = {"rural_max": RURAL_MAX_THRESHOLD, "urban_min": URBAN_MIN_THRESHOLD}
+        if distance_thresholds is None:
+            distance_thresholds = {"urban_max": 25.0, "suburban_max": 45.0}
+
+        fetch_query = """
+            SELECT avg_households_per_building, house_distance
+            FROM postcode_result
+            WHERE version_id = %(v)s AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(fetch_query, {"v": VERSION_ID, "p": plz})
+        row = self.cur.fetchone()
+        if not row or row[0] is None or row[1] is None:
+            raise ValueError("Beide Metriken müssen vor Klassifikation gesetzt sein.")
+        avg_households, house_distance = float(row[0]), float(row[1])
+
+        # Normierung Haushalte
+        denom_hh = max(1e-9, (household_thresholds["urban_min"] - household_thresholds["rural_max"]))
+        hh_norm = (avg_households - household_thresholds["rural_max"]) / denom_hh
+        hh_norm = min(1.0, max(0.0, hh_norm))
+        # Normierung Distanz (invertiert)
+        denom_dist = max(1e-9, (distance_thresholds["suburban_max"] - distance_thresholds["urban_max"]))
+        dist_norm_raw = (house_distance - distance_thresholds["urban_max"]) / denom_dist
+        dist_norm = 1.0 - min(1.0, max(0.0, dist_norm_raw))
+
+        score = 0.5 * hh_norm + 0.5 * dist_norm
+        if score >= 2/3:
+            final_class = 3
+        elif score >= 1/3:
+            final_class = 2
         else:
-            settlement_type = 1
+            final_class = 1
 
         update_query = """
             UPDATE postcode_result
-            SET avg_households_per_building = %(avg)s,
-                settlement_type = %(stype)s
-            WHERE version_id = %(v)s
-              AND postcode_result_plz = %(p)s;"""
-        self.cur.execute(update_query, {"avg": avg_val, "stype": settlement_type, "v": VERSION_ID, "p": plz})
+            SET settlement_type = %(stype)s
+            WHERE version_id = %(v)s AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(update_query, {"stype": final_class, "v": VERSION_ID, "p": plz})
+        return final_class
 
-        return float(avg_val)
+    # Vorherige Funktion wird beibehalten (Kompatibilität), aber markiert als veraltet
+    def set_plz_settlement_type_by_household_ratio(self, plz: int, thresholds: dict) -> float:  # deprecated
+        """Deprecated: Bitte compute_avg_households_per_building + set_settlement_type_per_plz verwenden."""
+        return self.compute_avg_households_per_building(plz)
 
     def set_building_peak_load(self) -> int:
         """
