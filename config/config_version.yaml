@@ -13,13 +13,11 @@ CONNECTION_AVAILABLE_CABLES:
   - NYY 4x70 SE
 
 # Thresholds for the average number of households per building to derive settlement_type
-# Logic in set_plz_settlement_type_by_household_ratio():
-#   avg >= SUBURBAN_MAX_THRESHOLD  -> settlement_type = 3 (urban / dense)
-#   avg >= RURAL_MAX_THRESHOLD     -> settlement_type = 2 (suburban / semi-dense)
-#   avg <  RURAL_MAX_THRESHOLD     -> settlement_type = 1 (rural / sparse)
-# These values can be calibrated (e.g. for regional differences).
-RURAL_MAX_THRESHOLD: 1.25
-URBAN_MIN_THRESHOLD: 5
+RURAL_MAX_HOUSEHOLDS: 1.25
+URBAN_MIN_HOUSEHOLDS: 5
+# Thresholds for the average distance between buildings to derive settlement_type
+RURAL_MIN_BUILDING_DISTANCE: 50  # meters
+URBAN_MAX_BUILDING_DISTANCE: 25  # meters
 
 # installed_power * (sim_factor + (1 - sim_factor) * (load_count ** (-3 / 4)))
 SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5}

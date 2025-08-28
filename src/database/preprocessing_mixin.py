@@ -146,7 +146,7 @@ class PreprocessingMixin(BaseMixin, ABC):
                      AND osm_id LIKE '%copy%';"""
         self.cur.execute(query)
 
-    def compute_house_distance_metric(self, plz: int, sample_size: int = 50, k_nearest: int = 4) -> float:
+    def calculate_house_distance_metric(self, plz: int, sample_size: int = 50, k_nearest: int = 4) -> float:
         """Computes the average inter-building distance (meters) based on a random sample
         and writes house_distance into postcode_result. Returns the computed value.
         """
@@ -179,7 +179,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(update_query, {"avg": avg_dis, "v": VERSION_ID, "p": plz})
         return avg_dis
 
-    def compute_avg_households_per_building(self, plz: int) -> float:
+    def calculate_avg_households_per_building(self, plz: int) -> float:
         """Computes the average number of households per (residential) building from buildings_tem
         and writes avg_households_per_building into postcode_result. Returns the value.
         """
@@ -203,8 +203,7 @@ class PreprocessingMixin(BaseMixin, ABC):
     def set_settlement_type_per_plz(
         self,
         plz: int,
-        household_thresholds: dict | None = None,
-        distance_thresholds: dict | None = None,
+        settlement_type_thresholds: dict | None = None,
     ) -> int:
         """Determines settlement_type (1=rural, 2=semi-urban, 3=urban) using a weighted (continuous) combination
         of two metrics:
@@ -213,19 +212,14 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         Method (weighted only):
           1. Normalize household metric to [0,1]:
-               0 when avg <= rural_max ->rural, 1 when avg >= urban_min -> urban, linear in between
+               0 when avg <= rural_max_households -> rural, 1 when avg >= urban_min_households -> urban, linear in between
           2. Normalize distance to [0,1] (inverted):
-               0 when distance >= suburban_max -> rural, 1 when distance <= urban_max ->urban, linear in between
+               0 when distance >= rural_min_distance -> rural, 1 when distance <= urban_max_distance -> urban, linear in between
           3. Score = 0.5 * hh_norm + 0.5 * dist_norm
           4. Discretize: Score < 1/3 -> 1, < 2/3 -> 2, else 3
 
         Parameters can be calibrated; defaults come from configuration.
         """
-        if household_thresholds is None:
-            household_thresholds = {"rural_max": RURAL_MAX_THRESHOLD, "urban_min": URBAN_MIN_THRESHOLD}
-        if distance_thresholds is None:
-            distance_thresholds = {"urban_max": 25.0, "suburban_max": 45.0}
-
         fetch_query = """
             SELECT avg_households_per_building, house_distance
             FROM postcode_result
@@ -236,13 +230,13 @@ class PreprocessingMixin(BaseMixin, ABC):
             raise ValueError("Both metrics must be set before classification.")
         avg_households, house_distance = float(row[0]), float(row[1])
 
-        # Normierung Haushalte
-        denom_hh = max(1e-9, (household_thresholds["urban_min"] - household_thresholds["rural_max"]))
-        hh_norm = (avg_households - household_thresholds["rural_max"]) / denom_hh
+        # Normalization households
+        denom_hh = max(1e-9, (settlement_type_thresholds["urban_min_households"] - settlement_type_thresholds["rural_max_households"]))
+        hh_norm = (avg_households - settlement_type_thresholds["rural_max_households"]) / denom_hh
         hh_norm = min(1.0, max(0.0, hh_norm))
-        # Normierung Distanz (invertiert)
-        denom_dist = max(1e-9, (distance_thresholds["suburban_max"] - distance_thresholds["urban_max"]))
-        dist_norm_raw = (house_distance - distance_thresholds["urban_max"]) / denom_dist
+        # Normalization distances (inverted)
+        denom_dist = max(1e-9, (settlement_type_thresholds["rural_min_distance"] - settlement_type_thresholds["urban_max_distance"]))
+        dist_norm_raw = (house_distance - settlement_type_thresholds["urban_max_distance"]) / denom_dist
         dist_norm = 1.0 - min(1.0, max(0.0, dist_norm_raw))
 
         score = 0.5 * hh_norm + 0.5 * dist_norm

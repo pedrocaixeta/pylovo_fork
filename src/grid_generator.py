@@ -176,9 +176,13 @@ class GridGenerator:
         self.logger.info("Duplicate buildings removed from buildings_tem")
 
         try:
-            avg_hh = self.dbc.compute_avg_households_per_building(self.plz)
-            house_dist = self.dbc.compute_house_distance_metric(self.plz)
-            settlement_type = self.dbc.set_settlement_type_per_plz(self.plz, household_thresholds={"rural_max": RURAL_MAX_THRESHOLD, "urban_min": URBAN_MIN_THRESHOLD})
+            avg_hh = self.dbc.calculate_avg_households_per_building(self.plz)
+            house_dist = self.dbc.calculate_house_distance_metric(self.plz)
+            settlement_type = self.dbc.set_settlement_type_per_plz(self.plz, settlement_type_thresholds=
+            {"rural_max_households": RURAL_MAX_HOUSEHOLDS,
+             "urban_min_households": URBAN_MIN_HOUSEHOLDS,
+             "rural_min_distance": RURAL_MIN_BUILDING_DISTANCE,
+             "urban_max_distance": URBAN_MAX_BUILDING_DISTANCE})
             self.logger.info(
                 f"Settlement type determined (avg_households_per_building={avg_hh:.2f}, house_distance={house_dist:.1f} m, settlement_type={settlement_type})"
             )
