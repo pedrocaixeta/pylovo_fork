@@ -56,6 +56,7 @@ class GridGenerator:
         self.plz = plz
         print('-------------------- start', self.plz, '---------------------------')
         self.dbc.create_temp_tables(plz)  # create PLZ-suffixed temp tables
+        self.dbc.commit_changes()
 
         try:
             self.generate_grid()
@@ -165,6 +166,7 @@ class GridGenerator:
         if USE_INFDB:
             buildings_data = self.inf_dbc.get_relevant_buildings_in_plz_from_infdb(self.plz)
             self.dbc.set_buildings_table(buildings_data)
+            self.dbc.commit_changes()
         else:
             self.dbc.set_residential_buildings_table(self.plz)
             self.dbc.set_other_buildings_table(self.plz)

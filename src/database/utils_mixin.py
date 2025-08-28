@@ -24,7 +24,8 @@ class UtilsMixin(BaseMixin, ABC):
             # create a dedicated table for each PLZ
             self.cur.execute(query.replace(base_name, table_name))
             # expose a session-local view with the common name
-            self.cur.execute(f"CREATE TEMP VIEW {base_name} AS SELECT * FROM {table_name}")
+            # self.cur.execute(f"CREATE TEMP VIEW {base_name} AS SELECT * FROM {table_name}")
+            self.cur.execute(f"CREATE OR REPLACE VIEW {base_name} AS SELECT * FROM {table_name}")
 
     def drop_temp_tables(self, plz: int) -> None:
         """Drop PLZ-suffixed tables and their views."""
