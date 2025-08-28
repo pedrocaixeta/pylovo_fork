@@ -175,17 +175,15 @@ class GridGenerator:
         self.dbc.remove_duplicate_buildings()
         self.logger.info("Duplicate buildings removed from buildings_tem")
 
-        # self.dbc.set_plz_settlement_type(self.plz)
-        # Alte Logik durch neue zweistufige Klassifikation ersetzt
         try:
             avg_hh = self.dbc.compute_avg_households_per_building(self.plz)
             house_dist = self.dbc.compute_house_distance_metric(self.plz)
-            settlement_type = self.dbc.set_settlement_type_per_plz(self.plz, household_thresholds = {"rural_max": RURAL_MAX_THRESHOLD, "urban_min": URBAN_MIN_THRESHOLD})
+            settlement_type = self.dbc.set_settlement_type_per_plz(self.plz, household_thresholds={"rural_max": RURAL_MAX_THRESHOLD, "urban_min": URBAN_MIN_THRESHOLD})
             self.logger.info(
-                f"Siedlungstyp bestimmt (avg_households_per_building={avg_hh:.2f}, house_distance={house_dist:.1f} m, settlement_type={settlement_type})"
+                f"Settlement type determined (avg_households_per_building={avg_hh:.2f}, house_distance={house_dist:.1f} m, settlement_type={settlement_type})"
             )
         except Exception as e:
-            self.logger.warning(f"Siedlungstyp-Klassifikation fehlgeschlagen: {e}")
+            self.logger.warning(f"Settlement type classification failed: {e}")
 
         unloadcount = self.dbc.set_building_peak_load()
         self.logger.info(
@@ -205,10 +203,10 @@ class GridGenerator:
         INTO: buildings_tem
         """
         self.dbc.insert_transformers(self.plz)
-        self.logger.info("Transformers inserted in to the buildings_tem table")
+        self.logger.info("Transformers inserted into buildings_tem table")
         self.dbc.count_indoor_transformers()
         self.dbc.drop_indoor_transformers()
-        self.logger.info("Indoor transformers dropped from the buildings_tem table")
+        self.logger.info("Indoor transformers removed from buildings_tem table")
 
     def prepare_ways(self):
         """
@@ -237,8 +235,8 @@ class GridGenerator:
 
     def apply_kmeans_clustering(self):
         """
-        Find connected components (subgraphs) of an undirected street-graph applying the Depth-First Search algorithm
-        to edges and vertices from ways_tem and (if necessary due to their size) apply k-means clustering to these
+        Find connected components (subgraphs) of an undirected street graph using Depth-First Search algorithm over
+        edges and vertices from ways_tem and, if necessary due to their size, apply k-means clustering to these
         street network components.
 
         FROM: ways_tem, buildings_tem
@@ -323,7 +321,7 @@ class GridGenerator:
                     self.create_bcid_for_kcid(self.plz, kcid) #TODO: name should include transformer_size allocation
                 else:
                     self.dbc.delete_isolated_building(self.plz, kcid) #TODO: check approach with isolated buildings
-                self.logger.debug("Rest building cluster finished")
+                self.logger.debug("Remaining building clustering finished")
 
             # Process unfinished clusters
             for bcid in self.dbc.get_greenfield_bcids(self.plz, kcid):
@@ -332,7 +330,7 @@ class GridGenerator:
                     self.position_greenfield_transformers(self.plz, kcid, bcid)
                     self.logger.debug(f"Transformer positioning for kcid{kcid}, bcid{bcid} finished")
                     self.dbc.update_transformer_rated_power(self.plz, kcid, bcid, 1)
-                    self.logger.debug("Transformer_rated_power in grid_result is updated.")
+                    self.logger.debug("Transformer_rated_power in grid_result updated.")
 
     def create_bcid_for_kcid(self, plz: int, kcid: int) -> None:
         """
@@ -408,9 +406,9 @@ class GridGenerator:
                 del invalid_trans_cluster_dict[0]
                 invalid_trans_cluster_dict = dict(enumerate(invalid_trans_cluster_dict.values()))
 
-        # At this point, we've successfully found a valid electrical clustering solution with the minimum
-        # number of clusters. Each cluster:
-        #   1. Contains buildings that can be served by a single transformer
+        # At this point, a valid clustering solution (minimum number of transformers) was found.
+        # Each cluster:
+        #   1. Contains buildings that can be supplied by a single transformer
         #   2. Has an appropriately sized transformer assigned
         # The valid_cluster_dict maps building cluster IDs to tuples of (building_vertices_list, optimal_transformer_size)
         # We could calculate the total transformer cost by summing the costs of all selected transformers:
@@ -424,10 +422,14 @@ class GridGenerator:
         for bcid, cluster_data in valid_cluster_dict.items():
             self.dbc.upsert_bcid(plz, kcid, bcid, vertices=cluster_data[0],
                                          transformer_rated_power=cluster_data[1])
+        self.logger.debug(f"bcids for plz {plz} kcid {kcid} created.")
+
         self.logger.debug(f"bcids for plz {plz} kcid {kcid} found...")
 
     def _order_clusters_by_min_vertice(self, cluster_dict: dict) -> dict:
         """
+        Helper to reassign bcids based on smallest vertex ID of each cluster
+        for consistent ordering across equivalent partitions.
         Helper function to reassign bcids of the given building clusters ordered by the smallest vertice IDs of the clusters.
         Returns the same result for cluster distributions that are equivalent up to renaming.
         :param cluster_dict: input clusters
@@ -1066,7 +1068,8 @@ class GridGenerator:
 
     def determine_maximum_load_branch(self, furthest_node_path_list: list, buildings_df: pd.DataFrame,
             consumer_df: pd.DataFrame) -> tuple[list, float]:
-        # TOD O explanation?
+        # Determine the longest feasible branch (in order from transformer to furthest node)
+        # limited by maximum allowable current
         branch_node_list = []
         for node in furthest_node_path_list:
             branch_node_list.append(node)

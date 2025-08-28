@@ -58,7 +58,7 @@ class PreprocessingMixin(BaseMixin, ABC):
 
     def set_residential_buildings_table(self, plz: int):
         """
-        * Fills buildings_tem with residential buildings which are inside the plz area
+        * Fills buildings_tem with residential buildings that lie inside the postal code geometry
         :param plz:
         :return:
         """
@@ -100,8 +100,8 @@ class PreprocessingMixin(BaseMixin, ABC):
 
     def set_other_buildings_table(self, plz: int):
         """
-        * Fills buildings_tem with other buildings which are inside the plz area
-        * Sets all floors to 1
+        * Fills buildings_tem with other (non-residential) buildings inside the plz area
+        * Sets all floors to 1 if missing
         :param plz:
         :return:
         """
@@ -126,7 +126,7 @@ class PreprocessingMixin(BaseMixin, ABC):
     def remove_duplicate_buildings(self):
         """
         * Remove buildings without geometry or osm_id
-        * Remove buildings which are duplicates of other buildings and have a copied id
+        * Remove buildings that are duplicates (copy id) of others
         :return:
         """
         remove_query = """DELETE
@@ -146,54 +146,9 @@ class PreprocessingMixin(BaseMixin, ABC):
                      AND osm_id LIKE '%copy%';"""
         self.cur.execute(query)
 
-    # def set_plz_settlement_type(self, plz: int) -> None:
-    #     """
-    #     Determine settlement_type in postcode_result table based on the house_distance metric for a given plz
-    #     :param plz: Postleitzahl (postal code)
-    #     :return: None
-    #     """
-    #     # Get average distance between buildings by sampling 50 random buildings
-    #     # and finding their 4 nearest neighbors
-    #     distance_query = """WITH some_buildings AS (SELECT osm_id, center
-    #                                                 FROM buildings_tem
-    #                                                 ORDER BY RANDOM()
-    #                                                 LIMIT 50)
-    #                         SELECT b.osm_id, d.dist
-    #                         FROM some_buildings AS b
-    #                                  LEFT JOIN LATERAL (
-    #                             SELECT ST_Distance(b.center, b2.center) AS dist
-    #                             FROM buildings_tem AS b2
-    #                             WHERE b.osm_id <> b2.osm_id
-    #                             ORDER BY b.center <-> b2.center
-    #                             LIMIT 4) AS d
-    #                                            ON TRUE;"""
-    #     self.cur.execute(distance_query)
-    #     data = self.cur.fetchall()
-    #
-    #     if not data:
-    #         raise ValueError("There is no building in the buildings_tem table!")
-    #
-    #     # Calculate average distance
-    #     distance = [t[1] for t in data]
-    #     avg_dis = int(sum(distance) / len(distance))
-    #
-    #     # Update database with average distance and set settlement types based on threshold
-    #     query = """
-    #             UPDATE postcode_result
-    #             SET house_distance  = %(avg)s,
-    #                 settlement_type = CASE
-    #                                       WHEN %(avg)s < 25 THEN 3
-    #                                       WHEN %(avg)s < 45 THEN 2
-    #                                       ELSE 1
-    #                     END
-    #             WHERE version_id = %(v)s
-    #               AND postcode_result_plz = %(p)s;"""
-    #
-    #     self.cur.execute(query, {"v": VERSION_ID, "avg": avg_dis, "p": plz})
-
     def compute_house_distance_metric(self, plz: int, sample_size: int = 50, k_nearest: int = 4) -> float:
-        """Ermittelt den durchschnittlichen Hausabstand (Meter) basierend auf einer Stichprobe
-        und schreibt house_distance in postcode_result. Liefert den berechneten Wert zurück.
+        """Computes the average inter-building distance (meters) based on a random sample
+        and writes house_distance into postcode_result. Returns the computed value.
         """
         distance_query = f"""WITH some_buildings AS (SELECT osm_id, center
                                                     FROM buildings_tem
@@ -211,10 +166,10 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(distance_query)
         data = self.cur.fetchall()
         if not data:
-            raise ValueError("Keine Gebäude in buildings_tem für Berechnung des Hausabstands.")
+            raise ValueError("No buildings in buildings_tem for house distance calculation.")
         distance_vals = [t[1] for t in data if t[1] is not None]
         if not distance_vals:
-            raise ValueError("Hausabstands-Berechnung ergab keine Distanzen.")
+            raise ValueError("House distance calculation returned no distances.")
         avg_dis = float(sum(distance_vals) / len(distance_vals))
         update_query = """
             UPDATE postcode_result
@@ -225,9 +180,8 @@ class PreprocessingMixin(BaseMixin, ABC):
         return avg_dis
 
     def compute_avg_households_per_building(self, plz: int) -> float:
-        """Berechnet den Durchschnitt der Haushalte pro (Wohn-)Gebäude aus buildings_tem
-        und schreibt avg_households_per_building in postcode_result. Liefert den Wert zurück.
-        (Nutzen von buildings_tem, da Klassifikation früh im Prozess benötigt wird.)
+        """Computes the average number of households per (residential) building from buildings_tem
+        and writes avg_households_per_building into postcode_result. Returns the value.
         """
         avg_query = """
             SELECT AVG(households_per_building)::DOUBLE PRECISION
@@ -237,7 +191,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(avg_query, {"p": plz})
         avg_val = self.cur.fetchone()[0]
         if avg_val is None:
-            raise ValueError(f"Keine Wohngebäude mit Haushaltsdaten für PLZ {plz}.")
+            raise ValueError(f"No residential buildings with household data for ZIP {plz}.")
         update_query = """
             UPDATE postcode_result
             SET avg_households_per_building = %(avg)s
@@ -252,20 +206,20 @@ class PreprocessingMixin(BaseMixin, ABC):
         household_thresholds: dict | None = None,
         distance_thresholds: dict | None = None,
     ) -> int:
-        """Bestimmt settlement_type (1=rural,2=semi-urban,3=urban) mittels gewichteter (kontinuierlicher) Kombination
-        zweier Metriken:
-          - avg_households_per_building (dichter => urbaner)
-          - house_distance (kleiner => urbaner)
+        """Determines settlement_type (1=rural, 2=semi-urban, 3=urban) using a weighted (continuous) combination
+        of two metrics:
+          - avg_households_per_building (higher => more urban)
+          - house_distance (smaller => more urban)
 
-        Vorgehen (weighted only):
-          1. Normierung Haushaltsdichte auf [0,1]:
-               0 bei avg <= rural_max, 1 bei avg >= urban_min, linear dazwischen
-          2. Normierung Abstand auf [0,1]:
-               1 bei distance <= urban_max, 0 bei distance >= suburban_max, linear dazwischen (invertiert)
+        Method (weighted only):
+          1. Normalize household metric to [0,1]:
+               0 when avg <= rural_max ->rural, 1 when avg >= urban_min -> urban, linear in between
+          2. Normalize distance to [0,1] (inverted):
+               0 when distance >= suburban_max -> rural, 1 when distance <= urban_max ->urban, linear in between
           3. Score = 0.5 * hh_norm + 0.5 * dist_norm
-          4. Diskretisierung: Score < 1/3 -> 1, < 2/3 -> 2, sonst 3
+          4. Discretize: Score < 1/3 -> 1, < 2/3 -> 2, else 3
 
-        Parameter können kalibriert werden, Defaults stammen aus Konfiguration.
+        Parameters can be calibrated; defaults come from configuration.
         """
         if household_thresholds is None:
             household_thresholds = {"rural_max": RURAL_MAX_THRESHOLD, "urban_min": URBAN_MIN_THRESHOLD}
@@ -279,7 +233,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(fetch_query, {"v": VERSION_ID, "p": plz})
         row = self.cur.fetchone()
         if not row or row[0] is None or row[1] is None:
-            raise ValueError("Beide Metriken müssen vor Klassifikation gesetzt sein.")
+            raise ValueError("Both metrics must be set before classification.")
         avg_households, house_distance = float(row[0]), float(row[1])
 
         # Normierung Haushalte
@@ -305,11 +259,6 @@ class PreprocessingMixin(BaseMixin, ABC):
             WHERE version_id = %(v)s AND postcode_result_plz = %(p)s;"""
         self.cur.execute(update_query, {"stype": final_class, "v": VERSION_ID, "p": plz})
         return final_class
-
-    # Vorherige Funktion wird beibehalten (Kompatibilität), aber markiert als veraltet
-    def set_plz_settlement_type_by_household_ratio(self, plz: int, thresholds: dict) -> float:  # deprecated
-        """Deprecated: Bitte compute_avg_households_per_building + set_settlement_type_per_plz verwenden."""
-        return self.compute_avg_households_per_building(plz)
 
     def set_building_peak_load(self) -> int:
         """
@@ -443,7 +392,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(insert_query, {"p": plz, "v": VERSION_ID})
 
     def count_indoor_transformers(self) -> None:
-        """counts indoor transformers before deleting them"""
+        """Counts indoor transformers before deleting them"""
         query = """WITH union_table (ungeom) AS
                                 (SELECT ST_Union(geom) FROM buildings_tem WHERE peak_load_in_kw = 0)
                    SELECT COUNT(*)
@@ -560,13 +509,8 @@ class PreprocessingMixin(BaseMixin, ABC):
         - Assigns node IDs by analyzing the start and end points of each geometry.
         - Required to enable routing and graph operations on the road network.
         2. pgr_analyzeGraph():
-        - Verifies that the graph topology is valid and reports disconnected components.
-        - Helps ensure that the routing network is usable and clean.
-        These functions are required by pgRouting to transform a geometry-based table
-        (`ways_tem`) into a routable network graph.
-
-        :param plz: Postal code used to suffix temporary tables.
-        :type plz: int
+        - Verifies the graph topology and reports disconnected components.
+        - Ensures the routing network is clean and usable.
         """
         edge_table = f"ways_tem_{plz}"
         vertices_table = f"{edge_table}_vertices_pgr"
@@ -628,11 +572,10 @@ class PreprocessingMixin(BaseMixin, ABC):
         return count
 
     def get_ags_log(self) -> pd.DataFrame:
-        """get ags log: the amtliche gemeindeschluessel of the municipalities of which the buildings
-        have already been imported to the database
-        :return: table with column of ags
-        :rtype: DataFrame
-         """
+        """Get AGS log: the official municipal keys (Amtlicher Gemeindeschlüssel) of municipalities
+        whose buildings have already been imported into the database.
+        :return: table with column ags
+        """
         query = """SELECT *
                    FROM ags_log;"""
         df_query = pd.read_sql_query(query, con=self.conn, )
