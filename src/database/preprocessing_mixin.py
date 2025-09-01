@@ -572,3 +572,14 @@ class PreprocessingMixin(BaseMixin, ABC):
                    FROM ags_log;"""
         df_query = pd.read_sql_query(query, con=self.conn, )
         return df_query
+
+    def get_testing_plz(self, plz: int) -> int:
+        """
+        Liefert bei aktiviertem TESTING-Flag den zugehörigen testing_plz aus postcode,
+        sonst den unveränderten Eingabe-PLZ.
+        """
+        self.cur.execute("SELECT testing_plz FROM postcode WHERE plz = %(p)s LIMIT 1;", {"p": plz})
+        row = self.cur.fetchone()
+        if row and row[0]:
+            return int(row[0])
+        return plz

@@ -35,7 +35,7 @@ class InfdbClient:
         self.cur.close()
         self.conn.close()
 
-    def get_relevant_buildings_in_plz_from_infdb(self, plz: int) -> list[tuple]:
+    def fetch_buildings_from_infdb(self, plz: int) -> list[tuple]:
         """
         Retrieve all buildings whose centroids are contained within a specified postcode (PLZ).
 
@@ -65,7 +65,7 @@ class InfdbClient:
 
         return result
     
-    def fetch_ways_from_infdb(self, postcode) -> list:
+    def fetch_ways_from_infdb(self, plz) -> list:
         """
         Fetch ways from remote DB for a given postcode.
         Filter out clazz:72 (Rad- und Fußweg)
@@ -73,9 +73,9 @@ class InfdbClient:
         query = """
             SELECT clazz, source, target, cost, reverse_cost, geom, way_id
             FROM ways
-            WHERE postcode = %(postcode)s and clazz != 72
+            WHERE postcode = %(plz)s and clazz != 72
         """
-        self.cur.execute(query, {"postcode": postcode})
+        self.cur.execute(query, {"postcode": plz})
         rows = self.cur.fetchall()
 
         if not rows:

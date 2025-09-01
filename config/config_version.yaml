@@ -2,7 +2,7 @@
 VERSION_ID: "4"
 
 # state here which parameters, queries are used to compute the grids with current VERSION_ID
-VERSION_COMMENT: base version
+VERSION_COMMENT: test version
 
 
 PEAK_LOAD_HOUSEHOLD: 14.50 # default: 14.5kW, 30 kW if electric hot water supply is included

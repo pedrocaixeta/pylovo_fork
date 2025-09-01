@@ -4,13 +4,7 @@ N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generatio
 ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
 SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
 LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
-
-# // .env
-# INFDB_DBNAME='citydb'
-# INFDB_USER='citydb_user'
-# INFDB_HOST='00.000.00.00'
-# INFDB_PORT=5432
-# INFDB_PASSWORD='citydb_password'
+TESTING: True # If True, only a small subset of data is used for faster testing
 
 # Default pylovo database connection configuration if no .env file is found
 DBNAME: pylovo_db_local

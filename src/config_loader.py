@@ -44,6 +44,7 @@ RESULT_DIR = os.path.join(os.getcwd(), "results")
 ANALYZE_GRIDS = CONFIG_DATA["ANALYZE_GRIDS"]
 SAVE_GRID_FOLDER = CONFIG_DATA["SAVE_GRID_FOLDER"]
 LOG_LEVEL = CONFIG_DATA["LOG_LEVEL"]
+TESTING = CONFIG_DATA.get("TESTING", False)
 # Percentage of CPU cores to use for parallel execution
 N_JOBS_PERCENT = CONFIG_DATA.get("N_JOBS_PERCENT", 50)
 # Determine usable number of cores based on system capability
