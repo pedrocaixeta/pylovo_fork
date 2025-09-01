@@ -20,6 +20,14 @@ PORT: 5432
 PASSWORD: postgres
 TARGET_SCHEMA: public
 
+## Default infdb connection configuration if no .env file is found
+INFDB_DBNAME: citydb
+INFDB_USER: citydb_user
+INFDB_HOST: localhost
+INFDB_PORT: 5432
+INFDB_PASSWORD: citydb_password
+INFDB_SOURCE_SCHEMA: public
+
 # Seed for the initialization of the k-means clustering for transformer placement
 # Keeping the same seed ensures consistent behavior in multiple runs
 # Has to be an integer between 0 and 4294967295

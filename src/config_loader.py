@@ -32,12 +32,12 @@ PASSWORD = os.getenv("PASSWORD", CONFIG_DATA["PASSWORD"])
 TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATA["TARGET_SCHEMA"])
 
 USE_INFDB = True if CONFIG_DATA["USE_INFDB"] in [True, "True", "true", 1, "1", "on"] else False
-INFDB_DBNAME = os.getenv("INFDB_DBNAME", "not set")
-INFDB_USER = os.getenv("INFDB_USER", "not set")
-INFDB_HOST = os.getenv("INFDB_HOST", "not set")
-INFDB_PORT = os.getenv("INFDB_PORT", "not set")
-INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", "not set")
-INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", "public")
+INFDB_DBNAME = os.getenv("INFDB_DBNAME", CONFIG_DATA.get("INFDB_DBNAME"))
+INFDB_USER = os.getenv("INFDB_USER", CONFIG_DATA.get("INFDB_USER"))
+INFDB_HOST = os.getenv("INFDB_HOST", CONFIG_DATA.get("INFDB_HOST"))
+INFDB_PORT = os.getenv("INFDB_PORT", CONFIG_DATA.get("INFDB_PORT"))
+INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", CONFIG_DATA.get("INFDB_PASSWORD"))
+INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", CONFIG_DATA.get("INFDB_SOURCE_SCHEMA", "public"))
 
 # Assign other variables from CONFIG_DATA
 RESULT_DIR = os.path.join(os.getcwd(), "results")
