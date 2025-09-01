@@ -456,7 +456,7 @@ class GridGenerator:
         cost_df = self.dbc.get_consumer_to_transformer_df(kcid, transformer_list)
 
         # Filter out connections with distance >= 300
-        cost_df = cost_df[cost_df["agg_cost"] < 300].sort_values(by=["agg_cost"])
+        cost_df = cost_df[cost_df["agg_cost"] < 800].sort_values(by=["agg_cost"])
 
         # Initialize tracking variables
         pre_result_dict = {transformer_id: [] for transformer_id in transformer_list}
