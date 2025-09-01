@@ -668,7 +668,7 @@ class GridGenerator:
         cluster_list = self.dbc.get_list_from_plz(self.plz)
         ci_count = 0
         ci_process = 0
-        main_street_available_cables = CABLE_COST_DICT.keys()
+        main_street_available_cables = CONNECTION_AVAILABLE_CABLES
 
         for id in cluster_list:
             kcid, bcid = id
@@ -678,7 +678,7 @@ class GridGenerator:
                 self.prepare_vertices_list(self.plz, kcid, bcid)
             )
             Pd, load_units, load_type = self.get_consumer_simultaneous_load_dict(consumer_list, buildings_df)
-            local_length_dict = {c: 0 for c in CABLE_COST_DICT.keys()}
+            local_length_dict = {c: 0 for c in CONNECTION_AVAILABLE_CABLES}
 
             # Create network and add components
             net = pp.create_empty_network()

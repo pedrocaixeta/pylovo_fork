@@ -44,7 +44,6 @@ CREATE_QUERIES = {
         version_comment varchar, 
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         consumer_categories varchar,
-        cable_cost_dict varchar,
         connection_available_cables varchar,   
         other_parameters varchar
     )

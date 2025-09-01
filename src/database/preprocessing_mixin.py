@@ -27,17 +27,15 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(count_query)
         version_exists = self.cur.fetchone()[0]
         if not version_exists:
-            # create new version
             consumer_categories_str = CONSUMER_CATEGORIES.to_json().replace("'", "''")
-            cable_cost_dict_str = json.dumps(CABLE_COST_DICT).replace("'", "''")
             connection_available_cables_str = str(CONNECTION_AVAILABLE_CABLES).replace("'", "''")
             other_parameters_dict = {"LARGE_COMPONENT_LOWER_BOUND": LARGE_COMPONENT_LOWER_BOUND,
                                      "LARGE_COMPONENT_DIVIDER": LARGE_COMPONENT_DIVIDER, "VN": VN,
                                      "V_BAND_LOW": V_BAND_LOW, "V_BAND_HIGH": V_BAND_HIGH, }
             other_paramters_str = str(other_parameters_dict).replace("'", "''")
 
-            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, cable_cost_dict, connection_available_cables, other_parameters) VALUES
-                ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{cable_cost_dict_str}', '{connection_available_cables_str}', '{other_paramters_str}')"""
+            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, connection_available_cables, other_parameters) VALUES
+                ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{connection_available_cables_str}', '{other_paramters_str}')"""
             self.cur.execute(insert_query)
             self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
 

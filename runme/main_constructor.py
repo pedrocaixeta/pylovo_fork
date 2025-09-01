@@ -31,21 +31,21 @@ def main():
     logger.info("### CREATE ALL TABLES ###")
     sgc.create_table(table_name="all")
 
+    ### Insert equipment data from config
+    logger.info("### INSERT EQUIPMENT DATA FROM CONFIG ###")
+    sgc.insert_equipment_data_from_config()
+
     ### Add transformer data from geojson to the database
     logger.info("### QUERY TRANSFORMERS AND INSERT THEM INTO DB (~50 min if processing new trafo data) ###")
     sgc.transformers_to_db()
 
     if USE_INFDB:
-        ### Here atm only equipment_data are imported as postcodes are imported from infdb but keep this for modularity
-        logger.info("### POPULATE DB WITH EQUIPMENT DATA ###")
-        sgc.csv_to_db(CSV_FILE_LIST_INFDB)
-
         ### Fetch postcode data from InfDB and insert into local 'postcode' table
         logger.info("### FETCH AND POPULATE POSTCODE DATA FROM INFDB ###")
         sgc.load_postcode_from_infdb()
 
     if not USE_INFDB:
-        ### Add defined csv raw data from CSV_FILE_LIST to the database
+        ### Add defined csv raw data from CSV_FILE_LIST to the database (ATM only postcode data)
         logger.info("### POPULATE DB WITH CSV RAW DATA ###")
         sgc.csv_to_db(CSV_FILE_LIST)
 
