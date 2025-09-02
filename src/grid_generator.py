@@ -30,7 +30,8 @@ class GridGenerator:
         self.plz = plz
         self.dbc = dbc.DatabaseClient()
         self.dbc.insert_version_if_not_exists()
-        self.dbc.insert_parameter_tables(consumer_categories=CONSUMER_CATEGORIES)
+        self.dbc.insert_equipment_data_from_config(equipment_data=EQUIPMENT_DATA)
+        self.dbc.insert_consumer_categories_from_config(consumer_categories=CONSUMER_CATEGORIES)
         self.logger = utils.create_logger(
             name="GridGenerator", log_file=kwargs.get("log_file", "log.txt"), log_level=LOG_LEVEL
         )

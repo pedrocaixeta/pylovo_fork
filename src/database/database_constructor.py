@@ -226,26 +226,7 @@ class DatabaseConstructor:
 
             et = time.time()
             print(f"{file_name} is successfully imported to db in {int(et - st)} s")
-    
-    def insert_equipment_data_from_config(self):
-        """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config.
-        Missing schema columns are added and filled with NULL (None)."""
-        df = EQUIPMENT_DATA.copy()
-        expected_cols = ["name","s_max_kva","max_i_a","r_mohm_per_km","x_mohm_per_km","z_mohm_per_km","cost_eur","typ","application_area"]
-        # ensure all expected columns exist (add with None)
-        for col in expected_cols:
-            if col not in df.columns:
-                df[col] = None
-        # reorder columns
-        df = df[expected_cols]
-        # delete existing rows
-        if self.table_exists(table_name="equipment_data"):
-            with self.dbc.conn.cursor() as cur:
-                cur.execute("DELETE FROM equipment_data")
-                self.dbc.conn.commit()
-        # write
-        df.to_sql(name="equipment_data", con=self.dbc.sqla_engine, if_exists="append", index=False)
-        print(f"Inserted equipment_data from config: {len(df)} rows")
+
 
     def load_postcode_from_infdb(self):
         """

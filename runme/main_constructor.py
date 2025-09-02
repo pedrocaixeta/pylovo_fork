@@ -31,10 +31,6 @@ def main():
     logger.info("### CREATE ALL TABLES ###")
     sgc.create_table(table_name="all")
 
-    ### Insert equipment data from config
-    logger.info("### INSERT EQUIPMENT DATA FROM CONFIG ###")
-    sgc.insert_equipment_data_from_config()
-
     ### Add transformer data from geojson to the database
     logger.info("### DELETE EXISTING TRANSFORMERS AND INSERT NEW ONES INTO DB (without geojson in raw_data/transformer_data this can take more than 30 min) ###")
     sgc.transformers_to_db(clear_existing=True)
