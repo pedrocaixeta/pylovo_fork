@@ -2,7 +2,8 @@
 CREATE_QUERIES = {
     "equipment_data": """
     CREATE TABLE IF NOT EXISTS equipment_data (
-        name varchar(100) PRIMARY KEY,
+        version_id varchar(10) NOT NULL,
+        name varchar(100) NOT NULL,
         s_max_kva integer,
         max_i_a integer,
         r_mohm_per_km integer,
@@ -10,7 +11,12 @@ CREATE_QUERIES = {
         z_mohm_per_km integer,
         cost_eur integer,
         typ varchar(50),
-        application_area integer
+        application_area integer,
+        CONSTRAINT equipment_data_pkey PRIMARY KEY (version_id, name),
+        CONSTRAINT fk_equipment_data_version
+            FOREIGN KEY (version_id)
+            REFERENCES version (version_id)
+            ON DELETE CASCADE
     )
     """,
     "version": """CREATE TABLE IF NOT EXISTS version (

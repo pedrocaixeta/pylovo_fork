@@ -1,6 +1,7 @@
 import json
 import warnings
 from abc import ABC
+import pandas as pd
 
 from src.config_loader import *
 from src.database.base_mixin import BaseMixin
@@ -13,12 +14,45 @@ class PreprocessingMixin(BaseMixin, ABC):
         super().__init__()
 
     def insert_parameter_tables(self, consumer_categories: pd.DataFrame):
-        self.cur.execute("SELECT count(*) FROM consumer_categories")
-        categories_exist = self.cur.fetchone()[0]
-        with self.sqla_engine.begin() as conn:
-            if not categories_exist:
-                consumer_categories.to_sql(name="consumer_categories", con=conn, if_exists="append", index=False)
-                self.logger.debug("Parameter tables are inserted")
+        """Insert consumer_categories for this version if table empty; replace placeholder and enforce numeric types."""
+        self.cur.execute("SELECT COUNT(*) FROM consumer_categories")
+        count = self.cur.fetchone()[0]
+        if count:
+            return
+
+        if 'peak_load' in consumer_categories.columns:
+            mask = consumer_categories['peak_load'] == 'PEAK_LOAD_HOUSEHOLD'
+            if mask.any():
+                consumer_categories.loc[mask, 'peak_load'] = PEAK_LOAD_HOUSEHOLD  # numeric constant
+
+        numeric_cols = ['peak_load', 'yearly_consumption', 'peak_load_per_m2',
+                        'yearly_consumption_per_m2', 'sim_factor']
+        for col in numeric_cols:
+            if col in consumer_categories.columns:
+                consumer_categories[col] = pd.to_numeric(consumer_categories[col], errors='coerce')
+
+        consumer_categories = consumer_categories.where(~consumer_categories.isna(), None)
+
+        rows = []
+        for _, r in consumer_categories.iterrows():
+            rows.append((
+                r.get('consumer_category_id'),
+                r.get('definition'),
+                r.get('peak_load'),
+                r.get('yearly_consumption'),
+                r.get('peak_load_per_m2'),
+                r.get('yearly_consumption_per_m2'),
+                r.get('sim_factor'),
+            ))
+
+        insert_sql = """
+            INSERT INTO consumer_categories
+            (consumer_category_id, definition, peak_load, yearly_consumption,
+             peak_load_per_m2, yearly_consumption_per_m2, sim_factor)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """
+        self.cur.executemany(insert_sql, rows)
+        self.logger.debug("Inserted consumer_categories")
 
     def insert_version_if_not_exists(self):
         count_query = f"""SELECT COUNT(*) 
@@ -572,6 +606,49 @@ class PreprocessingMixin(BaseMixin, ABC):
                    FROM ags_log;"""
         df_query = pd.read_sql_query(query, con=self.conn, )
         return df_query
+
+    def insert_equipment_data(self, equipment_df: pd.DataFrame):
+        """Insert equipment_data rows for current VERSION_ID if not already present for this version."""
+        self.cur.execute("SELECT 1 FROM equipment_data WHERE version_id = %s LIMIT 1", (VERSION_ID,))
+        if self.cur.fetchone():
+            return
+
+        required_cols = ['name', 'typ', 'application_area']
+        for rc in required_cols:
+            if rc not in equipment_df.columns:
+                raise ValueError(f"Missing required equipment column: {rc}")
+
+        # Ensure numeric coercion for optional integer fields
+        int_cols = ['s_max_kva', 'max_i_a', 'r_mohm_per_km', 'x_mohm_per_km',
+                    'z_mohm_per_km', 'cost_eur', 'application_area']
+        for col in int_cols:
+            if col in equipment_df.columns:
+                equipment_df[col] = pd.to_numeric(equipment_df[col], errors='coerce').astype('Int64')
+
+        equipment_df = equipment_df.where(~equipment_df.isna(), None)
+
+        insert_sql = """
+            INSERT INTO equipment_data
+            (version_id, name, s_max_kva, max_i_a, r_mohm_per_km, x_mohm_per_km,
+             z_mohm_per_km, cost_eur, typ, application_area)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+        rows = []
+        for _, r in equipment_df.iterrows():
+            rows.append((
+                VERSION_ID,
+                r.get('name'),
+                r.get('s_max_kva'),
+                r.get('max_i_a'),
+                r.get('r_mohm_per_km'),
+                r.get('x_mohm_per_km'),
+                r.get('z_mohm_per_km'),
+                r.get('cost_eur'),
+                r.get('typ'),
+                r.get('application_area'),
+            ))
+        self.cur.executemany(insert_sql, rows)
+        self.logger.debug("Inserted equipment_data for version %s", VERSION_ID)
 
     def get_testing_plz(self, plz: int) -> int:
         """Return mapped testing_plz if TESTING mode provides one, else original plz."""
