@@ -91,8 +91,8 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         insert_query = """
             INSERT INTO buildings_tem
-            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, buildings_data)
 

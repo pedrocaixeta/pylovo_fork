@@ -55,7 +55,7 @@ class InfdbClient:
         """
         query = """
             SELECT id, floor_area, COALESCE(building_type, building_use) as type,
-                   geom, ST_Centroid(geom) as center, floor_number, households, address_street_id
+                   geom, ST_Centroid(geom) as center, floor_number, households, address_street_id, construction_year
             FROM buildings
             WHERE postcode = %(p)s
             AND building_use IN ('Commercial', 'Public', 'Residential')

@@ -1,33 +1,5 @@
 # Database schema - table structure
 CREATE_QUERIES = {
-"buildings_result": """
-    CREATE TABLE IF NOT EXISTS buildings_result (
-        version_id varchar(10) NOT NULL,
-        osm_id varchar NOT NULL,
-        grid_result_id bigint NOT NULL,
-        area double precision,
-        type varchar(30),
-        geom geometry(MultiPolygon,3035),
-        households_per_building integer,
-        center geometry(Point,3035),
-        peak_load_in_kw double precision,
-        vertice_id integer,
-        floors integer,
-        construction_year text,
-        connection_point integer,
-        CONSTRAINT buildings_result_pkey PRIMARY KEY (version_id, osm_id),
-        CONSTRAINT fk_buildings_result_grid_result
-            FOREIGN KEY (version_id, grid_result_id)
-            REFERENCES grid_result (version_id, grid_result_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_buildings_result_type
-            FOREIGN KEY (type)
-            REFERENCES consumer_categories (definition)
-            ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_buildings_result_grid_result_id
-    ON buildings_result (grid_result_id);
-    """,
     "equipment_data": """
     CREATE TABLE IF NOT EXISTS equipment_data (
         name varchar(100) PRIMARY KEY,
@@ -139,6 +111,34 @@ CREATE_QUERIES = {
         yearly_consumption_per_m2 double precision,
         sim_factor double precision NOT NULL
     )
+    """,
+    "buildings_result": """
+    CREATE TABLE IF NOT EXISTS buildings_result (
+        version_id varchar(10) NOT NULL,
+        osm_id varchar NOT NULL,
+        grid_result_id bigint NOT NULL,
+        area double precision,
+        type varchar(30),
+        geom geometry(MultiPolygon,3035),
+        households_per_building integer,
+        center geometry(Point,3035),
+        peak_load_in_kw double precision,
+        vertice_id integer,
+        floors integer,
+        construction_year text,
+        connection_point integer,
+        CONSTRAINT buildings_result_pkey PRIMARY KEY (version_id, osm_id),
+        CONSTRAINT fk_buildings_result_grid_result
+            FOREIGN KEY (version_id, grid_result_id)
+            REFERENCES grid_result (version_id, grid_result_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_buildings_result_type
+            FOREIGN KEY (type)
+            REFERENCES consumer_categories (definition)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_buildings_result_grid_result_id
+    ON buildings_result (grid_result_id);
     """,
     "municipal_register": """CREATE TABLE IF NOT EXISTS municipal_register (
         plz integer,
