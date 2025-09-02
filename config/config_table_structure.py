@@ -354,7 +354,7 @@ CREATE_QUERIES = {
         FROM transformer_positions tp
         JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
     );
-    CREATE INDEX idx_transformer_positions_with_grid_geom ON transformer_positions_with_grid USING gist (geom)
+    CREATE INDEX IF NOT EXISTS idx_transformer_positions_with_grid_geom ON transformer_positions_with_grid USING gist (geom)
     """,
     "transformer_classified_with_grid": """
     CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_classified_with_grid AS (
@@ -362,7 +362,7 @@ CREATE_QUERIES = {
         FROM transformer_classified tc
         JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
     );
-    CREATE INDEX idx_transformer_classified_with_grid_geom ON transformer_classified_with_grid USING gist (geom)
+    CREATE INDEX IF NOT EXISTS idx_transformer_classified_with_grid_geom ON transformer_classified_with_grid USING gist (geom)
     """,
     "buildings_result_with_grid": """
     CREATE MATERIALIZED VIEW IF NOT EXISTS buildings_result_with_grid AS (
@@ -373,7 +373,7 @@ CREATE_QUERIES = {
         FROM buildings_result br
         JOIN grid_result gr ON br.grid_result_id = gr.grid_result_id
     );
-    CREATE INDEX idx_buildings_result_with_grid_geom ON buildings_result_with_grid USING gist (geom)
+    CREATE INDEX IF NOT EXISTS idx_buildings_result_with_grid_geom ON buildings_result_with_grid USING gist (geom)
     """,
     "lines_result_with_grid": """
     CREATE MATERIALIZED VIEW IF NOT EXISTS lines_result_with_grid AS (
@@ -390,8 +390,8 @@ CREATE_QUERIES = {
         FROM lines_result lr
         JOIN grid_result gr ON lr.grid_result_id = gr.grid_result_id
     );
-    CREATE INDEX idx_lines_result_with_grid_geom ON lines_result_with_grid USING gist (geom)
-    """
+    CREATE INDEX IF NOT EXISTS idx_lines_result_with_grid_geom ON lines_result_with_grid USING gist (geom)
+    """,
 }
 
 TEMP_CREATE_QUERIES = {
