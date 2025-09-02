@@ -13,47 +13,6 @@ class PreprocessingMixin(BaseMixin, ABC):
     def __init__(self):
         super().__init__()
 
-    def insert_parameter_tables(self, consumer_categories: pd.DataFrame):
-        """Insert consumer_categories for this version if table empty; replace placeholder and enforce numeric types."""
-        self.cur.execute("SELECT COUNT(*) FROM consumer_categories")
-        count = self.cur.fetchone()[0]
-        if count:
-            return
-
-        if 'peak_load' in consumer_categories.columns:
-            mask = consumer_categories['peak_load'] == 'PEAK_LOAD_HOUSEHOLD'
-            if mask.any():
-                consumer_categories.loc[mask, 'peak_load'] = PEAK_LOAD_HOUSEHOLD  # numeric constant
-
-        numeric_cols = ['peak_load', 'yearly_consumption', 'peak_load_per_m2',
-                        'yearly_consumption_per_m2', 'sim_factor']
-        for col in numeric_cols:
-            if col in consumer_categories.columns:
-                consumer_categories[col] = pd.to_numeric(consumer_categories[col], errors='coerce')
-
-        consumer_categories = consumer_categories.where(~consumer_categories.isna(), None)
-
-        rows = []
-        for _, r in consumer_categories.iterrows():
-            rows.append((
-                r.get('consumer_category_id'),
-                r.get('definition'),
-                r.get('peak_load'),
-                r.get('yearly_consumption'),
-                r.get('peak_load_per_m2'),
-                r.get('yearly_consumption_per_m2'),
-                r.get('sim_factor'),
-            ))
-
-        insert_sql = """
-            INSERT INTO consumer_categories
-            (consumer_category_id, definition, peak_load, yearly_consumption,
-             peak_load_per_m2, yearly_consumption_per_m2, sim_factor)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
-        """
-        self.cur.executemany(insert_sql, rows)
-        self.logger.debug("Inserted consumer_categories")
-
     def insert_version_if_not_exists(self):
         count_query = f"""SELECT COUNT(*) 
             FROM version 
@@ -72,6 +31,49 @@ class PreprocessingMixin(BaseMixin, ABC):
                 ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{connection_available_cables_str}', '{other_paramters_str}')"""
             self.cur.execute(insert_query)
             self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
+
+    def insert_equipment_data_from_config(self, equipment_data: pd.DataFrame):
+        """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config."""
+        df = equipment_data.copy()
+        
+        # Add version_id column if not present
+        if "version_id" not in df.columns:
+            df["version_id"] = VERSION_ID
+        
+        # Ensure all expected columns exist with None values
+        expected_cols = ["version_id", "name", "s_max_kva", "max_i_a", "r_mohm_per_km", "x_mohm_per_km",
+                         "z_mohm_per_km", "cost_eur", "typ", "application_area"]
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+        
+        # Reorder columns to match database schema
+        df = df[expected_cols]
+        df.to_sql(name="equipment_data", con=self.dbc.sqla_engine, if_exists="replace", index=False)
+        self.logger.info(f"Inserted equipment_data from config: {len(df)} rows")
+
+    def insert_consumer_categories_from_config(self, consumer_categories: pd.DataFrame):
+        """Insert consumer_categories from CONSUMER_CATEGORIES in the version config.
+        Replaces placeholder values and enforces proper data types."""
+        df = consumer_categories.copy()
+        
+        # Replace placeholder 'PEAK_LOAD_HOUSEHOLD' with actual numeric value
+        if 'peak_load' in df.columns:
+            df['peak_load'] = df['peak_load'].replace('PEAK_LOAD_HOUSEHOLD', PEAK_LOAD_HOUSEHOLD)
+        
+        # Convert numeric columns to proper types
+        numeric_cols = ['peak_load', 'yearly_consumption', 'peak_load_per_m2', 'yearly_consumption_per_m2', 'sim_factor']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Replace NaN values with None for proper SQL NULL handling
+        df = df.where(pd.notna(df), None)
+        
+        # Use .to_sql() with replace for efficient insertion
+        df.to_sql(name="consumer_categories", con=self.dbc.sqla_engine, if_exists="replace", index=False)
+        self.logger.info(f"Inserted consumer_categories from config: {len(df)} rows")
+
 
     def copy_postcode_result_table(self, plz: int) -> None:
         """
