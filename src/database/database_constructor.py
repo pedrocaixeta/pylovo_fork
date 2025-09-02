@@ -151,12 +151,21 @@ class DatabaseConstructor:
             print(f"{file_name} is successfully imported to db in {int(et - st)} s")
 
 
-    def transformers_to_db(self):
+    def transformers_to_db(self, clear_existing: bool = True):
         """Call the overpass api for transformer data and populate the transformers table.
         Delete raw_data/transformer_data/processed_trafos/*_trafos_processed.geojson to
         fetch fresh data from OSM.
 
+        If clear_existing=True (default), all existing Transformer datasets are deleted before import
+        to avoid duplicate primary keys.
         """
+        # clear existing data to avoid duplicate primary keys
+        if clear_existing and self.table_exists(table_name="transformers"):
+            with self.dbc.conn.cursor() as cur:
+                cur.execute("DELETE FROM transformers;")
+            self.dbc.conn.commit()
+            print("Bestehende Transformer-Daten gelöscht (inkl. abhängiger transformer_positions via CASCADE).")
+
         trafos_processed_geojson_path = get_trafos_processed_geojson_path(RELATION_ID)
         trafos_processed_3035_geojson_path = get_trafos_processed_3035_geojson_path(RELATION_ID)
 
