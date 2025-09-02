@@ -118,7 +118,7 @@ class DatabaseConstructor:
                     "-progress",
                     "-f",
                     "PostgreSQL",
-                    f"PG:dbname={DBNAME} user={USER} password={PASSWORD} host={HOST} port={PORT}",
+                    f"PG:dbname={DBNAME} user={DBUSER} password={PASSWORD} host={HOST} port={PORT}",
                     file_path,
                     "-nln",
                     f"{TARGET_SCHEMA}.{table_name}",  # explicitly tells ogr2ogr where to append (for the case of table already existing)

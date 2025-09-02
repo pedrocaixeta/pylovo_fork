@@ -7,12 +7,12 @@ LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
 TESTING: True # If True, only a small subset of data is used for faster testing
 
 # Default pylovo database connection configuration if no .env file is found
-DBNAME: pylovo_db_local
-USER: postgres
+DBNAME: postgres
+DBUSER: postgres
 HOST: localhost
 PORT: 5432
 PASSWORD: postgres
-TARGET_SCHEMA: public
+TARGET_SCHEMA: pylovo
 
 ## Default infdb connection configuration if no .env file is found
 INFDB_DBNAME: citydb

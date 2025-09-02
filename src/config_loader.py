@@ -25,7 +25,7 @@ CONFIG_CLUSTERING = load_yaml_config("../config/config_clustering.yaml")
 # Load database connection configuration from CONFIG_DATA
 load_dotenv(find_dotenv(), override=True)
 DBNAME = os.getenv("DBNAME", CONFIG_DATA["DBNAME"])
-USER = os.getenv("USER", CONFIG_DATA["USER"])
+DBUSER = os.getenv("DBUSER", CONFIG_DATA["DBUSER"])
 HOST = os.getenv("HOST", CONFIG_DATA["HOST"])
 PORT = os.getenv("PORT", CONFIG_DATA["PORT"])
 PASSWORD = os.getenv("PASSWORD", CONFIG_DATA["PASSWORD"])
