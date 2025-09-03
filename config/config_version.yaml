@@ -50,6 +50,7 @@ URBAN_MIN_HOUSEHOLDS: 5
 # Thresholds for the average distance between buildings to derive settlement_type
 RURAL_MIN_BUILDING_DISTANCE: 50  # meters
 URBAN_MAX_BUILDING_DISTANCE: 25  # meters
+MAX_BROWNFIELD_TRAFO_DISTANCE: 800
 
 # Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
 LARGE_COMPONENT_LOWER_BOUND: 2000
