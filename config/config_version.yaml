@@ -1,8 +1,65 @@
 # Change version if you changed any grid parameters or queries (e.g. transformer query)
-VERSION_ID: "1.0"
+VERSION_ID: "4"
 
 # state here which parameters, queries are used to compute the grids with current VERSION_ID
-VERSION_COMMENT: base version
+VERSION_COMMENT: test version
+
+
+PEAK_LOAD_HOUSEHOLD: 14.50 # default: 14.5kW, 30 kW if electric hot water supply is included
+SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5} # formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
+
+CONSUMER_CATEGORIES:
+  - {consumer_category_id: 1, definition: Commercial, peak_load: null, yearly_consumption: null, peak_load_per_m2: 79.00, yearly_consumption_per_m2: 245.70, sim_factor: 0.50}
+  - {consumer_category_id: 2, definition: Public, peak_load: null, yearly_consumption: null, peak_load_per_m2: 29.00, yearly_consumption_per_m2: 155.70, sim_factor: 0.60}
+  - {consumer_category_id: 3, definition: SFH, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
+  - {consumer_category_id: 4, definition: MFH, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
+  - {consumer_category_id: 5, definition: TH, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
+  - {consumer_category_id: 6, definition: AB, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
+
+EQUIPMENT_DATA:
+  - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer, application_area: 1}
+  - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer, application_area: 2}
+  - {name: Tr_250, s_max_kva: 250, cost_eur: 5000, typ: Transformer, application_area: 3}
+  - {name: Tr_400, s_max_kva: 400, cost_eur: 8000, typ: Transformer, application_area: 4}
+  - {name: Tr_630, s_max_kva: 630, cost_eur: 12000, typ: Transformer, application_area: 5}
+  - {name: NAYY_4_185, max_i_a: 313, r_mohm_per_km: 164, x_mohm_per_km: 80, z_mohm_per_km: 181, cost_eur: 33, typ: Cable, application_area: 0}
+  - {name: NYY_4_95, max_i_a: 280, r_mohm_per_km: 193, x_mohm_per_km: 82, z_mohm_per_km: 210, cost_eur: 37, typ: Cable, application_area: 1}
+  - {name: NAYY_4_150, max_i_a: 270, r_mohm_per_km: 208, x_mohm_per_km: 80, z_mohm_per_km: 223, cost_eur: 24, typ: Cable, application_area: 2}
+  - {name: NFA2X_4_95, max_i_a: 245, r_mohm_per_km: 320, x_mohm_per_km: 0, z_mohm_per_km: 320, cost_eur: 10, typ: Cable, application_area: 3}
+  - {name: NAYY_4_120, max_i_a: 242, r_mohm_per_km: 225, x_mohm_per_km: 80, z_mohm_per_km: 239, cost_eur: 19, typ: Cable, application_area: 4}
+  - {name: NYY_4_70, max_i_a: 232, r_mohm_per_km: 268, x_mohm_per_km: 82, z_mohm_per_km: 280, cost_eur: 28, typ: Cable, application_area: 5}
+  - {name: NAYY_4_95, max_i_a: 215, r_mohm_per_km: 320, x_mohm_per_km: 82, z_mohm_per_km: 330, cost_eur: 21, typ: Cable, application_area: 6}
+  - {name: NFA2X_4_70, max_i_a: 205, r_mohm_per_km: 443, x_mohm_per_km: 0, z_mohm_per_km: 443, cost_eur: 8, typ: Cable, application_area: 7}
+  - {name: NFA2X_4_50, max_i_a: 165, r_mohm_per_km: 641, x_mohm_per_km: 0, z_mohm_per_km: 641, cost_eur: 7, typ: Cable, application_area: 8}
+  - {name: NAYY_4_50, max_i_a: 142, r_mohm_per_km: 642, x_mohm_per_km: 83, z_mohm_per_km: 647, cost_eur: 11, typ: Cable, application_area: 9}
+  - {name: NYY_4_35, max_i_a: 159, r_mohm_per_km: 524, x_mohm_per_km: 85, z_mohm_per_km: 531, cost_eur: 16, typ: Cable, application_area: 10}
+  - {name: NYY_4_16, max_i_a: 103, r_mohm_per_km: 1150, x_mohm_per_km: 90, z_mohm_per_km: 1153, cost_eur: 7, typ: Cable, application_area: 11}
+
+# Define which of the above listed cables can be used for connections from transformer to building
+CONNECTION_AVAILABLE_CABLES:
+  - NAYY 4x120 SE
+  - NAYY 4x95 SE
+  - NAYY 4x50 SE
+  - NYY 4x16 SE
+  - NYY 4x35 SE
+  - NYY 4x70 SE
+
+# Thresholds for the average number of households per building to derive settlement_type
+RURAL_MAX_HOUSEHOLDS: 1.25
+URBAN_MIN_HOUSEHOLDS: 5
+# Thresholds for the average distance between buildings to derive settlement_type
+RURAL_MIN_BUILDING_DISTANCE: 50  # meters
+URBAN_MAX_BUILDING_DISTANCE: 25  # meters
+
+# Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
+LARGE_COMPONENT_LOWER_BOUND: 2000
+LARGE_COMPONENT_DIVIDER: 1000
+
+# Voltage properties
+VN: 400  # V
+V_BAND_LOW: 0.95  # +-5%
+V_BAND_HIGH: 1.05
+
 
 PLOT_COLOR_DICT:
   100: gold
@@ -17,44 +74,3 @@ PLOT_COLOR_DICT:
   715: blue
   800: darkblue
   1260: black
-
-CONNECTION_AVAILABLE_CABLES:
-  - NAYY 4x120 SE
-  - NAYY 4x95 SE
-  - NAYY 4x50 SE
-  - NYY 4x16 SE
-  - NYY 4x35 SE
-  - NYY 4x70 SE
-
-# PARAMETERS
-CABLE_COST_DICT:
-  NAYY 4x185 SE: 33
-  NAYY 4x150 SE: 24
-  NAYY 4x120 SE: 19
-  NAYY 4x95 SE: 16
-  NAYY 4x50 SE: 11
-  NYY 4x16 SE: 7
-  NYY 4x35 SE: 16
-  NYY 4x95 SE: 37
-  NYY 4x70 SE: 28
-
-# installed_power * (sim_factor + (1 - sim_factor) * (load_count ** (-3 / 4)))
-SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5}
-
-PEAK_LOAD_HOUSEHOLD: 30.00
-CONSUMER_CATEGORIES:
-  - {consumer_category_id: 1, definition: Commercial, peak_load: null, yearly_consumption: null, peak_load_per_m2: 79.00, yearly_consumption_per_m2: 245.70, sim_factor: 0.50}
-  - {consumer_category_id: 2, definition: Public, peak_load: null, yearly_consumption: null, peak_load_per_m2: 29.00, yearly_consumption_per_m2: 155.70, sim_factor: 0.60}
-  - {consumer_category_id: 9, definition: SFH, peak_load: 30.00, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
-  - {consumer_category_id: 10, definition: MFH, peak_load: 30.00, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
-  - {consumer_category_id: 11, definition: TH, peak_load: 30.00, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
-  - {consumer_category_id: 12, definition: AB, peak_load: 30.00, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
-
-# Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
-LARGE_COMPONENT_LOWER_BOUND: 2000
-LARGE_COMPONENT_DIVIDER: 1000
-
-# Voltage properties
-VN: 400  # V
-V_BAND_LOW: 0.95  # +-5%
-V_BAND_HIGH: 1.05

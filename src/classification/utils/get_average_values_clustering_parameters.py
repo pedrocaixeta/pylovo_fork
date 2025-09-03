@@ -39,7 +39,7 @@ def get_clustering_parameters_for_kmeans_cluster_0() -> pd.DataFrame:
     """
     # Connect to the database
     conn = psy.connect(
-        database=DBNAME, user=USER, password=PASSWORD, host=HOST, port=PORT
+        database=DBNAME, user=DBUSER, password=PASSWORD, host=HOST, port=PORT
     )
 
     try:

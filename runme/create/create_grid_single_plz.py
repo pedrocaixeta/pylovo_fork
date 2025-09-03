@@ -14,7 +14,7 @@ from src.grid_generator import GridGenerator
 from src.config_loader import ANALYZE_GRIDS
 
 # enter a plz to generate grid for:
-plz = 80803
+plz = 99999
 plot_results = False
 
 # timing of the script

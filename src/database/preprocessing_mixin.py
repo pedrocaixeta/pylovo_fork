@@ -1,6 +1,7 @@
 import json
 import warnings
 from abc import ABC
+import pandas as pd
 
 from src.config_loader import *
 from src.database.base_mixin import BaseMixin
@@ -12,14 +13,6 @@ class PreprocessingMixin(BaseMixin, ABC):
     def __init__(self):
         super().__init__()
 
-    def insert_parameter_tables(self, consumer_categories: pd.DataFrame):
-        self.cur.execute("SELECT count(*) FROM consumer_categories")
-        categories_exist = self.cur.fetchone()[0]
-        with self.sqla_engine.begin() as conn:
-            if not categories_exist:
-                consumer_categories.to_sql(name="consumer_categories", con=conn, if_exists="append", index=False)
-                self.logger.debug("Parameter tables are inserted")
-
     def insert_version_if_not_exists(self):
         count_query = f"""SELECT COUNT(*) 
             FROM version 
@@ -27,19 +20,60 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(count_query)
         version_exists = self.cur.fetchone()[0]
         if not version_exists:
-            # create new version
             consumer_categories_str = CONSUMER_CATEGORIES.to_json().replace("'", "''")
-            cable_cost_dict_str = json.dumps(CABLE_COST_DICT).replace("'", "''")
             connection_available_cables_str = str(CONNECTION_AVAILABLE_CABLES).replace("'", "''")
             other_parameters_dict = {"LARGE_COMPONENT_LOWER_BOUND": LARGE_COMPONENT_LOWER_BOUND,
                                      "LARGE_COMPONENT_DIVIDER": LARGE_COMPONENT_DIVIDER, "VN": VN,
                                      "V_BAND_LOW": V_BAND_LOW, "V_BAND_HIGH": V_BAND_HIGH, }
             other_paramters_str = str(other_parameters_dict).replace("'", "''")
 
-            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, cable_cost_dict, connection_available_cables, other_parameters) VALUES
-                ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{cable_cost_dict_str}', '{connection_available_cables_str}', '{other_paramters_str}')"""
+            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, connection_available_cables, other_parameters) VALUES
+                ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{connection_available_cables_str}', '{other_paramters_str}')"""
             self.cur.execute(insert_query)
             self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
+
+    def insert_equipment_data_from_config(self, equipment_data: pd.DataFrame):
+        """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config."""
+        df = equipment_data.copy()
+        
+        # Add version_id column if not present
+        if "version_id" not in df.columns:
+            df["version_id"] = VERSION_ID
+        
+        # Ensure all expected columns exist with None values
+        expected_cols = ["version_id", "name", "s_max_kva", "max_i_a", "r_mohm_per_km", "x_mohm_per_km",
+                         "z_mohm_per_km", "cost_eur", "typ", "application_area"]
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+        
+        # Reorder columns to match database schema
+        df = df[expected_cols]
+        df.to_sql(name="equipment_data", con=self.dbc.sqla_engine, if_exists="replace", index=False)
+        self.logger.info(f"Inserted equipment_data from config: {len(df)} rows")
+
+    def insert_consumer_categories_from_config(self, consumer_categories: pd.DataFrame):
+        """Insert consumer_categories from CONSUMER_CATEGORIES in the version config.
+        Replaces placeholder values and enforces proper data types."""
+        df = consumer_categories.copy()
+        
+        # Replace placeholder 'PEAK_LOAD_HOUSEHOLD' with actual numeric value
+        if 'peak_load' in df.columns:
+            df['peak_load'] = df['peak_load'].replace('PEAK_LOAD_HOUSEHOLD', PEAK_LOAD_HOUSEHOLD)
+        
+        # Convert numeric columns to proper types
+        numeric_cols = ['peak_load', 'yearly_consumption', 'peak_load_per_m2', 'yearly_consumption_per_m2', 'sim_factor']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Replace NaN values with None for proper SQL NULL handling
+        df = df.where(pd.notna(df), None)
+        
+        # Use .to_sql() with replace for efficient insertion
+        df.to_sql(name="consumer_categories", con=self.dbc.sqla_engine, if_exists="replace", index=False)
+        self.logger.info(f"Inserted consumer_categories from config: {len(df)} rows")
+
 
     def copy_postcode_result_table(self, plz: int) -> None:
         """
@@ -58,7 +92,7 @@ class PreprocessingMixin(BaseMixin, ABC):
 
     def set_residential_buildings_table(self, plz: int):
         """
-        * Fills buildings_tem with residential buildings which are inside the plz area
+        * Fills buildings_tem with residential buildings that lie inside the postal code geometry
         :param plz:
         :return:
         """
@@ -93,15 +127,15 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         insert_query = """
             INSERT INTO buildings_tem
-            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, buildings_data)
 
     def set_other_buildings_table(self, plz: int):
         """
-        * Fills buildings_tem with other buildings which are inside the plz area
-        * Sets all floors to 1
+        * Fills buildings_tem with other (non-residential) buildings inside the plz area
+        * Sets all floors to 1 if missing
         :param plz:
         :return:
         """
@@ -126,7 +160,7 @@ class PreprocessingMixin(BaseMixin, ABC):
     def remove_duplicate_buildings(self):
         """
         * Remove buildings without geometry or osm_id
-        * Remove buildings which are duplicates of other buildings and have a copied id
+        * Remove buildings that are duplicates (copy id) of others
         :return:
         """
         remove_query = """DELETE
@@ -146,18 +180,14 @@ class PreprocessingMixin(BaseMixin, ABC):
                      AND osm_id LIKE '%copy%';"""
         self.cur.execute(query)
 
-    def set_plz_settlement_type(self, plz: int) -> None:
+    def calculate_house_distance_metric(self, plz: int, sample_size: int = 50, k_nearest: int = 4) -> float:
+        """Computes the average inter-building distance (meters) based on a random sample
+        and writes house_distance into postcode_result. Returns the computed value.
         """
-        Determine settlement_type in postcode_result table based on the house_distance metric for a given plz
-        :param plz: Postleitzahl (postal code)
-        :return: None
-        """
-        # Get average distance between buildings by sampling 50 random buildings
-        # and finding their 4 nearest neighbors
-        distance_query = """WITH some_buildings AS (SELECT osm_id, center
+        distance_query = f"""WITH some_buildings AS (SELECT osm_id, center
                                                     FROM buildings_tem
                                                     ORDER BY RANDOM()
-                                                    LIMIT 50)
+                                                    LIMIT {sample_size})
                             SELECT b.osm_id, d.dist
                             FROM some_buildings AS b
                                      LEFT JOIN LATERAL (
@@ -165,31 +195,98 @@ class PreprocessingMixin(BaseMixin, ABC):
                                 FROM buildings_tem AS b2
                                 WHERE b.osm_id <> b2.osm_id
                                 ORDER BY b.center <-> b2.center
-                                LIMIT 4) AS d
+                                LIMIT {k_nearest}) AS d
                                                ON TRUE;"""
         self.cur.execute(distance_query)
         data = self.cur.fetchall()
-
         if not data:
-            raise ValueError("There is no building in the buildings_tem table!")
+            raise ValueError("No buildings in buildings_tem for house distance calculation.")
+        distance_vals = [t[1] for t in data if t[1] is not None]
+        if not distance_vals:
+            raise ValueError("House distance calculation returned no distances.")
+        avg_dis = float(sum(distance_vals) / len(distance_vals))
+        update_query = """
+            UPDATE postcode_result
+            SET house_distance = %(avg)s
+            WHERE version_id = %(v)s
+              AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(update_query, {"avg": avg_dis, "v": VERSION_ID, "p": plz})
+        return avg_dis
 
-        # Calculate average distance
-        distance = [t[1] for t in data]
-        avg_dis = int(sum(distance) / len(distance))
+    def calculate_avg_households_per_building(self, plz: int) -> float:
+        """Computes the average number of households per (residential) building from buildings_tem
+        and writes avg_households_per_building into postcode_result. Returns the value.
+        """
+        avg_query = """
+            SELECT AVG(households_per_building)::DOUBLE PRECISION
+            FROM buildings_tem
+            WHERE households_per_building IS NOT NULL
+              AND type IN ('SFH','TH','MFH','AB');"""
+        self.cur.execute(avg_query, {"p": plz})
+        avg_val = self.cur.fetchone()[0]
+        if avg_val is None:
+            raise ValueError(f"No residential buildings with household data for ZIP {plz}.")
+        update_query = """
+            UPDATE postcode_result
+            SET avg_households_per_building = %(avg)s
+            WHERE version_id = %(v)s
+              AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(update_query, {"avg": avg_val, "v": VERSION_ID, "p": plz})
+        return float(avg_val)
 
-        # Update database with average distance and set settlement types based on threshold
-        query = """
-                UPDATE postcode_result
-                SET house_distance  = %(avg)s,
-                    settlement_type = CASE
-                                          WHEN %(avg)s < 25 THEN 3
-                                          WHEN %(avg)s < 45 THEN 2
-                                          ELSE 1
-                        END
-                WHERE version_id = %(v)s
-                  AND postcode_result_plz = %(p)s;"""
+    def set_settlement_type_per_plz(
+        self,
+        plz: int,
+        settlement_type_thresholds: dict | None = None,
+    ) -> int:
+        """Determines settlement_type (1=rural, 2=semi-urban, 3=urban) using a weighted (continuous) combination
+        of two metrics:
+          - avg_households_per_building (higher => more urban)
+          - house_distance (smaller => more urban)
 
-        self.cur.execute(query, {"v": VERSION_ID, "avg": avg_dis, "p": plz})
+        Method (weighted only):
+          1. Normalize household metric to [0,1]:
+               0 when avg <= rural_max_households -> rural, 1 when avg >= urban_min_households -> urban, linear in between
+          2. Normalize distance to [0,1] (inverted):
+               0 when distance >= rural_min_distance -> rural, 1 when distance <= urban_max_distance -> urban, linear in between
+          3. Score = 0.5 * hh_norm + 0.5 * dist_norm
+          4. Discretize: Score < 1/3 -> 1, < 2/3 -> 2, else 3
+
+        Parameters can be calibrated; defaults come from configuration.
+        """
+        fetch_query = """
+            SELECT avg_households_per_building, house_distance
+            FROM postcode_result
+            WHERE version_id = %(v)s AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(fetch_query, {"v": VERSION_ID, "p": plz})
+        row = self.cur.fetchone()
+        if not row or row[0] is None or row[1] is None:
+            raise ValueError("Both metrics must be set before classification.")
+        avg_households, house_distance = float(row[0]), float(row[1])
+
+        # Normalization households
+        denom_hh = max(1e-9, (settlement_type_thresholds["urban_min_households"] - settlement_type_thresholds["rural_max_households"]))
+        hh_norm = (avg_households - settlement_type_thresholds["rural_max_households"]) / denom_hh
+        hh_norm = min(1.0, max(0.0, hh_norm))
+        # Normalization distances (inverted)
+        denom_dist = max(1e-9, (settlement_type_thresholds["rural_min_distance"] - settlement_type_thresholds["urban_max_distance"]))
+        dist_norm_raw = (house_distance - settlement_type_thresholds["urban_max_distance"]) / denom_dist
+        dist_norm = 1.0 - min(1.0, max(0.0, dist_norm_raw))
+
+        score = 0.5 * hh_norm + 0.5 * dist_norm
+        if score >= 2/3:
+            final_class = 3
+        elif score >= 1/3:
+            final_class = 2
+        else:
+            final_class = 1
+
+        update_query = """
+            UPDATE postcode_result
+            SET settlement_type = %(stype)s
+            WHERE version_id = %(v)s AND postcode_result_plz = %(p)s;"""
+        self.cur.execute(update_query, {"stype": final_class, "v": VERSION_ID, "p": plz})
+        return final_class
 
     def set_building_peak_load(self) -> int:
         """
@@ -323,7 +420,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(insert_query, {"p": plz, "v": VERSION_ID})
 
     def count_indoor_transformers(self) -> None:
-        """counts indoor transformers before deleting them"""
+        """Counts indoor transformers before deleting them"""
         query = """WITH union_table (ungeom) AS
                                 (SELECT ST_Union(geom) FROM buildings_tem WHERE peak_load_in_kw = 0)
                    SELECT COUNT(*)
@@ -440,13 +537,8 @@ class PreprocessingMixin(BaseMixin, ABC):
         - Assigns node IDs by analyzing the start and end points of each geometry.
         - Required to enable routing and graph operations on the road network.
         2. pgr_analyzeGraph():
-        - Verifies that the graph topology is valid and reports disconnected components.
-        - Helps ensure that the routing network is usable and clean.
-        These functions are required by pgRouting to transform a geometry-based table
-        (`ways_tem`) into a routable network graph.
-
-        :param plz: Postal code used to suffix temporary tables.
-        :type plz: int
+        - Verifies the graph topology and reports disconnected components.
+        - Ensures the routing network is clean and usable.
         """
         edge_table = f"ways_tem_{plz}"
         vertices_table = f"{edge_table}_vertices_pgr"
@@ -508,12 +600,62 @@ class PreprocessingMixin(BaseMixin, ABC):
         return count
 
     def get_ags_log(self) -> pd.DataFrame:
-        """get ags log: the amtliche gemeindeschluessel of the municipalities of which the buildings
-        have already been imported to the database
-        :return: table with column of ags
-        :rtype: DataFrame
-         """
+        """Get AGS log: the official municipal keys (Amtlicher Gemeindeschlüssel) of municipalities
+        whose buildings have already been imported into the database.
+        :return: table with column ags
+        """
         query = """SELECT *
                    FROM ags_log;"""
         df_query = pd.read_sql_query(query, con=self.conn, )
         return df_query
+
+    def insert_equipment_data(self, equipment_df: pd.DataFrame):
+        """Insert equipment_data rows for current VERSION_ID if not already present for this version."""
+        self.cur.execute("SELECT 1 FROM equipment_data WHERE version_id = %s LIMIT 1", (VERSION_ID,))
+        if self.cur.fetchone():
+            return
+
+        required_cols = ['name', 'typ', 'application_area']
+        for rc in required_cols:
+            if rc not in equipment_df.columns:
+                raise ValueError(f"Missing required equipment column: {rc}")
+
+        # Ensure numeric coercion for optional integer fields
+        int_cols = ['s_max_kva', 'max_i_a', 'r_mohm_per_km', 'x_mohm_per_km',
+                    'z_mohm_per_km', 'cost_eur', 'application_area']
+        for col in int_cols:
+            if col in equipment_df.columns:
+                equipment_df[col] = pd.to_numeric(equipment_df[col], errors='coerce').astype('Int64')
+
+        equipment_df = equipment_df.where(~equipment_df.isna(), None)
+
+        insert_sql = """
+            INSERT INTO equipment_data
+            (version_id, name, s_max_kva, max_i_a, r_mohm_per_km, x_mohm_per_km,
+             z_mohm_per_km, cost_eur, typ, application_area)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+        rows = []
+        for _, r in equipment_df.iterrows():
+            rows.append((
+                VERSION_ID,
+                r.get('name'),
+                r.get('s_max_kva'),
+                r.get('max_i_a'),
+                r.get('r_mohm_per_km'),
+                r.get('x_mohm_per_km'),
+                r.get('z_mohm_per_km'),
+                r.get('cost_eur'),
+                r.get('typ'),
+                r.get('application_area'),
+            ))
+        self.cur.executemany(insert_sql, rows)
+        self.logger.debug("Inserted equipment_data for version %s", VERSION_ID)
+
+    def get_testing_plz(self, plz: int) -> int:
+        """Return mapped testing_plz if TESTING mode provides one, else original plz."""
+        self.cur.execute("SELECT testing_plz FROM postcode WHERE plz = %(p)s LIMIT 1;", {"p": plz})
+        row = self.cur.fetchone()
+        if row and row[0]:
+            return int(row[0])
+        return plz

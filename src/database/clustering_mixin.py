@@ -161,11 +161,6 @@ class ClusteringMixin(BaseMixin, ABC):
         cost_arr = cost_df.to_numpy()
         et = time.time()
         self.logger.debug(f"Elapsed time for SQL to cost_arr: {et - st}")
-        # Speichere die echte vertices_ids mit neuen Indexen
-        # 0 5346
-        # 1 3263
-        # 2 3653
-        # ...
         localid2vid = dict(enumerate(cost_df["start_vid"].unique()))
         vid2localid = {y: x for x, y in localid2vid.items()}
 
@@ -400,12 +395,30 @@ class ClusteringMixin(BaseMixin, ABC):
 
     def update_transformer_rated_power(self, plz: int, kcid: int, bcid: int, note: int):
         """
-        Updates transformer_rated_power in grid_result
-        :param plz:
-        :param kcid:
-        :param bcid:
-        :param note:
-        :return:
+        Update the field transformer_rated_power in grid_result for a given building cluster (bcid).
+
+        Process:
+        1) Determine settlement type from postcode (plz) and fetch the allowed standard transformer capacities
+           (ascending array transformer_capacities).
+        2) Read the currently stored transformer_rated_power for the (plz, kcid, bcid) tuple.
+
+        Behaviour controlled by note:
+        - note == 0 (single standard transformer mode):
+          Upgrade to the smallest standard capacity strictly greater than the current value.
+          (Precondition: such a larger capacity must exist; otherwise an IndexError would occur.)
+        - note != 0 (multi / grouped mode):
+          a) Build an extended list by appending doubled capacities of selected mid–range sizes (transformer_capacities[2:4] * 2).
+          b) If the current capacity already matches any allowed (standard or doubled) value: no change.
+          c) Else round up to the next multiple of 630 kVA (ceil(current / 630) * 630) to emulate a grouped / parallel transformer arrangement.
+
+        Parameters:
+        plz  : Postcode cluster ID.
+        kcid : K‑means cluster ID.
+        bcid : Building cluster ID within the k‑means cluster.
+        note : Control flag for update strategy (0 = standard single transformer upgrade, !=0 = multi / grouping logic).
+
+        Returns:
+        None. Performs an in‑place database update.
         """
         sdl = self.get_settlement_type_from_plz(plz)
         transformer_capacities, _ = self.get_transformer_data(sdl)
@@ -453,22 +466,25 @@ class ClusteringMixin(BaseMixin, ABC):
                                 AND bcid = %(b)s;"""
             self.cur.execute(update_query,
                              {"v": VERSION_ID, "p": plz, "k": kcid, "b": bcid, "n": new_transformer_rated_power}, )
-            self.logger.debug("double or multiple transformer group transformer_rated_power assigned")
+            self.logger.info(
+                f"Updated transformer_rated_power (multi/group mode): plz={plz}, kcid={kcid}, bcid={bcid}, "
+                f"old={transformer_rated_power} kVA -> new={new_transformer_rated_power} kVA)"
+            )
 
     def get_transformer_data(self, settlement_type: int = None) -> tuple[np.array, dict]:
         """
         Args:
-            Settlement type: 1=City, 2=Village, 3=Rural
+            Settlement type: 1=Urban, 2=Semi-urban, 3=Rural
         Returns: Typical transformer capacities and costs depending on the settlement type
         """
         if settlement_type == 1:
             application_area_tuple = (1, 2, 3)
         elif settlement_type == 2:
-            application_area_tuple = (2, 3, 4)
+            application_area_tuple = (2, 3, 4, 5)
         elif settlement_type == 3:
-            application_area_tuple = (3, 4, 5)
+            application_area_tuple = (4, 5)
         else:
-            self.logger.debug("Incorrect settlement type number specified.")
+            self.logger.info("Incorrect settlement type number specified.")
             return
 
         query = """SELECT equipment_data.s_max_kva, cost_eur
