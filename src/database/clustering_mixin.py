@@ -474,7 +474,7 @@ class ClusteringMixin(BaseMixin, ABC):
     def get_transformer_data(self, settlement_type: int = None) -> tuple[np.array, dict]:
         """
         Args:
-            Settlement type: 1=Urban, 2=Semi-urban, 3=Rural
+            Settlement type: 1=Rural, 2=Semi-urban, 3=Urban
         Returns: Typical transformer capacities and costs depending on the settlement type
         """
         if settlement_type == 1:
@@ -717,7 +717,7 @@ class ClusteringMixin(BaseMixin, ABC):
         """
         Args:
             plz:
-        Returns: Settlement type: 1=City, 2=Village, 3=Rural
+        Returns: Settlement type: 1=Rural, 2=Semi-urban, 3=Urban
         """
         settlement_query = """SELECT settlement_type
                               FROM postcode_result
