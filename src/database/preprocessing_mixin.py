@@ -49,7 +49,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         
         # Reorder columns to match database schema
         df = df[expected_cols]
-        df.to_sql(name="equipment_data", con=self.dbc.sqla_engine, if_exists="replace", index=False)
+        df.to_sql(name="equipment_data", con=self.sqla_engine, if_exists="replace", index=False)
         self.logger.info(f"Inserted equipment_data from config: {len(df)} rows")
 
     def insert_consumer_categories_from_config(self, consumer_categories: pd.DataFrame):
@@ -71,7 +71,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         df = df.where(pd.notna(df), None)
         
         # Use .to_sql() with replace for efficient insertion
-        df.to_sql(name="consumer_categories", con=self.dbc.sqla_engine, if_exists="replace", index=False)
+        df.to_sql(name="consumer_categories", con=self.sqla_engine, if_exists="replace", index=False)
         self.logger.info(f"Inserted consumer_categories from config: {len(df)} rows")
 
 
