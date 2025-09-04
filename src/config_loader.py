@@ -69,6 +69,15 @@ MAX_BROWNFIELD_TRAFO_DISTANCE = CONFIG_VERSION["MAX_BROWNFIELD_TRAFO_DISTANCE"]
 SIM_FACTOR = CONFIG_VERSION["SIM_FACTOR"]
 PEAK_LOAD_HOUSEHOLD = CONFIG_VERSION["PEAK_LOAD_HOUSEHOLD"]
 CONSUMER_CATEGORIES = pd.DataFrame(CONFIG_VERSION["CONSUMER_CATEGORIES"])
+# --- Patch: replace string placeholder references (e.g. 'PEAK_LOAD_HOUSEHOLD') with actual numeric value ---
+if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
+    def _resolve_peak_load(val):
+        if isinstance(val, str) and val.strip() == "PEAK_LOAD_HOUSEHOLD":
+            return PEAK_LOAD_HOUSEHOLD
+        return val
+    CONSUMER_CATEGORIES["peak_load"] = CONSUMER_CATEGORIES["peak_load"].apply(_resolve_peak_load)
+    # enforce numeric (None / null stay as NaN for categories using per m2 metrics)
+    CONSUMER_CATEGORIES["peak_load"] = pd.to_numeric(CONSUMER_CATEGORIES["peak_load"], errors="coerce")
 EQUIPMENT_DATA = pd.DataFrame(CONFIG_VERSION["EQUIPMENT_DATA"])
 LARGE_COMPONENT_LOWER_BOUND = CONFIG_VERSION["LARGE_COMPONENT_LOWER_BOUND"]
 LARGE_COMPONENT_DIVIDER = CONFIG_VERSION["LARGE_COMPONENT_DIVIDER"]
