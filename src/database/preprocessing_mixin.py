@@ -33,47 +33,98 @@ class PreprocessingMixin(BaseMixin, ABC):
             self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
 
     def insert_equipment_data_from_config(self, equipment_data: pd.DataFrame):
-        """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config."""
+        """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config.
+        Replaces former pandas.to_sql variant (replace) with conflict-safe inserts.
+        Reasons:
+        Strategy:
+        - Map columns to expected structure
+        - Fill missing columns with None
+        - Cast values (numeric fields to Int, missing -> None)
+        - ON CONFLICT (version_id, name) DO UPDATE for idempotency / update
+        """
         df = equipment_data.copy()
-        
-        # Add version_id column if not present
-        if "version_id" not in df.columns:
-            df["version_id"] = VERSION_ID
-        
-        # Ensure all expected columns exist with None values
         expected_cols = ["version_id", "name", "s_max_kva", "max_i_a", "r_mohm_per_km", "x_mohm_per_km",
                          "z_mohm_per_km", "cost_eur", "typ", "application_area"]
+        if "version_id" not in df.columns:
+            df["version_id"] = VERSION_ID
+
+        # Add any missing columns
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = None
-        
-        # Reorder columns to match database schema
+
+        # Keep only relevant columns
         df = df[expected_cols]
-        df.to_sql(name="equipment_data", con=self.sqla_engine, if_exists="replace", index=False)
-        self.logger.info(f"Inserted equipment_data from config: {len(df)} rows")
+
+        # Numeric conversion (Int / None)
+        int_cols = ["s_max_kva", "max_i_a", "r_mohm_per_km", "x_mohm_per_km", "z_mohm_per_km", "cost_eur",
+                    "application_area"]
+        for c in int_cols:
+            df[c] = pd.to_numeric(df[c], errors='coerce').astype('Int64')
+
+        # Replace NaNs with None
+        df = df.where(~df.isna(), None)
+
+        insert_sql = ("""
+                      INSERT INTO equipment_data
+                      (version_id, name, s_max_kva, max_i_a, r_mohm_per_km, x_mohm_per_km, z_mohm_per_km, cost_eur, typ,
+                       application_area)
+                      VALUES (%(version_id)s, %(name)s, %(s_max_kva)s, %(max_i_a)s, %(r_mohm_per_km)s,
+                              %(x_mohm_per_km)s, %(z_mohm_per_km)s, %(cost_eur)s, %(typ)s, %(application_area)s)
+                      ON CONFLICT (version_id, name) DO UPDATE SET s_max_kva        = EXCLUDED.s_max_kva,
+                                                                   max_i_a          = EXCLUDED.max_i_a,
+                                                                   r_mohm_per_km    = EXCLUDED.r_mohm_per_km,
+                                                                   x_mohm_per_km    = EXCLUDED.x_mohm_per_km,
+                                                                   z_mohm_per_km    = EXCLUDED.z_mohm_per_km,
+                                                                   cost_eur         = EXCLUDED.cost_eur,
+                                                                   typ              = EXCLUDED.typ,
+                                                                   application_area = EXCLUDED.application_area;""")
+        rows = df.to_dict(orient='records')
+        self.cur.executemany(insert_sql, rows)
+        self.logger.info(f"Inserted/updated equipment_data rows: {len(rows)} (version {VERSION_ID})")
 
     def insert_consumer_categories_from_config(self, consumer_categories: pd.DataFrame):
-        """Insert consumer_categories from CONSUMER_CATEGORIES in the version config.
-        Replaces placeholder values and enforces proper data types."""
+        """Insert consumer_categories from config.
+        Replaces pandas.to_sql(replace) with ON CONFLICT upserts for stable parallel execution.
+        Table is global (no version_id). Existing IDs / definitions are updated.
+        """
         df = consumer_categories.copy()
-        
-        # Replace placeholder 'PEAK_LOAD_HOUSEHOLD' with actual numeric value
+
+        # Replace placeholder
         if 'peak_load' in df.columns:
             df['peak_load'] = df['peak_load'].replace('PEAK_LOAD_HOUSEHOLD', PEAK_LOAD_HOUSEHOLD)
-        
-        # Convert numeric columns to proper types
-        numeric_cols = ['peak_load', 'yearly_consumption', 'peak_load_per_m2', 'yearly_consumption_per_m2', 'sim_factor']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # Replace NaN values with None for proper SQL NULL handling
-        df = df.where(pd.notna(df), None)
-        
-        # Use .to_sql() with replace for efficient insertion
-        df.to_sql(name="consumer_categories", con=self.sqla_engine, if_exists="replace", index=False)
-        self.logger.info(f"Inserted consumer_categories from config: {len(df)} rows")
 
+        # Expected target table columns
+        expected_cols = ["consumer_category_id", "definition", "peak_load", "yearly_consumption", "peak_load_per_m2",
+                         "yearly_consumption_per_m2", "sim_factor"]
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+        df = df[expected_cols]
+
+        # Convert numeric columns
+        numeric_cols = ['peak_load', 'yearly_consumption', 'peak_load_per_m2', 'yearly_consumption_per_m2',
+                        'sim_factor']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        df = df.where(pd.notna(df), None)
+
+        upsert_sql = ("""
+                      INSERT INTO consumer_categories
+                      (consumer_category_id, definition, peak_load, yearly_consumption, peak_load_per_m2,
+                       yearly_consumption_per_m2, sim_factor)
+                      VALUES (%(consumer_category_id)s, %(definition)s, %(peak_load)s, %(yearly_consumption)s,
+                              %(peak_load_per_m2)s, %(yearly_consumption_per_m2)s, %(sim_factor)s)
+                      ON CONFLICT (consumer_category_id) DO UPDATE SET definition                = EXCLUDED.definition,
+                                                                       peak_load                 = EXCLUDED.peak_load,
+                                                                       yearly_consumption        = EXCLUDED.yearly_consumption,
+                                                                       peak_load_per_m2          = EXCLUDED.peak_load_per_m2,
+                                                                       yearly_consumption_per_m2 = EXCLUDED.yearly_consumption_per_m2,
+                                                                       sim_factor                = EXCLUDED.sim_factor;""")
+        rows = df.to_dict(orient='records')
+        self.cur.executemany(upsert_sql, rows)
+        self.logger.info(f"Inserted/updated consumer_categories rows: {len(rows)}")
 
     def copy_postcode_result_table(self, plz: int) -> None:
         """
@@ -443,7 +494,7 @@ class PreprocessingMixin(BaseMixin, ABC):
                    WHERE ST_Within(center, (SELECT ungeom FROM union_table))
                      AND type = 'Transformer';"""
         self.cur.execute(query)   
-    
+
     def set_ways_tem_table_infdb(self, ways_data: list[tuple]) -> int:
         """
         Insert remote ways into the local ways_tem table.
@@ -464,11 +515,8 @@ class PreprocessingMixin(BaseMixin, ABC):
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, ways_data)
-
         self.cur.execute("SELECT COUNT(*) FROM ways_tem")
         return self.cur.fetchone()[0]
-
-
 
     def set_ways_tem_table(self, plz: int) -> int:
         """
