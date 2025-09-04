@@ -75,7 +75,7 @@ class InfdbClient:
             FROM ways
             WHERE postcode = %(plz)s and clazz != 72
         """
-        self.cur.execute(query, {"postcode": plz})
+        self.cur.execute(query, {"plz": plz})
         rows = self.cur.fetchall()
 
         if not rows:
