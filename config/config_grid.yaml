@@ -1,13 +1,60 @@
+# =============================================================================
+# GRID GENERATION CONFIGURATION
+# =============================================================================
+# This file contains all settings related to grid generation parameters
+
+# =============================================================================
+# VERSION CONFIGURATION
+# =============================================================================
 # Change version if you changed any grid parameters or queries (e.g. transformer query)
 VERSION_ID: "1"
 
-# state here which parameters, queries are used to compute the grids with current VERSION_ID
+# State here which parameters, queries are used to compute the grids with current VERSION_ID
 VERSION_COMMENT: base version
 
+# =============================================================================
+# EXECUTION CONFIGURATION
+# =============================================================================
+PARALLEL: True # Toggles whether the grid generation uses multiple workers in parallel
+N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generation
+ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
+SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
+LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
+TESTING: True # If True, only a small subset of data is used for faster testing
 
+# =============================================================================
+# REGIONAL CONFIGURATION
+# =============================================================================
+# Define the regional scale and corresponding codes
+# - municipality: Work at municipality level using AGS codes
+# - postcode: Work at postcode level using PLZ codes
+
+REGIONAL_SCALE: postcode  # Options: municipality, postcode
+
+# Configuration based on regional scale:
+# For postcode scale: Provide single PLZ or list of PLZ codes
+# For municipality scale: Provide single AGS or list of AGS codes
+
+# Postcode level configuration
+# PLZ: 88888
+
+# Municipality level configuration
+AGS: 9162000
+
+# For multiple areas, use lists:
+PLZ: [88888, 88889]
+# AGS: [9162000, 9163000, 9164000]
+
+# =============================================================================
+# GRID GENERATION PARAMETERS
+# =============================================================================
+# Peak load per household in kW
 PEAK_LOAD_HOUSEHOLD: 14.50 # default: 14.5kW, 30 kW if electric hot water supply is included
-SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5} # formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
 
+# Simultaneous load factor formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
+SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5}
+
+# Consumer categories for load calculation
 CONSUMER_CATEGORIES:
   - {consumer_category_id: 1, definition: Commercial, peak_load: null, yearly_consumption: null, peak_load_per_m2: 79.00, yearly_consumption_per_m2: 245.70, sim_factor: 0.50}
   - {consumer_category_id: 2, definition: Public, peak_load: null, yearly_consumption: null, peak_load_per_m2: 29.00, yearly_consumption_per_m2: 155.70, sim_factor: 0.60}
@@ -16,6 +63,7 @@ CONSUMER_CATEGORIES:
   - {consumer_category_id: 5, definition: TH, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
   - {consumer_category_id: 6, definition: AB, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
 
+# Equipment data for transformers and cables
 EQUIPMENT_DATA:
   - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer, application_area: 1}
   - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer, application_area: 2}
@@ -44,34 +92,33 @@ CONNECTION_AVAILABLE_CABLES:
   - NYY 4x35 SE
   - NYY 4x70 SE
 
+# =============================================================================
+# SETTLEMENT TYPE THRESHOLDS
+# =============================================================================
 # Thresholds for the average number of households per building to derive settlement_type
 RURAL_MAX_HOUSEHOLDS: 1.25
 URBAN_MIN_HOUSEHOLDS: 5
+
 # Thresholds for the average distance between buildings to derive settlement_type
 RURAL_MIN_BUILDING_DISTANCE: 50  # meters
 URBAN_MAX_BUILDING_DISTANCE: 25  # meters
 MAX_BROWNFIELD_TRAFO_DISTANCE: 800
 
+# =============================================================================
+# CLUSTERING PARAMETERS
+# =============================================================================
+# Seed for the initialization of the k-means clustering for transformer placement
+# Keeping the same seed ensures consistent behavior in multiple runs
+# Has to be an integer between 0 and 4294967295
+K_MEANS_SEED: 3329829316
+
 # Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
 LARGE_COMPONENT_LOWER_BOUND: 2000
 LARGE_COMPONENT_DIVIDER: 1000
 
-# Voltage properties
+# =============================================================================
+# VOLTAGE PROPERTIES
+# =============================================================================
 VN: 400  # V
 V_BAND_LOW: 0.95  # +-5%
 V_BAND_HIGH: 1.05
-
-
-PLOT_COLOR_DICT:
-  100: gold
-  160: orange
-  200: darkorange
-  250: peru
-  315: orangered
-  400: red
-  515: crimson
-  500: crimson
-  630: purple
-  715: blue
-  800: darkblue
-  1260: black

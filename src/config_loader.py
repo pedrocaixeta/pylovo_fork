@@ -17,58 +17,90 @@ def load_yaml_config(filepath: str):
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Load all configurations with correct paths
-CONFIG_DATA = load_yaml_config("../config/config_data.yaml")
-CONFIG_VERSION = load_yaml_config("../config/config_version.yaml")
+CONFIG_DATABASE = load_yaml_config("../config/config_database.yaml")
+CONFIG_GRID = load_yaml_config("../config/config_grid.yaml")
+CONFIG_ANALYSIS = load_yaml_config("../config/config_analysis.yaml")
 CONFIG_CLASSIFICATION = load_yaml_config("../config/config_classification.yaml")
 CONFIG_CLUSTERING = load_yaml_config("../config/config_clustering.yaml")
 
-# Load database connection configuration from CONFIG_DATA
+# Load database connection configuration from CONFIG_DATABASE
 load_dotenv(find_dotenv(), override=True)
-DBNAME = os.getenv("DBNAME", CONFIG_DATA["DBNAME"])
-DBUSER = os.getenv("DBUSER", CONFIG_DATA["DBUSER"])
-HOST = os.getenv("HOST", CONFIG_DATA["HOST"])
-PORT = os.getenv("PORT", CONFIG_DATA["PORT"])
-PASSWORD = os.getenv("PASSWORD", CONFIG_DATA["PASSWORD"])
-TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATA["TARGET_SCHEMA"])
+DBNAME = os.getenv("DBNAME", CONFIG_DATABASE["DBNAME"])
+DBUSER = os.getenv("DBUSER", CONFIG_DATABASE["DBUSER"])
+HOST = os.getenv("HOST", CONFIG_DATABASE["HOST"])
+PORT = os.getenv("PORT", CONFIG_DATABASE["PORT"])
+PASSWORD = os.getenv("PASSWORD", CONFIG_DATABASE["PASSWORD"])
+TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATABASE["TARGET_SCHEMA"])
 
-USE_INFDB = True if CONFIG_DATA["USE_INFDB"] in [True, "True", "true", 1, "1", "on"] else False
-INFDB_DBNAME = os.getenv("INFDB_DBNAME", CONFIG_DATA.get("INFDB_DBNAME"))
-INFDB_USER = os.getenv("INFDB_USER", CONFIG_DATA.get("INFDB_USER"))
-INFDB_HOST = os.getenv("INFDB_HOST", CONFIG_DATA.get("INFDB_HOST"))
-INFDB_PORT = os.getenv("INFDB_PORT", CONFIG_DATA.get("INFDB_PORT"))
-INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", CONFIG_DATA.get("INFDB_PASSWORD"))
-INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", CONFIG_DATA.get("INFDB_SOURCE_SCHEMA", "public"))
+USE_INFDB = True if CONFIG_DATABASE["USE_INFDB"] in [True, "True", "true", 1, "1", "on"] else False
+INFDB_DBNAME = os.getenv("INFDB_DBNAME", CONFIG_DATABASE.get("INFDB_DBNAME"))
+INFDB_USER = os.getenv("INFDB_USER", CONFIG_DATABASE.get("INFDB_USER"))
+INFDB_HOST = os.getenv("INFDB_HOST", CONFIG_DATABASE.get("INFDB_HOST"))
+INFDB_PORT = os.getenv("INFDB_PORT", CONFIG_DATABASE.get("INFDB_PORT"))
+INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", CONFIG_DATABASE.get("INFDB_PASSWORD"))
+INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", CONFIG_DATABASE.get("INFDB_SOURCE_SCHEMA", "public"))
 
-# Assign other variables from CONFIG_DATA
+# Assign other variables from CONFIG_GRID
 RESULT_DIR = os.path.join(os.getcwd(), "results")
-ANALYZE_GRIDS = CONFIG_DATA["ANALYZE_GRIDS"]
-SAVE_GRID_FOLDER = CONFIG_DATA["SAVE_GRID_FOLDER"]
-LOG_LEVEL = CONFIG_DATA["LOG_LEVEL"]
-TESTING = CONFIG_DATA.get("TESTING", False)
+ANALYZE_GRIDS = CONFIG_GRID["ANALYZE_GRIDS"]
+SAVE_GRID_FOLDER = CONFIG_GRID["SAVE_GRID_FOLDER"]
+LOG_LEVEL = CONFIG_GRID["LOG_LEVEL"]
+TESTING = CONFIG_GRID.get("TESTING", False)
 # Percentage of CPU cores to use for parallel execution
-N_JOBS_PERCENT = CONFIG_DATA.get("N_JOBS_PERCENT", 50)
+N_JOBS_PERCENT = CONFIG_GRID.get("N_JOBS_PERCENT", 50)
 # Determine usable number of cores based on system capability
 AVAILABLE_CORES = os.cpu_count() or 1
 # Final number of workers rounded from the percentage of cores
 N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
-K_MEANS_SEED = CONFIG_DATA["K_MEANS_SEED"]
-MUNICIPAL_REGISTER = CONFIG_DATA["MUNICIPAL_REGISTER"]
+K_MEANS_SEED = CONFIG_GRID["K_MEANS_SEED"]
+
+# Assign variables from CONFIG_ANALYSIS
+MUNICIPAL_REGISTER = CONFIG_ANALYSIS["MUNICIPAL_REGISTER"]
+PLOT_COLOR_DICT = CONFIG_ANALYSIS["PLOT_COLOR_DICT"]
+
+# Regional configuration - determine execution mode based on scale and input type
+REGIONAL_SCALE = CONFIG_GRID.get("REGIONAL_SCALE", "postcode")
+PLZ = CONFIG_GRID.get("PLZ")
+AGS = CONFIG_GRID.get("AGS")
+
+# Validate regional scale
+if REGIONAL_SCALE not in ["municipality", "postcode"]:
+    raise ValueError(f"Invalid REGIONAL_SCALE: {REGIONAL_SCALE}. Must be 'municipality' or 'postcode'.")
+
+# Determine execution mode based on regional scale and input type
+if REGIONAL_SCALE == "postcode":
+    if PLZ is None:
+        raise ValueError("PLZ must be specified when REGIONAL_SCALE is 'postcode'.")
+    
+    if isinstance(PLZ, list):
+        EXECUTION_MODE = "multiple_plz"
+    else:
+        EXECUTION_MODE = "single_plz"
+        
+elif REGIONAL_SCALE == "municipality":
+    if AGS is None:
+        raise ValueError("AGS must be specified when REGIONAL_SCALE is 'municipality'.")
+    
+    if isinstance(AGS, list):
+        EXECUTION_MODE = "multiple_ags"
+    else:
+        EXECUTION_MODE = "single_ags"
 CSV_FILE_LIST = [
     {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},]
 
-### Assign all variables from CONFIG_VERSION
-VERSION_ID = CONFIG_VERSION["VERSION_ID"]
-VERSION_COMMENT = CONFIG_VERSION["VERSION_COMMENT"]
-CONNECTION_AVAILABLE_CABLES = CONFIG_VERSION["CONNECTION_AVAILABLE_CABLES"]
-RURAL_MAX_HOUSEHOLDS = CONFIG_VERSION["RURAL_MAX_HOUSEHOLDS"]
-URBAN_MIN_HOUSEHOLDS = CONFIG_VERSION["URBAN_MIN_HOUSEHOLDS"]
-RURAL_MIN_BUILDING_DISTANCE = CONFIG_VERSION["RURAL_MIN_BUILDING_DISTANCE"]
-URBAN_MAX_BUILDING_DISTANCE = CONFIG_VERSION["URBAN_MAX_BUILDING_DISTANCE"]
-MAX_BROWNFIELD_TRAFO_DISTANCE = CONFIG_VERSION["MAX_BROWNFIELD_TRAFO_DISTANCE"]
+### Assign all variables from CONFIG_GRID
+VERSION_ID = CONFIG_GRID["VERSION_ID"]
+VERSION_COMMENT = CONFIG_GRID["VERSION_COMMENT"]
+CONNECTION_AVAILABLE_CABLES = CONFIG_GRID["CONNECTION_AVAILABLE_CABLES"]
+RURAL_MAX_HOUSEHOLDS = CONFIG_GRID["RURAL_MAX_HOUSEHOLDS"]
+URBAN_MIN_HOUSEHOLDS = CONFIG_GRID["URBAN_MIN_HOUSEHOLDS"]
+RURAL_MIN_BUILDING_DISTANCE = CONFIG_GRID["RURAL_MIN_BUILDING_DISTANCE"]
+URBAN_MAX_BUILDING_DISTANCE = CONFIG_GRID["URBAN_MAX_BUILDING_DISTANCE"]
+MAX_BROWNFIELD_TRAFO_DISTANCE = CONFIG_GRID["MAX_BROWNFIELD_TRAFO_DISTANCE"]
 
-SIM_FACTOR = CONFIG_VERSION["SIM_FACTOR"]
-PEAK_LOAD_HOUSEHOLD = CONFIG_VERSION["PEAK_LOAD_HOUSEHOLD"]
-CONSUMER_CATEGORIES = pd.DataFrame(CONFIG_VERSION["CONSUMER_CATEGORIES"])
+SIM_FACTOR = CONFIG_GRID["SIM_FACTOR"]
+PEAK_LOAD_HOUSEHOLD = CONFIG_GRID["PEAK_LOAD_HOUSEHOLD"]
+CONSUMER_CATEGORIES = pd.DataFrame(CONFIG_GRID["CONSUMER_CATEGORIES"])
 # --- Patch: replace string placeholder references (e.g. 'PEAK_LOAD_HOUSEHOLD') with actual numeric value ---
 if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
     def _resolve_peak_load(val):
@@ -78,13 +110,12 @@ if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
     CONSUMER_CATEGORIES["peak_load"] = CONSUMER_CATEGORIES["peak_load"].apply(_resolve_peak_load)
     # enforce numeric (None / null stay as NaN for categories using per m2 metrics)
     CONSUMER_CATEGORIES["peak_load"] = pd.to_numeric(CONSUMER_CATEGORIES["peak_load"], errors="coerce")
-EQUIPMENT_DATA = pd.DataFrame(CONFIG_VERSION["EQUIPMENT_DATA"])
-LARGE_COMPONENT_LOWER_BOUND = CONFIG_VERSION["LARGE_COMPONENT_LOWER_BOUND"]
-LARGE_COMPONENT_DIVIDER = CONFIG_VERSION["LARGE_COMPONENT_DIVIDER"]
-VN = CONFIG_VERSION["VN"]
-V_BAND_LOW = CONFIG_VERSION["V_BAND_LOW"]
-V_BAND_HIGH = CONFIG_VERSION["V_BAND_HIGH"]
-PLOT_COLOR_DICT = CONFIG_VERSION["PLOT_COLOR_DICT"]
+EQUIPMENT_DATA = pd.DataFrame(CONFIG_GRID["EQUIPMENT_DATA"])
+LARGE_COMPONENT_LOWER_BOUND = CONFIG_GRID["LARGE_COMPONENT_LOWER_BOUND"]
+LARGE_COMPONENT_DIVIDER = CONFIG_GRID["LARGE_COMPONENT_DIVIDER"]
+VN = CONFIG_GRID["VN"]
+V_BAND_LOW = CONFIG_GRID["V_BAND_LOW"]
+V_BAND_HIGH = CONFIG_GRID["V_BAND_HIGH"]
 
 # Assign all variables from CONFIG_CLASSIFICATION
 CLASSIFICATION_VERSION = CONFIG_CLASSIFICATION["CLASSIFICATION_VERSION"]

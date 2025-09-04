@@ -100,7 +100,7 @@ To do so, setup the fully dockerized InfDB from the corresponding `GitHub reposi
 Make sure to also run the processor in your InfDB instance. For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
 
 | Then, before running the ``main_constructor.py`` script to initialize the pylovo database set the ``USE_INFDB: True`` in the
-``config_data.yaml`` file.
+``config.yaml`` file.
 | Next, the connection configurations set in the InfDB have to be added in the pylovo repository as
 well: add the InfDB configuration to your ``.env`` file below the pylovo configurations:
 
