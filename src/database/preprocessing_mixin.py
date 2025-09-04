@@ -166,7 +166,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         WHERE plz ISNULL;"""
         self.cur.execute(query, {"v": VERSION_ID, "plz": plz})
 
-    def set_buildings_table(self, buildings_data: list[tuple]) -> None:
+    def set_buildings_table(self, buildings_data: list[tuple], plz: int = None) -> None:
         """
         Insert buildings data associated with a specific postal code into the database.
 
@@ -180,12 +180,109 @@ class PreprocessingMixin(BaseMixin, ABC):
         Returns:
             None
         """
+        if TESTING and plz is not None:
+            # In testing mode, filter buildings by testing geometry
+            self._set_buildings_table_with_geometry_filter(buildings_data, plz)
+        else:
+            # Normal mode - insert all buildings with processed construction_year
+            processed_data = []
+            for building in buildings_data:
+                # Extract construction_year - take the first year if it's a range
+                construction_year = building[8] if len(building) > 8 else None
+                if construction_year and isinstance(construction_year, str) and '-' in construction_year:
+                    try:
+                        construction_year = int(construction_year.split('-')[0])
+                    except (ValueError, IndexError):
+                        construction_year = None
+                elif construction_year:
+                    try:
+                        construction_year = int(construction_year)
+                    except (ValueError, TypeError):
+                        construction_year = None
+                else:
+                    construction_year = None
+                
+                # Create new tuple with processed construction_year
+                processed_building = building[:8] + (construction_year,)
+                processed_data.append(processed_building)
+            
+            insert_query = """
+                INSERT INTO buildings_tem
+                (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            self.cur.executemany(insert_query, processed_data)
+
+    def _set_buildings_table_with_geometry_filter(self, buildings_data: list[tuple], plz: int) -> None:
+        """
+        Insert buildings data with geometry filtering for testing mode.
+        Only buildings that intersect with the testing geometry are inserted.
+        """
+        if not buildings_data:
+            return
+            
+        # Create a temporary table to hold the building data
+        temp_table_query = """
+            CREATE TEMP TABLE testing_buildings (
+                osm_id integer,
+                area double precision,
+                type varchar,
+                geom geometry,
+                center geometry,
+                floors integer,
+                households_per_building integer,
+                address_street_id integer,
+                construction_year integer
+            )
+        """
+        self.cur.execute(temp_table_query)
+        
+        # Process building data to handle construction_year ranges
+        processed_data = []
+        for building in buildings_data:
+            # Extract construction_year - take the first year if it's a range
+            construction_year = building[8] if len(building) > 8 else None
+            if construction_year and isinstance(construction_year, str) and '-' in construction_year:
+                try:
+                    construction_year = int(construction_year.split('-')[0])
+                except (ValueError, IndexError):
+                    construction_year = None
+            elif construction_year:
+                try:
+                    construction_year = int(construction_year)
+                except (ValueError, TypeError):
+                    construction_year = None
+            else:
+                construction_year = None
+            
+            # Create new tuple with processed construction_year
+            processed_building = building[:8] + (construction_year,)
+            processed_data.append(processed_building)
+        
+        # Insert all building data into temp table
         insert_query = """
-            INSERT INTO buildings_tem
+            INSERT INTO testing_buildings
             (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        self.cur.executemany(insert_query, buildings_data)
+        self.cur.executemany(insert_query, processed_data)
+        
+        # Filter and insert only buildings that intersect with testing geometry
+        filter_query = """
+            INSERT INTO buildings_tem
+            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
+            SELECT tb.osm_id, tb.area, tb.type, tb.geom, tb.center, tb.floors, 
+                   tb.households_per_building, tb.address_street_id, tb.construction_year
+            FROM testing_buildings tb
+            CROSS JOIN postcode p
+            WHERE p.plz = %(plz)s
+            AND p.testing_plz IS NOT NULL
+            AND ST_Intersects(tb.geom, p.geom)
+        """
+        self.cur.execute(filter_query, {"plz": plz})
+        
+        # Drop temp table
+        self.cur.execute("DROP TABLE testing_buildings")
 
     def set_other_buildings_table(self, plz: int):
         """
@@ -499,13 +596,14 @@ class PreprocessingMixin(BaseMixin, ABC):
                      AND type = 'Transformer';"""
         self.cur.execute(query)   
 
-    def set_ways_tem_table_infdb(self, ways_data: list[tuple]) -> int:
+    def set_ways_tem_table_infdb(self, ways_data: list[tuple], plz: int = None) -> int:
         """
         Insert remote ways into the local ways_tem table.
 
         Args:
             ways_data (list[tuple]): Each tuple should contain
                 (clazz, source, target, cost, reverse_cost, geom, way_id)
+            plz (int): PLZ for geometry filtering in testing mode
 
         Returns:
             int: Number of inserted ways
@@ -513,14 +611,71 @@ class PreprocessingMixin(BaseMixin, ABC):
         if not ways_data:
             raise ValueError("No rows to insert into ways_tem")
 
+        if TESTING and plz is not None:
+            # In testing mode, filter ways by testing geometry
+            return self._set_ways_tem_table_with_geometry_filter(ways_data, plz)
+        else:
+            # Normal mode - insert all ways
+            insert_query = """
+                INSERT INTO ways_tem
+                (clazz, source, target, cost, reverse_cost, geom, way_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            self.cur.executemany(insert_query, ways_data)
+            self.cur.execute("SELECT COUNT(*) FROM ways_tem")
+            return self.cur.fetchone()[0]
+
+    def _set_ways_tem_table_with_geometry_filter(self, ways_data: list[tuple], plz: int) -> int:
+        """
+        Insert ways data with geometry filtering for testing mode.
+        Only ways that intersect with the testing geometry are inserted.
+        """
+        if not ways_data:
+            return 0
+            
+        # Create a temporary table to hold the ways data
+        temp_table_query = """
+            CREATE TEMP TABLE temp_ways (
+                clazz integer,
+                source integer,
+                target integer,
+                cost double precision,
+                reverse_cost double precision,
+                geom geometry,
+                way_id integer
+            )
+        """
+        self.cur.execute(temp_table_query)
+        
+        # Insert all ways data into temp table
         insert_query = """
-            INSERT INTO ways_tem
+            INSERT INTO temp_ways
             (clazz, source, target, cost, reverse_cost, geom, way_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, ways_data)
+        
+        # Filter and insert only ways that intersect with testing geometry
+        filter_query = """
+            INSERT INTO ways_tem
+            (clazz, source, target, cost, reverse_cost, geom, way_id)
+            SELECT tw.clazz, tw.source, tw.target, tw.cost, tw.reverse_cost, tw.geom, tw.way_id
+            FROM temp_ways tw
+            CROSS JOIN postcode p
+            WHERE p.plz = %(plz)s
+            AND p.testing_plz IS NOT NULL
+            AND ST_Intersects(tw.geom, p.geom)
+        """
+        self.cur.execute(filter_query, {"plz": plz})
+        
+        # Get count of inserted ways
         self.cur.execute("SELECT COUNT(*) FROM ways_tem")
-        return self.cur.fetchone()[0]
+        count = self.cur.fetchone()[0]
+        
+        # Drop temp table
+        self.cur.execute("DROP TABLE temp_ways")
+        
+        return count
 
     def set_ways_tem_table(self, plz: int) -> int:
         """

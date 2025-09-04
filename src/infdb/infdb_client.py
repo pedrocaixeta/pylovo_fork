@@ -38,6 +38,7 @@ class InfdbClient:
     def fetch_buildings_from_infdb(self, plz: int) -> list[tuple]:
         """
         Retrieve all buildings whose centroids are contained within a specified postcode (PLZ).
+        In testing mode, filters buildings to only those within the testing geometry.
 
         Args:
             plz (str): The plz of the buildings to get
@@ -53,14 +54,41 @@ class InfdbClient:
                 - households (int): Number of households in the building
                 - address_street_id (int): id of the way that the building is connected to
         """
-        query = """
-            SELECT id, floor_area, COALESCE(building_type, building_use) as type,
-                   geom, ST_Centroid(geom) as center, floor_number, households, address_street_id, construction_year
-            FROM buildings
-            WHERE postcode = %(p)s
-            AND building_use IN ('Commercial', 'Public', 'Residential')
-        """
-        self.cur.execute(query, {"p": plz})
+        if TESTING:
+            # In testing mode, we need to get the testing_plz from local DB first
+            # Get the testing_plz from local database
+            from src.database.database_client import DatabaseClient
+            local_dbc = DatabaseClient()
+            local_dbc.cur.execute("SELECT testing_plz FROM postcode WHERE plz = %(p)s LIMIT 1", {"p": plz})
+            row = local_dbc.cur.fetchone()
+            if row and row[0]:
+                testing_plz = row[0]
+                local_dbc.conn.close()
+            else:
+                local_dbc.conn.close()
+                raise ValueError(f"No testing_plz found for PLZ {plz}")
+            
+            # Fetch buildings from the testing_plz (not the original plz)
+            query = """
+                SELECT id, floor_area, COALESCE(building_type, building_use) as type,
+                       geom, ST_Centroid(geom) as center, floor_number, households, 
+                       address_street_id, construction_year
+                FROM buildings
+                WHERE postcode = %(testing_plz)s
+                AND building_use IN ('Commercial', 'Public', 'Residential')
+            """
+            self.cur.execute(query, {"p": plz, "testing_plz": testing_plz})
+        else:
+            # Normal mode - fetch all buildings for the PLZ
+            query = """
+                SELECT id, floor_area, COALESCE(building_type, building_use) as type,
+                       geom, ST_Centroid(geom) as center, floor_number, households, address_street_id, construction_year
+                FROM buildings
+                WHERE postcode = %(p)s
+                AND building_use IN ('Commercial', 'Public', 'Residential')
+            """
+            self.cur.execute(query, {"p": plz})
+        
         result = self.cur.fetchall()
 
         return result
@@ -69,13 +97,38 @@ class InfdbClient:
         """
         Fetch ways from remote DB for a given postcode.
         Filter out clazz:72 (Rad- und Fußweg)
+        In testing mode, fetches ways from testing_plz (geometry filtering handled locally).
         """
-        query = """
-            SELECT clazz, source, target, cost, reverse_cost, geom, way_id
-            FROM ways
-            WHERE postcode = %(plz)s and clazz != 72
-        """
-        self.cur.execute(query, {"plz": plz})
+        if TESTING:
+            # In testing mode, fetch ways from testing_plz
+            # Get the testing_plz from local database
+            from src.database.database_client import DatabaseClient
+            local_dbc = DatabaseClient()
+            local_dbc.cur.execute("SELECT testing_plz FROM postcode WHERE plz = %(p)s LIMIT 1", {"p": plz})
+            row = local_dbc.cur.fetchone()
+            if row and row[0]:
+                testing_plz = row[0]
+                local_dbc.conn.close()
+            else:
+                local_dbc.conn.close()
+                raise ValueError(f"No testing_plz found for PLZ {plz}")
+            
+            # Fetch ways from the testing_plz (not the original plz)
+            query = """
+                SELECT clazz, source, target, cost, reverse_cost, geom, way_id
+                FROM ways
+                WHERE postcode = %(testing_plz)s and clazz != 72
+            """
+            self.cur.execute(query, {"plz": plz, "testing_plz": testing_plz})
+        else:
+            # Normal mode - fetch all ways for the PLZ
+            query = """
+                SELECT clazz, source, target, cost, reverse_cost, geom, way_id
+                FROM ways
+                WHERE postcode = %(plz)s and clazz != 72
+            """
+            self.cur.execute(query, {"plz": plz})
+            
         rows = self.cur.fetchall()
 
         if not rows:

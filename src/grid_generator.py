@@ -165,12 +165,9 @@ class GridGenerator:
         INTO: buildings_tem
         """
         if USE_INFDB:
-            if TESTING:
-                postcode = self.dbc.get_testing_plz(self.plz)
-            else:
-                postcode = self.plz
-            buildings_data = self.inf_dbc.fetch_buildings_from_infdb(postcode)
-            self.dbc.set_buildings_table(buildings_data)
+            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
+            buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
+            self.dbc.set_buildings_table(buildings_data, self.plz)
             self.dbc.commit_changes()
         else:
             self.dbc.set_residential_buildings_table(self.plz)
@@ -224,12 +221,9 @@ class GridGenerator:
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
         if USE_INFDB:
-            if TESTING:
-                postcode = self.dbc.get_testing_plz(self.plz)
-            else:
-                postcode = self.plz
-            ways_rows = self.inf_dbc.fetch_ways_from_infdb(postcode)
-            ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows)
+            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
+            ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
+            ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, self.plz)
         else:
             ways_count = self.dbc.set_ways_tem_table(self.plz)
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
