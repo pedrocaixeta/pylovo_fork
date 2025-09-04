@@ -90,9 +90,13 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         df = consumer_categories.copy()
 
-        # Replace placeholder
         if 'peak_load' in df.columns:
-            df['peak_load'] = df['peak_load'].replace('PEAK_LOAD_HOUSEHOLD', PEAK_LOAD_HOUSEHOLD)
+            s = df['peak_load']
+            mask = s == 'PEAK_LOAD_HOUSEHOLD'
+            if mask.any():
+                # Explicitly assign numeric constant instead of using .replace to prevent FutureWarning
+                s = s.where(~mask, PEAK_LOAD_HOUSEHOLD)
+            df['peak_load'] = s
 
         # Expected target table columns
         expected_cols = ["consumer_category_id", "definition", "peak_load", "yearly_consumption", "peak_load_per_m2",
