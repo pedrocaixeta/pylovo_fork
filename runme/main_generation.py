@@ -173,10 +173,7 @@ def main():
         # End timing and print results
         elapsed_time = time.time() - start_time
         minutes, seconds = divmod(elapsed_time, 60)
-        print("=" * 60)
-        print(f"Grid creation completed successfully!")
         print(f"Elapsed Time: {int(minutes)} minutes and {seconds:.2f} seconds")
-        print("=" * 60)
         
     except Exception as e:
         elapsed_time = time.time() - start_time
