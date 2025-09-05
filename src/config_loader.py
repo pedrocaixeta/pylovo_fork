@@ -40,7 +40,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Load all configurations with correct paths
 CONFIG_DATABASE = load_yaml_config("../config/config_database.yaml")
-CONFIG_GRID = load_yaml_config("../config/config_grid.yaml")
+CONFIG_GENERATION = load_yaml_config("../config/config_generation.yaml")
 CONFIG_ANALYSIS = load_yaml_config("../config/config_analysis.yaml")
 CONFIG_CLASSIFICATION = load_yaml_config("../config/config_classification.yaml")
 CONFIG_CLUSTERING = load_yaml_config("../config/config_clustering.yaml")
@@ -77,11 +77,11 @@ else:
     INFDB_SOURCE_SCHEMA = None
 
 # =============================================================================
-# REGIONAL CONFIGURATION (from CONFIG_GRID)
+# REGIONAL CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================
-REGIONAL_SCALE = CONFIG_GRID.get("REGIONAL_SCALE", "postcode")
-PLZ = CONFIG_GRID.get("PLZ")
-AGS = CONFIG_GRID.get("AGS")
+REGIONAL_SCALE = CONFIG_GENERATION.get("REGIONAL_SCALE", "postcode")
+PLZ = CONFIG_GENERATION.get("PLZ")
+AGS = CONFIG_GENERATION.get("AGS")
 
 # Validate regional scale
 if REGIONAL_SCALE not in ["municipality", "postcode"]:
@@ -107,34 +107,34 @@ elif REGIONAL_SCALE == "municipality":
         EXECUTION_MODE = "single_ags"
 
 # =============================================================================
-# EXECUTION CONFIGURATION (from CONFIG_GRID)
+# EXECUTION CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================
-ANALYZE_GRIDS = CONFIG_GRID["ANALYZE_GRIDS"]
-SAVE_GRID_FOLDER = CONFIG_GRID["SAVE_GRID_FOLDER"]
-LOG_LEVEL = CONFIG_GRID["LOG_LEVEL"]
-TESTING = CONFIG_GRID.get("TESTING", False)
+ANALYZE_GRIDS = CONFIG_GENERATION["ANALYZE_GRIDS"]
+SAVE_GRID_FOLDER = CONFIG_GENERATION["SAVE_GRID_FOLDER"]
+LOG_LEVEL = CONFIG_GENERATION["LOG_LEVEL"]
+TESTING = CONFIG_GENERATION.get("TESTING", False)
 
 # Parallel execution configuration
-N_JOBS_PERCENT = CONFIG_GRID.get("N_JOBS_PERCENT", 50)
+N_JOBS_PERCENT = CONFIG_GENERATION.get("N_JOBS_PERCENT", 50)
 AVAILABLE_CORES = os.cpu_count() or 1
 N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
 
 # Result directory configuration
-RESULT_DIR = os.path.join(os.getcwd(), CONFIG_GRID.get("RESULT_DIR", "results"))
+RESULT_DIR = os.path.join(os.getcwd(), CONFIG_GENERATION.get("RESULT_DIR", "results"))
 
 # =============================================================================
-# GRID GENERATION CONFIGURATION (from CONFIG_GRID)
+# GRID GENERATION CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================
 # Version information
-VERSION_ID = CONFIG_GRID["VERSION_ID"]
-VERSION_COMMENT = CONFIG_GRID["VERSION_COMMENT"]
+VERSION_ID = CONFIG_GENERATION["VERSION_ID"]
+VERSION_COMMENT = CONFIG_GENERATION["VERSION_COMMENT"]
 
 # Load calculation parameters
-PEAK_LOAD_HOUSEHOLD = CONFIG_GRID["PEAK_LOAD_HOUSEHOLD"]
-SIM_FACTOR = CONFIG_GRID["SIM_FACTOR"]
+PEAK_LOAD_HOUSEHOLD = CONFIG_GENERATION["PEAK_LOAD_HOUSEHOLD"]
+SIM_FACTOR = CONFIG_GENERATION["SIM_FACTOR"]
 
 # Consumer categories for load calculation
-CONSUMER_CATEGORIES = pd.DataFrame(CONFIG_GRID["CONSUMER_CATEGORIES"])
+CONSUMER_CATEGORIES = pd.DataFrame(CONFIG_GENERATION["CONSUMER_CATEGORIES"])
 # Patch: replace string placeholder references (e.g. 'PEAK_LOAD_HOUSEHOLD') with actual numeric value
 if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
     def _resolve_peak_load(val):
@@ -146,50 +146,50 @@ if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
     CONSUMER_CATEGORIES["peak_load"] = pd.to_numeric(CONSUMER_CATEGORIES["peak_load"], errors="coerce")
 
 # Equipment data
-EQUIPMENT_DATA = pd.DataFrame(CONFIG_GRID["EQUIPMENT_DATA"])
+EQUIPMENT_DATA = pd.DataFrame(CONFIG_GENERATION["EQUIPMENT_DATA"])
 
 # =============================================================================
-# VOLTAGE PROPERTIES (from CONFIG_GRID)
+# VOLTAGE PROPERTIES (from CONFIG_GENERATION)
 # =============================================================================
-VN = CONFIG_GRID["VN"]
-V_BAND_LOW = CONFIG_GRID["V_BAND_LOW"]
-V_BAND_HIGH = CONFIG_GRID["V_BAND_HIGH"]
+VN = CONFIG_GENERATION["VN"]
+V_BAND_LOW = CONFIG_GENERATION["V_BAND_LOW"]
+V_BAND_HIGH = CONFIG_GENERATION["V_BAND_HIGH"]
 
 # =============================================================================
-# CABLE DIMENSIONING PARAMETERS (from CONFIG_GRID)
+# CABLE DIMENSIONING PARAMETERS (from CONFIG_GENERATION)
 # =============================================================================
 # Calculate maximum cable current from equipment data (largest available cable)
 # This ensures the current limit is always based on the actual largest cable in the equipment list
 MAX_CABLE_CURRENT_KA = EQUIPMENT_DATA[EQUIPMENT_DATA["typ"] == "Cable"]["max_i_a"].max() / 1000  # Convert A to kA
 
 # Load thresholds for different voltage drop limits
-SMALL_LOAD_THRESHOLD_KW = CONFIG_GRID["SMALL_LOAD_THRESHOLD_KW"]
+SMALL_LOAD_THRESHOLD_KW = CONFIG_GENERATION["SMALL_LOAD_THRESHOLD_KW"]
 
 # Voltage drop limits for consumer connections (as percentage of nominal voltage per km)
-VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM = CONFIG_GRID["VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM"]
-VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM = CONFIG_GRID["VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM"]
+VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM = CONFIG_GENERATION["VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM"]
+VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM = CONFIG_GENERATION["VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM"]
 
 # Voltage drop limit for feeder cables (total voltage drop as percentage of nominal voltage)
-VOLTAGE_DROP_DISTRIBUTION_PERCENT = CONFIG_GRID["VOLTAGE_DROP_DISTRIBUTION_PERCENT"]
+VOLTAGE_DROP_DISTRIBUTION_PERCENT = CONFIG_GENERATION["VOLTAGE_DROP_DISTRIBUTION_PERCENT"]
 
 # Cables available for consumer connections (from feeder to buildings)
-CONSUMER_CONNECTION_AVAILABLE_CABLES = CONFIG_GRID["CONSUMER_CONNECTION_AVAILABLE_CABLES"]
+CONSUMER_CONNECTION_AVAILABLE_CABLES = CONFIG_GENERATION["CONSUMER_CONNECTION_AVAILABLE_CABLES"]
 
 # =============================================================================
-# SETTLEMENT TYPE THRESHOLDS (from CONFIG_GRID)
+# SETTLEMENT TYPE THRESHOLDS (from CONFIG_GENERATION)
 # =============================================================================
-RURAL_MAX_HOUSEHOLDS = CONFIG_GRID["RURAL_MAX_HOUSEHOLDS"]
-URBAN_MIN_HOUSEHOLDS = CONFIG_GRID["URBAN_MIN_HOUSEHOLDS"]
-RURAL_MIN_BUILDING_DISTANCE = CONFIG_GRID["RURAL_MIN_BUILDING_DISTANCE"]
-URBAN_MAX_BUILDING_DISTANCE = CONFIG_GRID["URBAN_MAX_BUILDING_DISTANCE"]
+RURAL_MAX_HOUSEHOLDS = CONFIG_GENERATION["RURAL_MAX_HOUSEHOLDS"]
+URBAN_MIN_HOUSEHOLDS = CONFIG_GENERATION["URBAN_MIN_HOUSEHOLDS"]
+RURAL_MIN_BUILDING_DISTANCE = CONFIG_GENERATION["RURAL_MIN_BUILDING_DISTANCE"]
+URBAN_MAX_BUILDING_DISTANCE = CONFIG_GENERATION["URBAN_MAX_BUILDING_DISTANCE"]
 
 # =============================================================================
-# GRID GENERATION PARAMETERS (from CONFIG_GRID)
+# GRID GENERATION PARAMETERS (from CONFIG_GENERATION)
 # =============================================================================
-MAX_BROWNFIELD_TRAFO_DISTANCE = CONFIG_GRID["MAX_BROWNFIELD_TRAFO_DISTANCE"]
-LARGE_COMPONENT_LOWER_BOUND = CONFIG_GRID["LARGE_COMPONENT_LOWER_BOUND"]
-LARGE_COMPONENT_DIVIDER = CONFIG_GRID["LARGE_COMPONENT_DIVIDER"]
-K_MEANS_SEED = CONFIG_GRID["K_MEANS_SEED"]
+MAX_BROWNFIELD_TRAFO_DISTANCE = CONFIG_GENERATION["MAX_BROWNFIELD_TRAFO_DISTANCE"]
+LARGE_COMPONENT_LOWER_BOUND = CONFIG_GENERATION["LARGE_COMPONENT_LOWER_BOUND"]
+LARGE_COMPONENT_DIVIDER = CONFIG_GENERATION["LARGE_COMPONENT_DIVIDER"]
+K_MEANS_SEED = CONFIG_GENERATION["K_MEANS_SEED"]
 
 # =============================================================================
 # ANALYSIS CONFIGURATION (from CONFIG_ANALYSIS)
