@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Unified Grid Creation Script for Pylovo
 

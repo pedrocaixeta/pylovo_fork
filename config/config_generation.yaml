@@ -6,6 +6,7 @@ PLZ: 91301
 # PLZ: [80801, 80803]
 # AGS: [9162000, 9163000, 9164000]
 TESTING: False # If True, only a small subset of data is used for faster testing
+
 # =============================================================================
 # EXECUTION CONFIGURATION
 # =============================================================================
@@ -23,7 +24,6 @@ VERSION_ID: "1" # Change version if you changed any grid parameters or queries (
 VERSION_COMMENT: base version # State here which parameters, queries are used to compute the grids with current VERSION_ID
 PEAK_LOAD_HOUSEHOLD: 14.50 # default: 14.5kW, 30 kW if electric hot water supply is included
 SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5} # Simultaneous load factor - formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
-
 # Consumer categories for load calculation
 CONSUMER_CATEGORIES:
   - {consumer_category_id: 1, definition: Commercial, peak_load: null, yearly_consumption: null, peak_load_per_m2: 79.00, yearly_consumption_per_m2: 245.70, sim_factor: 0.50}
@@ -34,7 +34,6 @@ CONSUMER_CATEGORIES:
   - {consumer_category_id: 6, definition: AB, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
 
 # Equipment data for transformers and cables
-# Available cables for grid generation (unused cables are commented out)
 EQUIPMENT_DATA:
   - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer, application_area: 1}
   - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer, application_area: 2}
@@ -56,20 +55,17 @@ EQUIPMENT_DATA:
   # - {name: NFA2X_4_70, max_i_a: 205, r_mohm_per_km: 443, x_mohm_per_km: 0, z_mohm_per_km: 443, cost_eur: 8, typ: Cable}
   # - {name: NFA2X_4_50, max_i_a: 165, r_mohm_per_km: 641, x_mohm_per_km: 0, z_mohm_per_km: 641, cost_eur: 7, typ: Cable}
 
-# Cables available for consumer connections (from feeder to buildings)
-# These are a subset of the equipment data cables, specifically for house connections
+# Cables available for consumer connections (house connections from feeder to buildings) - must be a subset of the equipment data cables
 CONSUMER_CONNECTION_AVAILABLE_CABLES:
   - NAYY 4 120  # NAYY_4_120
   - NAYY 4 50   # NAYY_4_50
   - NYY 4 35    # NYY_4_35
   - NYY 4 16    # NYY_4_16
-
 # Thresholds to derive settlement_types
 RURAL_MAX_HOUSEHOLDS: 1.25 # Maximum average number of households per building for rural settlements
 URBAN_MIN_HOUSEHOLDS: 5 # Minimum average number of households per building for urban settlements
 RURAL_MIN_BUILDING_DISTANCE: 50 # Minimum average distance between buildings for rural settlements
 URBAN_MAX_BUILDING_DISTANCE: 25 # Maximum average distance between buildings for urban settlements
-
 # Transformer placement parameters
 MAX_BROWNFIELD_TRAFO_DISTANCE: 800 # Maximum distance from brownfield areas for transformer placement
 # Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
@@ -77,8 +73,6 @@ LARGE_COMPONENT_LOWER_BOUND: 2000 # Threshold for number of buildings in a compo
 LARGE_COMPONENT_DIVIDER: 1000 # Divider to derive the target number of clusters for k-means clustering
 # Seed for the initialization of the k-means clustering for transformer placement - keeping the same ensures deterministic behavior
 K_MEANS_SEED: 3329829316 # Has to be an integer between 0 and 4294967295
-
-
 
 # =============================================================================
 # CABLE DIMENSIONING PARAMETERS
