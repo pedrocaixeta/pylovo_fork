@@ -1,11 +1,11 @@
 # =============================================================================
 # REGIONAL CONFIGURATION
 # =============================================================================
-PLZ: 99999
-# AGS: 9162000
+PLZ: 91301
+# AGS: 9474126
 # PLZ: [80801, 80803]
 # AGS: [9162000, 9163000, 9164000]
-
+TESTING: False # If True, only a small subset of data is used for faster testing
 # =============================================================================
 # EXECUTION CONFIGURATION
 # =============================================================================
@@ -14,7 +14,6 @@ N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generatio
 ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
 SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
 LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
-TESTING: True # If True, only a small subset of data is used for faster testing
 RESULT_DIR: results # Directory for storing analysis results and outputs
 
 # =============================================================================
