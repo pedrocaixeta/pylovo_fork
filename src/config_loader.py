@@ -13,6 +13,9 @@ def load_yaml_config(filepath: str):
     with open(abs_path, "r", encoding="utf-8") as file:
         return yaml.safe_load(file)
 
+# =============================================================================
+# PROJECT ROOT AND CONFIG LOADING
+# =============================================================================
 # Load Project Root
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -23,8 +26,13 @@ CONFIG_ANALYSIS = load_yaml_config("../config/config_analysis.yaml")
 CONFIG_CLASSIFICATION = load_yaml_config("../config/config_classification.yaml")
 CONFIG_CLUSTERING = load_yaml_config("../config/config_clustering.yaml")
 
+# =============================================================================
+# DATABASE CONFIGURATION (from CONFIG_DATABASE)
+# =============================================================================
 # Load database connection configuration from CONFIG_DATABASE
 load_dotenv(find_dotenv(), override=True)
+
+# Primary database connection
 DBNAME = os.getenv("DBNAME", CONFIG_DATABASE["DBNAME"])
 DBUSER = os.getenv("DBUSER", CONFIG_DATABASE["DBUSER"])
 HOST = os.getenv("HOST", CONFIG_DATABASE["HOST"])
@@ -32,6 +40,7 @@ PORT = os.getenv("PORT", CONFIG_DATABASE["PORT"])
 PASSWORD = os.getenv("PASSWORD", CONFIG_DATABASE["PASSWORD"])
 TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATABASE["TARGET_SCHEMA"])
 
+# INFDB (external database) connection
 USE_INFDB = True if CONFIG_DATABASE["USE_INFDB"] in [True, "True", "true", 1, "1", "on"] else False
 INFDB_DBNAME = os.getenv("INFDB_DBNAME", CONFIG_DATABASE.get("INFDB_DBNAME"))
 INFDB_USER = os.getenv("INFDB_USER", CONFIG_DATABASE.get("INFDB_USER"))
@@ -40,25 +49,9 @@ INFDB_PORT = os.getenv("INFDB_PORT", CONFIG_DATABASE.get("INFDB_PORT"))
 INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", CONFIG_DATABASE.get("INFDB_PASSWORD"))
 INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", CONFIG_DATABASE.get("INFDB_SOURCE_SCHEMA", "public"))
 
-# Assign other variables from CONFIG_GRID
-RESULT_DIR = os.path.join(os.getcwd(), "results")
-ANALYZE_GRIDS = CONFIG_GRID["ANALYZE_GRIDS"]
-SAVE_GRID_FOLDER = CONFIG_GRID["SAVE_GRID_FOLDER"]
-LOG_LEVEL = CONFIG_GRID["LOG_LEVEL"]
-TESTING = CONFIG_GRID.get("TESTING", False)
-# Percentage of CPU cores to use for parallel execution
-N_JOBS_PERCENT = CONFIG_GRID.get("N_JOBS_PERCENT", 50)
-# Determine usable number of cores based on system capability
-AVAILABLE_CORES = os.cpu_count() or 1
-# Final number of workers rounded from the percentage of cores
-N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
-K_MEANS_SEED = CONFIG_GRID["K_MEANS_SEED"]
-
-# Assign variables from CONFIG_ANALYSIS
-MUNICIPAL_REGISTER = CONFIG_ANALYSIS["MUNICIPAL_REGISTER"]
-PLOT_COLOR_DICT = CONFIG_ANALYSIS["PLOT_COLOR_DICT"]
-
-# Regional configuration - determine execution mode based on scale and input type
+# =============================================================================
+# REGIONAL CONFIGURATION (from CONFIG_GRID)
+# =============================================================================
 REGIONAL_SCALE = CONFIG_GRID.get("REGIONAL_SCALE", "postcode")
 PLZ = CONFIG_GRID.get("PLZ")
 AGS = CONFIG_GRID.get("AGS")
@@ -85,23 +78,37 @@ elif REGIONAL_SCALE == "municipality":
         EXECUTION_MODE = "multiple_ags"
     else:
         EXECUTION_MODE = "single_ags"
-CSV_FILE_LIST = [
-    {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},]
 
-### Assign all variables from CONFIG_GRID
+# =============================================================================
+# EXECUTION CONFIGURATION (from CONFIG_GRID)
+# =============================================================================
+ANALYZE_GRIDS = CONFIG_GRID["ANALYZE_GRIDS"]
+SAVE_GRID_FOLDER = CONFIG_GRID["SAVE_GRID_FOLDER"]
+LOG_LEVEL = CONFIG_GRID["LOG_LEVEL"]
+TESTING = CONFIG_GRID.get("TESTING", False)
+
+# Parallel execution configuration
+N_JOBS_PERCENT = CONFIG_GRID.get("N_JOBS_PERCENT", 50)
+AVAILABLE_CORES = os.cpu_count() or 1
+N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
+
+# Result directory configuration
+RESULT_DIR = os.path.join(os.getcwd(), CONFIG_GRID.get("RESULT_DIR", "results"))
+
+# =============================================================================
+# GRID GENERATION CONFIGURATION (from CONFIG_GRID)
+# =============================================================================
+# Version information
 VERSION_ID = CONFIG_GRID["VERSION_ID"]
 VERSION_COMMENT = CONFIG_GRID["VERSION_COMMENT"]
-CONSUMER_CONNECTION_AVAILABLE_CABLES = CONFIG_GRID["CONSUMER_CONNECTION_AVAILABLE_CABLES"] # Cables available for consumer connections (from feeder to buildings)
-RURAL_MAX_HOUSEHOLDS = CONFIG_GRID["RURAL_MAX_HOUSEHOLDS"]
-URBAN_MIN_HOUSEHOLDS = CONFIG_GRID["URBAN_MIN_HOUSEHOLDS"]
-RURAL_MIN_BUILDING_DISTANCE = CONFIG_GRID["RURAL_MIN_BUILDING_DISTANCE"]
-URBAN_MAX_BUILDING_DISTANCE = CONFIG_GRID["URBAN_MAX_BUILDING_DISTANCE"]
-MAX_BROWNFIELD_TRAFO_DISTANCE = CONFIG_GRID["MAX_BROWNFIELD_TRAFO_DISTANCE"]
 
-SIM_FACTOR = CONFIG_GRID["SIM_FACTOR"]
+# Load calculation parameters
 PEAK_LOAD_HOUSEHOLD = CONFIG_GRID["PEAK_LOAD_HOUSEHOLD"]
+SIM_FACTOR = CONFIG_GRID["SIM_FACTOR"]
+
+# Consumer categories for load calculation
 CONSUMER_CATEGORIES = pd.DataFrame(CONFIG_GRID["CONSUMER_CATEGORIES"])
-# --- Patch: replace string placeholder references (e.g. 'PEAK_LOAD_HOUSEHOLD') with actual numeric value ---
+# Patch: replace string placeholder references (e.g. 'PEAK_LOAD_HOUSEHOLD') with actual numeric value
 if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
     def _resolve_peak_load(val):
         if isinstance(val, str) and val.strip() == "PEAK_LOAD_HOUSEHOLD":
@@ -110,23 +117,62 @@ if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
     CONSUMER_CATEGORIES["peak_load"] = CONSUMER_CATEGORIES["peak_load"].apply(_resolve_peak_load)
     # enforce numeric (None / null stay as NaN for categories using per m2 metrics)
     CONSUMER_CATEGORIES["peak_load"] = pd.to_numeric(CONSUMER_CATEGORIES["peak_load"], errors="coerce")
+
+# Equipment data
 EQUIPMENT_DATA = pd.DataFrame(CONFIG_GRID["EQUIPMENT_DATA"])
-LARGE_COMPONENT_LOWER_BOUND = CONFIG_GRID["LARGE_COMPONENT_LOWER_BOUND"]
-LARGE_COMPONENT_DIVIDER = CONFIG_GRID["LARGE_COMPONENT_DIVIDER"]
+
+# =============================================================================
+# VOLTAGE PROPERTIES (from CONFIG_GRID)
+# =============================================================================
 VN = CONFIG_GRID["VN"]
 V_BAND_LOW = CONFIG_GRID["V_BAND_LOW"]
 V_BAND_HIGH = CONFIG_GRID["V_BAND_HIGH"]
 
-# Cable dimensioning parameters
+# =============================================================================
+# CABLE DIMENSIONING PARAMETERS (from CONFIG_GRID)
+# =============================================================================
 # Calculate maximum cable current from equipment data (largest available cable)
 # This ensures the current limit is always based on the actual largest cable in the equipment list
 MAX_CABLE_CURRENT_KA = EQUIPMENT_DATA[EQUIPMENT_DATA["typ"] == "Cable"]["max_i_a"].max() / 1000  # Convert A to kA
+
+# Load thresholds for different voltage drop limits
 SMALL_LOAD_THRESHOLD_KW = CONFIG_GRID["SMALL_LOAD_THRESHOLD_KW"]
+
+# Voltage drop limits for consumer connections (as percentage of nominal voltage per km)
 VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM = CONFIG_GRID["VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM"]
 VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM = CONFIG_GRID["VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM"]
+
+# Voltage drop limit for feeder cables (total voltage drop as percentage of nominal voltage)
 VOLTAGE_DROP_DISTRIBUTION_PERCENT = CONFIG_GRID["VOLTAGE_DROP_DISTRIBUTION_PERCENT"]
 
-# Assign all variables from CONFIG_CLASSIFICATION
+# Cables available for consumer connections (from feeder to buildings)
+CONSUMER_CONNECTION_AVAILABLE_CABLES = CONFIG_GRID["CONSUMER_CONNECTION_AVAILABLE_CABLES"]
+
+# =============================================================================
+# SETTLEMENT TYPE THRESHOLDS (from CONFIG_GRID)
+# =============================================================================
+RURAL_MAX_HOUSEHOLDS = CONFIG_GRID["RURAL_MAX_HOUSEHOLDS"]
+URBAN_MIN_HOUSEHOLDS = CONFIG_GRID["URBAN_MIN_HOUSEHOLDS"]
+RURAL_MIN_BUILDING_DISTANCE = CONFIG_GRID["RURAL_MIN_BUILDING_DISTANCE"]
+URBAN_MAX_BUILDING_DISTANCE = CONFIG_GRID["URBAN_MAX_BUILDING_DISTANCE"]
+
+# =============================================================================
+# GRID GENERATION PARAMETERS (from CONFIG_GRID)
+# =============================================================================
+MAX_BROWNFIELD_TRAFO_DISTANCE = CONFIG_GRID["MAX_BROWNFIELD_TRAFO_DISTANCE"]
+LARGE_COMPONENT_LOWER_BOUND = CONFIG_GRID["LARGE_COMPONENT_LOWER_BOUND"]
+LARGE_COMPONENT_DIVIDER = CONFIG_GRID["LARGE_COMPONENT_DIVIDER"]
+K_MEANS_SEED = CONFIG_GRID["K_MEANS_SEED"]
+
+# =============================================================================
+# ANALYSIS CONFIGURATION (from CONFIG_ANALYSIS)
+# =============================================================================
+MUNICIPAL_REGISTER = CONFIG_ANALYSIS["MUNICIPAL_REGISTER"]
+PLOT_COLOR_DICT = CONFIG_ANALYSIS["PLOT_COLOR_DICT"]
+
+# =============================================================================
+# CLASSIFICATION CONFIGURATION (from CONFIG_CLASSIFICATION)
+# =============================================================================
 CLASSIFICATION_VERSION = CONFIG_CLASSIFICATION["CLASSIFICATION_VERSION"]
 CLASSIFICATION_VERSION_COMMENT = CONFIG_CLASSIFICATION["CLASSIFICATION_VERSION_COMMENT"]
 CLASSIFICATION_REGION = CONFIG_CLASSIFICATION["CLASSIFICATION_REGION"]
@@ -136,17 +182,26 @@ REGION_DICT = CONFIG_CLASSIFICATION["REGION_DICT"]
 REGIOSTAR7_DICT = CONFIG_CLASSIFICATION["REGIOSTAR7_DICT"]
 REGIO7_REGIO5_GEM_DICT = CONFIG_CLASSIFICATION["REGIO7_REGIO5_GEM_DICT"]
 
-# Assign all variables from CONFIG_CLUSTERING
+# =============================================================================
+# CLUSTERING CONFIGURATION (from CONFIG_CLUSTERING)
+# =============================================================================
 CLUSTERING_PARAMETERS = CONFIG_CLUSTERING["CLUSTERING_PARAMETERS"]
 LIST_OF_CLUSTERING_PARAMETERS = CONFIG_CLUSTERING["LIST_OF_CLUSTERING_PARAMETERS"]
 N_CLUSTERS_KMEDOID = CONFIG_CLUSTERING["N_CLUSTERS_KMEDOID"]
 N_CLUSTERS_KMEANS = CONFIG_CLUSTERING["N_CLUSTERS_KMEANS"]
 N_CLUSTERS_GMM = CONFIG_CLUSTERING["N_CLUSTERS_GMM"]
+
+# Clustering thresholds
 THRESHOLD_MAX_TRAFO_DIS = CONFIG_CLUSTERING["THRESHOLD_MAX_TRAFO_DIS"]
 THRESHOLD_HOUSEHOLDS_PER_BUILDING = CONFIG_CLUSTERING["THRESHOLD_HOUSEHOLDS_PER_BUILDING"]
-
-# Thresholds for clustering parameters
 THRESHOLD_AVG_TRAFO_DIS = CONFIG_CLUSTERING["THRESHOLD_AVG_TRAFO_DIS"]
 THRESHOLD_NO_HOUSE_CONNECTIONS = CONFIG_CLUSTERING["THRESHOLD_NO_HOUSE_CONNECTIONS"]
 THRESHOLD_VSW_PER_BRANCH = CONFIG_CLUSTERING["THRESHOLD_VSW_PER_BRANCH"]
 THRESHOLD_NO_HOUSEHOLDS = CONFIG_CLUSTERING["THRESHOLD_NO_HOUSEHOLDS"]
+
+# =============================================================================
+# DATA IMPORT CONFIGURATION (only relevant without InfDB)
+# =============================================================================
+CSV_FILE_LIST = [
+    {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},
+]
