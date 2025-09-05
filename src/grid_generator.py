@@ -30,8 +30,6 @@ class GridGenerator:
         self.plz = plz
         self.dbc = dbc.DatabaseClient()
         self.dbc.insert_version_if_not_exists()
-        self.dbc.insert_equipment_data_from_config(equipment_data=EQUIPMENT_DATA)
-        self.dbc.insert_consumer_categories_from_config(consumer_categories=CONSUMER_CATEGORIES)
         self.logger = utils.create_logger(
             name="GridGenerator", log_file=kwargs.get("log_file", "log.txt"), log_level=LOG_LEVEL
         )
@@ -141,6 +139,7 @@ class GridGenerator:
                 f"The grids for the postcode area {self.plz} is already generated "
                 f"for the version {VERSION_ID}."
             )
+        self.prepare_data_from_config()
         self.prepare_postcodes()
         self.prepare_buildings()
         self.prepare_transformers()
@@ -148,6 +147,13 @@ class GridGenerator:
         self.apply_kmeans_clustering()
         self.position_all_transformers()
         self.install_cables()
+
+    def prepare_data_from_config(self):
+        """
+        Load data from config.
+        """
+        self.dbc.insert_equipment_data_from_config(equipment_data=EQUIPMENT_DATA)
+        self.dbc.insert_consumer_categories_from_config(consumer_categories=CONSUMER_CATEGORIES)
 
     def prepare_postcodes(self):
         """
