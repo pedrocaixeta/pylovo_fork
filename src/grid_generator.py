@@ -522,85 +522,6 @@ class GridGenerator:
 
         self.logger.info("Brownfield clusters completed")
 
-        # def position_brownfield_transformers(self, plz: int, kcid: int, transformer_list: list) -> None:
-        #     """
-        #     Weist alle Verbraucher (Gebäude/Verbraucherknoten) eindeutig dem jeweils nächstgelegenen vorhandenen
-        #     Transformator zu (Brownfield-Szenario) und bestimmt danach die minimale passende Trafo-Nennleistung.
-        #
-        #     Änderungen ggü. vorheriger Implementierung:
-        #     - Entfernt feste Abbruch-Grenze (z.B. 630 kVA) während der Zuordnung.
-        #     - Jeder Verbraucher wird genau dem Trafo mit minimaler agg_cost (kürzeste Wegstrecke) zugeordnet.
-        #     - Danach: Ermittlung der Summenlast je Trafo und Auswahl der kleinsten verfügbaren Trafo-Größe > Summenlast.
-        #     - Leere Trafos werden gelöscht.
-        #     - Warnung, falls Summenlast > größter verfügbarer Trafo (dann wird größter gewählt).
-        #     """
-        #     self.logger.info(f"{len(transformer_list)} transformers found for {kcid}")
-        #
-        #     if not transformer_list:
-        #         return
-        #
-        #     # Distanz-/Kosten-Matrix aller (Verbraucher, Trafo)-Kombinationen
-        #     cost_df = self.dbc.get_consumer_to_transformer_df(kcid, transformer_list)
-        #     if cost_df is None or cost_df.empty:
-        #         self.logger.warning(f"Keine Consumer-zu-Trafo-Distanzen für kcid {kcid} gefunden.")
-        #         return
-        #
-        #     # Sortieren nach geringster aggregierter Kosten/Distanz (agg_cost) – liefert kürzeste Wege zuerst
-        #     cost_df = cost_df.sort_values(by=["agg_cost", "start_vid", "end_vid"])  # stabilere Reproduzierbarkeit
-        #
-        #     # Zuordnungsspeicher: Trafo -> Liste zugewiesener Verbraucher-Vertice-IDs
-        #     assignment: dict[int, list[int]] = {t: [] for t in transformer_list}
-        #     assigned_consumers: set[int] = set()
-        #
-        #     # Greedy: Erster (also kürzester) Eintrag pro Verbraucher bestimmt dessen Trafo
-        #     for _, row in cost_df.iterrows():
-        #         consumer_id = int(row["start_vid"])  # Verbraucher (Gebäude-Verbindung / vertice)
-        #         trafo_id = int(row["end_vid"])  # Transformator-Vertice
-        #         if consumer_id in assigned_consumers:
-        #             continue
-        #         assignment[trafo_id].append(consumer_id)
-        #         assigned_consumers.add(consumer_id)
-        #
-        #     # Diagnose nicht zugeordneter Verbraucher (sollte normalerweise 0 sein)
-        #     total_consumers = cost_df["start_vid"].nunique()
-        #     if len(assigned_consumers) < total_consumers:
-        #         missing = total_consumers - len(assigned_consumers)
-        #         self.logger.warning(f"{missing} Verbraucher konnten keinem Trafo zugeordnet werden (kcid={kcid}).")
-        #
-        #     self.logger.info("Consumer-Zuordnung zu vorhandenen Transformatoren abgeschlossen.")
-        #
-        #     # Vorbereitung für BCID-Vergabe: negative IDs für Brownfield-Cluster wie zuvor
-        #     building_cluster_count = 0
-        #     possible_transformers = np.array(
-        #         [100, 160, 250, 400, 630])  # TODO: spätere Parametrisierung / Settlement Type
-        #
-        #     for trafo_id in transformer_list:
-        #         consumers_for_trafo = assignment.get(trafo_id, [])
-        #
-        #         # Leere Trafos entfernen
-        #         if not consumers_for_trafo:
-        #             self.logger.debug(f"Transformer {trafo_id} hat keine zugeordneten Verbraucher und wird gelöscht.")
-        #             self.dbc.delete_transformers_from_buildings_tem([trafo_id])
-        #             continue
-        #
-        #         # Summenlast simulieren (Scheinleistung) – bestehende Routine wiederverwenden
-        #         sim_load = float(self.dbc.calculate_sim_load(consumers_for_trafo))  # kVA erwartet
-        #
-        #         # Auswahl kleinste Trafo-Größe > sim_load
-        #         larger_mask = possible_transformers > sim_load
-        #         if larger_mask.any():
-        #             transformer_rated_power = possible_transformers[larger_mask][0].item()
-        #         else:
-        #             # Überlast: größter verfügbarer Trafo – Warnung
-        #             transformer_rated_power = possible_transformers[-1].item()
-        #             self.logger.warning(
-        #                 f"Summenlast {sim_load:.1f} kVA überschreitet größte verfügbare Trafo-Größe; setze {transformer_rated_power} kVA (trafo_id={trafo_id}, kcid={kcid}).")
-        #
-        #         building_cluster_count -= 1  # negative laufende BCID
-        #         self.dbc.update_building_cluster(trafo_id, consumers_for_trafo, building_cluster_count, kcid, plz,
-        #             transformer_rated_power, )
-        #
-        #     self.logger.info("Brownfield Transformer-Clustering abgeschlossen (optimierte Dimensionierung).")
 
     def position_greenfield_transformers(self, plz, kcid, bcid):
         """
@@ -669,6 +590,8 @@ class GridGenerator:
         """
         # Get all clusters for the postal code area
         cluster_list = self.dbc.get_list_from_plz(self.plz)
+        if TESTING:
+            cluster_list = cluster_list[:5] # Limit to first 5 clusters for testing
         ci_count = 0
         ci_process = 0
         main_street_available_cables = CONNECTION_AVAILABLE_CABLES
