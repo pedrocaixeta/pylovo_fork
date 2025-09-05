@@ -19,24 +19,8 @@
 # PORT=5432
 # PASSWORD=your_password
 # TARGET_SCHEMA=pylovo
-#
-# # InfDB Database (if using InfDB)
-# INFDB_DBNAME=citydb
-# INFDB_USER=citydb_user
-# INFDB_HOST=localhost
-# INFDB_PORT=5432
-# INFDB_PASSWORD=citydb_password
-# INFDB_SOURCE_SCHEMA=public
-
 # =============================================================================
-# INFDB CONFIGURATION
-# =============================================================================
-# Set to True if you want to use the InfDB database for building data
-# If True, ensure that you have the connection details in your .env file
-USE_INFDB: True
-
-# =============================================================================
-# PYLOVO DATABASE CONFIGURATION
+# INFDB DATABASE CONFIGURATION
 # =============================================================================
 # Default pylovo database connection configuration
 # These values will be overridden by .env file if present
@@ -47,22 +31,22 @@ USE_INFDB: True
 # PASSWORD: postgres
 # TARGET_SCHEMA: pylovo
 
-# # PYLOVO database
-# DBNAME: citydb
-# DBUSER: citydb_user
-# HOST: host
-# PORT: port
-# PASSWORD: pw
-# TARGET_SCHEMA: pylovo
 
 # =============================================================================
-# INFDB DATABASE CONFIGURATION
+# INFDB CONFIGURATION
 # =============================================================================
+# Set to True if you want to use the InfDB database for building data
+# If True, ensure that you have the connection details in your .env file
+USE_INFDB: True
+
 # Default InfDB connection configuration
 # These values will be overridden by .env file if present
 INFDB_DBNAME: citydb
 INFDB_USER: citydb_user
-INFDB_HOST: 10.162.28.165
-INFDB_PORT: 54322
-INFDB_PASSWORD: infdb
-INFDB_SOURCE_SCHEMA: public
+INFDB_HOST: localhost
+INFDB_PORT: 5432
+INFDB_PASSWORD: citydb_password
+INFDB_SOURCE_SCHEMA: pylovo_input
+
+
+

@@ -52,6 +52,10 @@ class PreprocessingMixin(BaseMixin, ABC):
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = None
+        
+        # For cables, application_area is not needed - set to None
+        if 'typ' in df.columns:
+            df.loc[df['typ'] == 'Cable', 'application_area'] = None
 
         # Keep only relevant columns
         df = df[expected_cols]

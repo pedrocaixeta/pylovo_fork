@@ -671,7 +671,6 @@ class GridGenerator:
         cluster_list = self.dbc.get_list_from_plz(self.plz)
         ci_count = 0
         ci_process = 0
-        main_street_available_cables = CONNECTION_AVAILABLE_CABLES
 
         for id in cluster_list:
             kcid, bcid = id
@@ -681,11 +680,14 @@ class GridGenerator:
                 self.prepare_vertices_list(self.plz, kcid, bcid)
             )
             Pd, load_units, load_type = self.get_consumer_simultaneous_load_dict(consumer_list, buildings_df)
-            local_length_dict = {c: 0 for c in CONNECTION_AVAILABLE_CABLES}
 
             # Create network and add components
             net = pp.create_empty_network()
             self.dbc.create_cable_std_type(net)
+            # Get all available cable types from the pandapower network for main distribution
+            # Main distribution cables can use all non-commented cables from equipment data
+            all_available_cables = list(net.std_types["line"].keys())
+            local_length_dict = {c: 0 for c in all_available_cables}
             self.create_lvmv_bus(self.plz, kcid, bcid, net)
             self.create_transformer(self.plz, kcid, bcid, net)
             self.create_connection_bus(connection_nodes, net)
@@ -707,23 +709,24 @@ class GridGenerator:
                         f"Final remaining connection node {remaining} (kcid={kcid}, bcid={bcid}); installing direct connection."
                     )
                     sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, connection_node_list)
+                    # Calculate maximum current using worst-case voltage (VN * V_BAND_LOW)
                     Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
 
                     # Install consumer cables
                     local_length_dict = self.install_consumer_cables(
                         self.plz, bcid, kcid, branch_deviation, connection_node_list,
-                        ont_vertice, vertices_dict, Pd, net, CONNECTION_AVAILABLE_CABLES, local_length_dict,
+                        ont_vertice, vertices_dict, Pd, net, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict,
                     )
 
                     # Connect to transformer
                     if connection_node_list[0] == ont_vertice:
-                        cable, count = self.find_minimal_available_cable(Imax, net, main_street_available_cables)
+                        cable, count = self.find_minimal_available_cable(Imax, net)
                         self.create_line_ont_to_lv_bus(
                             self.plz, bcid, kcid, connection_node_list[0], branch_deviation, net, cable, count
                         )
                     else:
                         cable, count = self.find_minimal_available_cable(
-                            Imax, net, main_street_available_cables, vertices_dict[connection_nodes[0]]
+                            Imax, net, vertices_dict[connection_nodes[0]]
                         )
                         length = self.create_line_start_to_lv_bus(
                             self.plz, bcid, kcid, connection_node_list[0], branch_deviation,
@@ -748,13 +751,13 @@ class GridGenerator:
                 # Install cables for this branch
                 local_length_dict = self.install_consumer_cables(
                     self.plz, bcid, kcid, branch_deviation, branch_node_list,
-                    ont_vertice, vertices_dict, Pd, net, CONNECTION_AVAILABLE_CABLES, local_length_dict
+                    ont_vertice, vertices_dict, Pd, net, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict
                 )
 
                 # Select appropriate cable and connect nodes
                 branch_distance = vertices_dict[branch_node_list[0]]
                 cable, count = self.find_minimal_available_cable(
-                    Imax, net, main_street_available_cables, branch_distance
+                    Imax, net, branch_distance
                 )
 
                 if len(branch_node_list) >= 2:
@@ -910,61 +913,118 @@ class GridGenerator:
     def install_consumer_cables(self, plz: int, bcid: int, kcid: int, branch_deviation: float, branch_node_list: list,
             ont_vertice: int, vertices_dict: dict, Pd: dict, net: pp.pandapowerNet,
             connection_available_cables: list[str], local_length_dict: dict, ) -> dict:
-        # lines
-        # first draw house connections from consumer node to corresponding connection node
+        """
+        Install consumer connection cables from connection nodes to individual buildings.
+        
+        This method implements both primary (current capacity) and secondary (voltage drop) 
+        constraints for cable dimensioning. It selects the smallest suitable cable that meets
+        both electrical requirements.
+        
+        Voltage Drop Logic:
+        - Small loads (≤100kW): Stricter voltage drop limit
+        - Large loads (>100kW): Relaxed voltage drop limit
+        - Different limits account for equipment sensitivity and economic optimization
+        
+        Args:
+            plz: Postal code
+            bcid: Building cluster ID
+            kcid: K-means cluster ID
+            branch_deviation: Offset for visualization
+            branch_node_list: List of connection nodes in the branch
+            ont_vertice: Transformer connection point vertex ID
+            vertices_dict: Dictionary mapping vertex IDs to distances
+            Pd: Dictionary of power demands per vertex
+            net: Pandapower network object
+            connection_available_cables: List of available cable types
+            local_length_dict: Dictionary tracking cable lengths used
+            
+        Returns:
+            dict: Updated local_length_dict with installed cable lengths
+        """
+        # Get all consumer vertices connected to the connection nodes in this branch
         consumer_list = self.dbc.get_vertices_from_connection_points(branch_node_list)
         branch_consumer_list = [n for n in consumer_list if n in vertices_dict.keys()]
+        
+        # Install house connection cables from each consumer to its connection node
         for vertice in branch_consumer_list:  # TODO: looping for duplicate vertices
+            # Get the path from consumer to transformer to find connection point
             path_list = self.dbc.get_path_to_bus(vertice, ont_vertice)
-            start_vid = path_list[1]
-            end_vid = path_list[0]
+            start_vid = path_list[1]  # Connection node
+            end_vid = path_list[0]    # Consumer node
 
+            # Prepare geodata for cable visualization
             geodata = self.dbc.get_node_geom(start_vid)
             start_node_geodata = (float(geodata[0]) + 5 * 1e-6 * branch_deviation,
                                   float(geodata[1]) + 5 * 1e-6 * branch_deviation,)
 
             end_node_geodata = self.dbc.get_node_geom(end_vid)
-
             line_geodata = [start_node_geodata, end_node_geodata]
 
+            # Calculate cable length in km
             cost_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
 
-            count = 1
-            sim_load = Pd[end_vid]  # power in Watt
+            count = 1  # Number of parallel cables
+            sim_load = Pd[end_vid]  # Power demand
+            
+            # Calculate maximum current using worst-case voltage conditions
+            # V_BAND_LOW ensures sizing for 95% of nominal voltage (worst case)
             Imax = sim_load * 1e-3 / (VN * V_BAND_LOW * np.sqrt(3))  # current in kA
+            # Cable selection loop: try different cable counts until suitable cable found
             voltage_available_cables_df = None
             while True:
+                # Get all available cable types from pandapower standard types
                 line_df = pd.DataFrame.from_dict(net.std_types["line"], orient="index")
+                
+                # PRIMARY CONSTRAINT: Filter cables by current capacity and consumer connection availability
+                # Only consider cables that can handle the calculated current and are available for consumer connections
                 current_available_cables_df = line_df[
                     (line_df["max_i_ka"] >= Imax / count) & (line_df.index.isin(connection_available_cables))]
 
                 if len(current_available_cables_df) == 0:
+                    # No cable can handle the current - try more parallel cables
                     count += 1
                     continue
 
+                # Calculate cable impedance (magnitude of complex impedance)
+                # This is used for voltage drop calculations instead of direct voltage drop
                 current_available_cables_df["cable_impedence"] = np.sqrt(
                     current_available_cables_df["r_ohm_per_km"] ** 2 + current_available_cables_df[
-                        "x_ohm_per_km"] ** 2)  # impedence in ohm / km
-                if sim_load <= 100:
+                        "x_ohm_per_km"] ** 2)  # impedance in ohm / km
+                
+                # SECONDARY CONSTRAINT: Filter cables by voltage drop limits
+                # Different voltage drop limits based on load size for economic optimization
+                if sim_load <= SMALL_LOAD_THRESHOLD_KW:
+                    # Small loads: Stricter voltage drop limit (0.2% per km)
+                    # This ensures better power quality for sensitive equipment
                     voltage_available_cables_df = current_available_cables_df[
-                        current_available_cables_df["cable_impedence"] <= 2 * 1e-3 / (Imax * cost_km / count)]
+                        current_available_cables_df["cable_impedence"] <= 
+                        VOLTAGE_DROP_SMALL_LOAD_V_PER_KM / (Imax * cost_km / count)]
                 else:
+                    # Large loads: Relaxed voltage drop limit (0.4% per km)
+                    # This allows economic cable selection for larger loads
                     voltage_available_cables_df = current_available_cables_df[
-                        current_available_cables_df["cable_impedence"] <= 4 * 1e-3 / (Imax * cost_km / count)]
+                        current_available_cables_df["cable_impedence"] <= 
+                        VOLTAGE_DROP_LARGE_LOAD_V_PER_KM / (Imax * cost_km / count)]
 
                 if len(voltage_available_cables_df) == 0:
+                    # No cable meets voltage drop requirements - try more parallel cables
                     count += 1
                     continue
                 else:
+                    # Found suitable cable(s) - exit selection loop
                     break
 
+            # Select the smallest suitable cable (by cross-sectional area)
+            # This optimizes for cost while meeting electrical requirements
             cable = voltage_available_cables_df.sort_values(by=["q_mm2"]).index.tolist()[0]
             local_length_dict[cable] += count * cost_km
 
+            # Create the cable in the pandapower network
             pp.create_line(net, from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
                 to_bus=pp.get_element_index(net, "bus", f"Consumer Nodebus {end_vid}"), length_km=cost_km,
                 std_type=cable, name=f"Line to {end_vid}", geodata=line_geodata, parallel=count, )
 
+            # Store cable information in database
             self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=f"Line to {end_vid}",
                               std_type=cable,
                               from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
@@ -972,31 +1032,68 @@ class GridGenerator:
 
         return local_length_dict
 
-    def find_minimal_available_cable(self, Imax: float, net: pp.pandapowerNet, cables_list: list, distance: int = 0) -> \
+    def find_minimal_available_cable(self, Imax: float, net: pp.pandapowerNet, distance: int = 0) -> \
     tuple[str, int]:
-        count = 1
+        """
+        Find the smallest cable that meets both current capacity and voltage drop requirements.
+        
+        This method implements the cable selection algorithm for main distribution cables.
+        It applies both primary (current) and secondary (voltage drop) constraints to select
+        the most economical cable solution.
+        
+        Voltage Drop Logic for Distribution Cables:
+        - Uses total voltage drop limit (4.5% of nominal voltage)
+        - Applied to entire distribution length, not per-km basis
+        - More relaxed than consumer connections for economic optimization
+        
+        Args:
+            Imax: Maximum current in kA
+            net: Pandapower network object
+            distance: Distance in meters (0 means no distance-based voltage drop check)
+            
+        Returns:
+            tuple: (cable_name, parallel_count) - Selected cable type and number of parallels
+        """
+        count = 1  # Number of parallel cables
         cable = None
+        
         while 1:
+            # Get all available cable types from pandapower standard types
             line_df = pd.DataFrame.from_dict(net.std_types["line"], orient="index")
+            
+            # PRIMARY CONSTRAINT: Filter cables by current capacity
+            # Main distribution cables can use all available cables from equipment data
             current_available_cables = line_df[
-                (line_df.index.isin(cables_list)) & (line_df["max_i_ka"] >= Imax / count)]
+                (line_df["max_i_ka"] >= Imax / count)]
+            
             if len(current_available_cables) == 0:
+                # No cable can handle the current - try more parallel cables
                 count += 1
                 continue
 
             if distance != 0:
+                # SECONDARY CONSTRAINT: Apply voltage drop limit for distribution cables
+                # Calculate cable impedance for voltage drop assessment
                 current_available_cables["cable_impedence"] = np.sqrt(
                     current_available_cables["r_ohm_per_km"] ** 2 + current_available_cables[
-                        "x_ohm_per_km"] ** 2)  # impedence in ohm / km
+                        "x_ohm_per_km"] ** 2)  # impedance in ohm / km
+                
+                # Apply total voltage drop limit (4.5% of 400V = 18V)
+                # This is more relaxed than consumer connections as it's for main distribution
                 voltage_available_cables = current_available_cables[
-                    current_available_cables["cable_impedence"] <= 400 * 0.045 / (Imax * distance / count)]
+                    current_available_cables["cable_impedence"] <= 
+                    VN * VOLTAGE_DROP_DISTRIBUTION_PERCENT / 100 / (Imax * distance / count)]
+                
                 if len(voltage_available_cables) == 0:
+                    # No cable meets voltage drop requirements - try more parallel cables
                     count += 1
                     continue
                 else:
+                    # Select smallest suitable cable by cross-sectional area
                     cable = voltage_available_cables.sort_values(by=["q_mm2"]).index.tolist()[0]
                     break
             else:
+                # No distance-based voltage drop check - select by current capacity only
                 cable = current_available_cables.sort_values(by=["q_mm2"]).index.tolist()[0]
                 break
 
@@ -1075,19 +1172,42 @@ class GridGenerator:
 
     def determine_maximum_load_branch(self, furthest_node_path_list: list, buildings_df: pd.DataFrame,
             consumer_df: pd.DataFrame) -> tuple[list, float]:
-        # Determine the longest feasible branch (in order from transformer to furthest node)
-        # limited by maximum allowable current
+        """
+        Determine the longest feasible branch (in order from transformer to furthest node)
+        limited by maximum allowable current.
+        
+        This method implements the primary constraint for cable dimensioning: current capacity.
+        It builds branches by adding nodes one by one until the current limit is reached.
+        
+        Args:
+            furthest_node_path_list: List of nodes from transformer to furthest node
+            buildings_df: DataFrame with building load information
+            consumer_df: DataFrame with consumer category information
+            
+        Returns:
+            tuple: (branch_node_list, Imax) - List of nodes in the branch and maximum current
+        """
         branch_node_list = []
         for node in furthest_node_path_list:
             branch_node_list.append(node)
+            # Calculate simultaneous peak load for all nodes in current branch
             sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, branch_node_list)  # sim_peak load in kW
+            
+            # Calculate maximum current using worst-case voltage (VN * V_BAND_LOW)
+            # This ensures cables are sized for the lowest expected voltage (95% of nominal)
             Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))  # current in kA
-            if Imax >= 0.313 and len(
-                    branch_node_list) > 1:  # 0.313 is the current limit of the largest allowed cable 4x185SE
+            
+            # Check if current exceeds the capacity of the largest available cable
+            # MAX_CABLE_CURRENT_KA is derived from the largest cable in equipment data
+            if Imax >= MAX_CABLE_CURRENT_KA and len(branch_node_list) > 1:
+                # Remove the last node if it would exceed current capacity
                 branch_node_list.remove(node)
                 break
-            elif Imax >= 0.313 and len(branch_node_list) == 1:
+            elif Imax >= MAX_CABLE_CURRENT_KA and len(branch_node_list) == 1:
+                # Even a single node exceeds capacity - keep it but break the loop
                 break
+                
+        # Calculate final current for the selected branch
         sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, branch_node_list)
         Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
 

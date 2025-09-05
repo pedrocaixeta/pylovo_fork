@@ -1,16 +1,11 @@
 # =============================================================================
-# GRID GENERATION CONFIGURATION
+# REGIONAL CONFIGURATION
 # =============================================================================
-# This file contains all settings related to grid generation parameters
-
-# =============================================================================
-# VERSION CONFIGURATION
-# =============================================================================
-# Change version if you changed any grid parameters or queries (e.g. transformer query)
-VERSION_ID: "1"
-
-# State here which parameters, queries are used to compute the grids with current VERSION_ID
-VERSION_COMMENT: base version
+REGIONAL_SCALE: postcode  # Options: postcode (PLZ) or municipality (AGS) | single or list
+PLZ: 99999
+AGS: 9162000
+# PLZ: [80801, 80803]
+# AGS: [9162000, 9163000, 9164000]
 
 # =============================================================================
 # EXECUTION CONFIGURATION
@@ -23,36 +18,12 @@ LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
 TESTING: True # If True, only a small subset of data is used for faster testing
 
 # =============================================================================
-# REGIONAL CONFIGURATION
+# GRID GENERATION CONFIGURATION
 # =============================================================================
-# Define the regional scale and corresponding codes
-# - municipality: Work at municipality level using AGS codes
-# - postcode: Work at postcode level using PLZ codes
-
-REGIONAL_SCALE: postcode  # Options: municipality, postcode
-
-# Configuration based on regional scale:
-# For postcode scale: Provide single PLZ or list of PLZ codes
-# For municipality scale: Provide single AGS or list of AGS codes
-
-# Postcode level configuration
-# PLZ: 88888
-
-# Municipality level configuration
-AGS: 9162000
-
-# For multiple areas, use lists:
-PLZ: [88888, 88889]
-# AGS: [9162000, 9163000, 9164000]
-
-# =============================================================================
-# GRID GENERATION PARAMETERS
-# =============================================================================
-# Peak load per household in kW
+VERSION_ID: "1" # Change version if you changed any grid parameters or queries (e.g. transformer query)
+VERSION_COMMENT: base version # State here which parameters, queries are used to compute the grids with current VERSION_ID
 PEAK_LOAD_HOUSEHOLD: 14.50 # default: 14.5kW, 30 kW if electric hot water supply is included
-
-# Simultaneous load factor formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
-SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5}
+SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5} # Simultaneous load factor - formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
 
 # Consumer categories for load calculation
 CONSUMER_CATEGORIES:
@@ -64,61 +35,68 @@ CONSUMER_CATEGORIES:
   - {consumer_category_id: 6, definition: AB, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
 
 # Equipment data for transformers and cables
+# Available cables for grid generation (unused cables are commented out)
 EQUIPMENT_DATA:
   - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer, application_area: 1}
   - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer, application_area: 2}
   - {name: Tr_250, s_max_kva: 250, cost_eur: 5000, typ: Transformer, application_area: 3}
   - {name: Tr_400, s_max_kva: 400, cost_eur: 8000, typ: Transformer, application_area: 4}
   - {name: Tr_630, s_max_kva: 630, cost_eur: 12000, typ: Transformer, application_area: 5}
-  - {name: NAYY_4_185, max_i_a: 313, r_mohm_per_km: 164, x_mohm_per_km: 80, z_mohm_per_km: 181, cost_eur: 33, typ: Cable, application_area: 0}
-  - {name: NYY_4_95, max_i_a: 280, r_mohm_per_km: 193, x_mohm_per_km: 82, z_mohm_per_km: 210, cost_eur: 37, typ: Cable, application_area: 1}
-  - {name: NAYY_4_150, max_i_a: 270, r_mohm_per_km: 208, x_mohm_per_km: 80, z_mohm_per_km: 223, cost_eur: 24, typ: Cable, application_area: 2}
-  - {name: NFA2X_4_95, max_i_a: 245, r_mohm_per_km: 320, x_mohm_per_km: 0, z_mohm_per_km: 320, cost_eur: 10, typ: Cable, application_area: 3}
-  - {name: NAYY_4_120, max_i_a: 242, r_mohm_per_km: 225, x_mohm_per_km: 80, z_mohm_per_km: 239, cost_eur: 19, typ: Cable, application_area: 4}
-  - {name: NYY_4_70, max_i_a: 232, r_mohm_per_km: 268, x_mohm_per_km: 82, z_mohm_per_km: 280, cost_eur: 28, typ: Cable, application_area: 5}
-  - {name: NAYY_4_95, max_i_a: 215, r_mohm_per_km: 320, x_mohm_per_km: 82, z_mohm_per_km: 330, cost_eur: 21, typ: Cable, application_area: 6}
-  - {name: NFA2X_4_70, max_i_a: 205, r_mohm_per_km: 443, x_mohm_per_km: 0, z_mohm_per_km: 443, cost_eur: 8, typ: Cable, application_area: 7}
-  - {name: NFA2X_4_50, max_i_a: 165, r_mohm_per_km: 641, x_mohm_per_km: 0, z_mohm_per_km: 641, cost_eur: 7, typ: Cable, application_area: 8}
-  - {name: NAYY_4_50, max_i_a: 142, r_mohm_per_km: 642, x_mohm_per_km: 83, z_mohm_per_km: 647, cost_eur: 11, typ: Cable, application_area: 9}
-  - {name: NYY_4_35, max_i_a: 159, r_mohm_per_km: 524, x_mohm_per_km: 85, z_mohm_per_km: 531, cost_eur: 16, typ: Cable, application_area: 10}
-  - {name: NYY_4_16, max_i_a: 103, r_mohm_per_km: 1150, x_mohm_per_km: 90, z_mohm_per_km: 1153, cost_eur: 7, typ: Cable, application_area: 11}
+  - {name: NA2XS(F)2Y_1x240RM_12_20kV_ir, max_i_a: 456, r_mohm_per_km: 144, x_mohm_per_km: 182, z_mohm_per_km: 236, cost_eur: 0, typ: cs}
+  - {name: NA2XS(F)2Y_1x150RM_12_20kV_ir, max_i_a: 353, r_mohm_per_km: 227, x_mohm_per_km: 195, z_mohm_per_km: 299, cost_eur: 0, typ: cs}
+  - {name: NAYY_4_185, max_i_a: 313, r_mohm_per_km: 164, x_mohm_per_km: 80, z_mohm_per_km: 181, cost_eur: 33, typ: Cable}
+  # - {name: NYY_4_95, max_i_a: 280, r_mohm_per_km: 193, x_mohm_per_km: 82, z_mohm_per_km: 210, cost_eur: 37, typ: Cable}
+  # - {name: NAYY_4_150, max_i_a: 270, r_mohm_per_km: 208, x_mohm_per_km: 80, z_mohm_per_km: 223, cost_eur: 24, typ: Cable}
+  # - {name: NFA2X_4_95, max_i_a: 245, r_mohm_per_km: 320, x_mohm_per_km: 0, z_mohm_per_km: 320, cost_eur: 10, typ: Cable}
+  - {name: NAYY_4_120, max_i_a: 242, r_mohm_per_km: 225, x_mohm_per_km: 80, z_mohm_per_km: 239, cost_eur: 19, typ: Cable}
+  # - {name: NYY_4_70, max_i_a: 232, r_mohm_per_km: 268, x_mohm_per_km: 82, z_mohm_per_km: 280, cost_eur: 28, typ: Cable}
+  - {name: NAYY_4_95, max_i_a: 215, r_mohm_per_km: 320, x_mohm_per_km: 82, z_mohm_per_km: 330, cost_eur: 21, typ: Cable}
+  # - {name: NFA2X_4_70, max_i_a: 205, r_mohm_per_km: 443, x_mohm_per_km: 0, z_mohm_per_km: 443, cost_eur: 8, typ: Cable}
+  # - {name: NFA2X_4_50, max_i_a: 165, r_mohm_per_km: 641, x_mohm_per_km: 0, z_mohm_per_km: 641, cost_eur: 7, typ: Cable}
+  - {name: NAYY_4_50, max_i_a: 142, r_mohm_per_km: 642, x_mohm_per_km: 83, z_mohm_per_km: 647, cost_eur: 11, typ: Cable}
+  - {name: NYY_4_35, max_i_a: 159, r_mohm_per_km: 524, x_mohm_per_km: 85, z_mohm_per_km: 531, cost_eur: 16, typ: Cable}
+  - {name: NYY_4_16, max_i_a: 103, r_mohm_per_km: 1150, x_mohm_per_km: 90, z_mohm_per_km: 1153, cost_eur: 7, typ: Cable}
 
-# Define which of the above listed cables can be used for connections from transformer to building
-CONNECTION_AVAILABLE_CABLES:
-  - NAYY 4x120 SE
-  - NAYY 4x95 SE
-  - NAYY 4x50 SE
-  - NYY 4x16 SE
-  - NYY 4x35 SE
-  - NYY 4x70 SE
+# Cables available for consumer connections (from feeder to buildings)
+# These are a subset of the equipment data cables, specifically for house connections
+CONSUMER_CONNECTION_AVAILABLE_CABLES:
+  - NAYY 4 120  # NAYY_4_120
+  - NAYY 4 50   # NAYY_4_50
+  - NYY 4 35    # NYY_4_35
+  - NYY 4 16    # NYY_4_16
 
-# =============================================================================
-# SETTLEMENT TYPE THRESHOLDS
-# =============================================================================
-# Thresholds for the average number of households per building to derive settlement_type
-RURAL_MAX_HOUSEHOLDS: 1.25
-URBAN_MIN_HOUSEHOLDS: 5
+# Thresholds to derive settlement_types
+RURAL_MAX_HOUSEHOLDS: 1.25 # Maximum average number of households per building for rural settlements
+URBAN_MIN_HOUSEHOLDS: 5 # Minimum average number of households per building for urban settlements
+RURAL_MIN_BUILDING_DISTANCE: 50 # Minimum average distance between buildings for rural settlements
+URBAN_MAX_BUILDING_DISTANCE: 25 # Maximum average distance between buildings for urban settlements
 
-# Thresholds for the average distance between buildings to derive settlement_type
-RURAL_MIN_BUILDING_DISTANCE: 50  # meters
-URBAN_MAX_BUILDING_DISTANCE: 25  # meters
-MAX_BROWNFIELD_TRAFO_DISTANCE: 800
-
-# =============================================================================
-# CLUSTERING PARAMETERS
-# =============================================================================
-# Seed for the initialization of the k-means clustering for transformer placement
-# Keeping the same seed ensures consistent behavior in multiple runs
-# Has to be an integer between 0 and 4294967295
-K_MEANS_SEED: 3329829316
-
+# Transformer placement parameters
+MAX_BROWNFIELD_TRAFO_DISTANCE: 800 # Maximum distance from brownfield areas for transformer placement
 # Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
-LARGE_COMPONENT_LOWER_BOUND: 2000
-LARGE_COMPONENT_DIVIDER: 1000
+LARGE_COMPONENT_LOWER_BOUND: 2000 # Threshold for number of buildings in a component to apply k-means clustering
+LARGE_COMPONENT_DIVIDER: 1000 # Divider to derive the target number of clusters for k-means clustering
+# Seed for the initialization of the k-means clustering for transformer placement - keeping the same ensures deterministic behavior
+K_MEANS_SEED: 3329829316 # Has to be an integer between 0 and 4294967295
+
+
 
 # =============================================================================
-# VOLTAGE PROPERTIES
+# CABLE DIMENSIONING PARAMETERS
 # =============================================================================
-VN: 400  # V
-V_BAND_LOW: 0.95  # +-5%
-V_BAND_HIGH: 1.05
+# Load thresholds for different voltage drop limits
+SMALL_LOAD_THRESHOLD_KW: 100  # Threshold below which stricter voltage drop limits apply
+
+# Voltage drop limits (in V per km for consumer connections)
+VOLTAGE_DROP_SMALL_LOAD_V_PER_KM: 0.002  # 2e-3: Maximum voltage drop for loads ≤ 100kW (0.2% per km)
+VOLTAGE_DROP_LARGE_LOAD_V_PER_KM: 0.004  # 4e-3: Maximum voltage drop for loads > 100kW (0.4% per km)
+
+# Voltage drop limit for main distribution cables (total voltage drop as percentage of nominal voltage)
+VOLTAGE_DROP_DISTRIBUTION_PERCENT: 4.5  # 4.5% of 400V = 18V total voltage drop for distribution
+
+# =============================================================================
+# VOLTAGE PROPERTIES (mainly relevant for the pandapower output)
+# =============================================================================
+VN: 400  # Nominal voltage in the low voltage grid
+V_BAND_LOW: 0.95  # Relevant for worst case condition
+V_BAND_HIGH: 1.05 # +5%
