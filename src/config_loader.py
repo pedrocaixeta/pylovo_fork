@@ -13,6 +13,25 @@ def load_yaml_config(filepath: str):
     with open(abs_path, "r", encoding="utf-8") as file:
         return yaml.safe_load(file)
 
+def get_required_env_var(var_name: str, description: str) -> str:
+    """Get required environment variable with clear error message if missing."""
+    value = os.getenv(var_name)
+    if value is None:
+        print("=" * 80)
+        print("❌ MISSING DATABASE CONFIGURATION")
+        print("=" * 80)
+        print(f"Environment variable '{var_name}' is not set.")
+        print(f"Description: {description}")
+        print()
+        print("📋 SETUP REQUIRED:")
+        print("1. Create a .env file in the project root directory")
+        print("2. Copy one of the examples from config/config_database.yaml")
+        print("3. Update the values with your actual database credentials")
+        print()
+        print("=" * 80)
+        raise ValueError(f"Missing required environment variable: {var_name}")
+    return value
+
 # =============================================================================
 # PROJECT ROOT AND CONFIG LOADING
 # =============================================================================
@@ -27,27 +46,35 @@ CONFIG_CLASSIFICATION = load_yaml_config("../config/config_classification.yaml")
 CONFIG_CLUSTERING = load_yaml_config("../config/config_clustering.yaml")
 
 # =============================================================================
-# DATABASE CONFIGURATION (from CONFIG_DATABASE)
+# DATABASE CONFIGURATION (from .env file)
 # =============================================================================
-# Load database connection configuration from CONFIG_DATABASE
+# Load database connection configuration from .env file
 load_dotenv(find_dotenv(), override=True)
 
-# Primary database connection
-DBNAME = os.getenv("DBNAME", CONFIG_DATABASE["DBNAME"])
-DBUSER = os.getenv("DBUSER", CONFIG_DATABASE["DBUSER"])
-HOST = os.getenv("HOST", CONFIG_DATABASE["HOST"])
-PORT = os.getenv("PORT", CONFIG_DATABASE["PORT"])
-PASSWORD = os.getenv("PASSWORD", CONFIG_DATABASE["PASSWORD"])
-TARGET_SCHEMA = os.getenv("TARGET_SCHEMA", CONFIG_DATABASE["TARGET_SCHEMA"])
+# Primary database connection (required)
+DBNAME = get_required_env_var("DBNAME", "Database name for Pylovo")
+DBUSER = get_required_env_var("DBUSER", "Database username")
+HOST = get_required_env_var("HOST", "Database host address")
+PORT = get_required_env_var("PORT", "Database port number")
+PASSWORD = get_required_env_var("PASSWORD", "Database password")
+TARGET_SCHEMA = get_required_env_var("TARGET_SCHEMA", "Target schema name")
 
-# INFDB (external database) connection
-USE_INFDB = True if CONFIG_DATABASE["USE_INFDB"] in [True, "True", "true", 1, "1", "on"] else False
-INFDB_DBNAME = os.getenv("INFDB_DBNAME", CONFIG_DATABASE.get("INFDB_DBNAME"))
-INFDB_USER = os.getenv("INFDB_USER", CONFIG_DATABASE.get("INFDB_USER"))
-INFDB_HOST = os.getenv("INFDB_HOST", CONFIG_DATABASE.get("INFDB_HOST"))
-INFDB_PORT = os.getenv("INFDB_PORT", CONFIG_DATABASE.get("INFDB_PORT"))
-INFDB_PASSWORD = os.getenv("INFDB_PASSWORD", CONFIG_DATABASE.get("INFDB_PASSWORD"))
-INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", CONFIG_DATABASE.get("INFDB_SOURCE_SCHEMA", "public"))
+# INFDB (external database) connection (optional)
+USE_INFDB = os.getenv("USE_INFDB", "True").lower() in ["true", "1", "on"]
+if USE_INFDB:
+    INFDB_DBNAME = get_required_env_var("INFDB_DBNAME", "InfDB database name")
+    INFDB_USER = get_required_env_var("INFDB_USER", "InfDB username")
+    INFDB_HOST = get_required_env_var("INFDB_HOST", "InfDB host address")
+    INFDB_PORT = get_required_env_var("INFDB_PORT", "InfDB port number")
+    INFDB_PASSWORD = get_required_env_var("INFDB_PASSWORD", "InfDB password")
+    INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", "pylovo_input")
+else:
+    INFDB_DBNAME = None
+    INFDB_USER = None
+    INFDB_HOST = None
+    INFDB_PORT = None
+    INFDB_PASSWORD = None
+    INFDB_SOURCE_SCHEMA = None
 
 # =============================================================================
 # REGIONAL CONFIGURATION (from CONFIG_GRID)
