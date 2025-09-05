@@ -22,47 +22,32 @@ TEST_POSTCODES = [
         'postcode_id': 99999,
         'plz': 99999,
         'testing_plz': 91301,
-        'note': 'Forchheim testing area 3 - extended',
+        'note': 'Forchheim Test - Buckenhofen',
         'qkm': 1.0,
         'population': 1000,
         'coordinates': [
             (11.0278000, 49.7360000),
-            (11.0560000, 49.7360000),
-            (11.0560000, 49.7090000),
+            (11.0530000, 49.7360000),
+            (11.0530000, 49.7090000),
             (11.0278000, 49.7090000),
             (11.0278000, 49.7360000)  # Close the polygon
         ]
     },
-    #     {
-    #     'postcode_id': 99998,
-    #     'plz': 88888,
-    #     'testing_plz': 91301,
-    #     'note': 'Forchheim testing area 1 - center',
-    #     'qkm': 1.0,
-    #     'population': 1000,
-    #     'coordinates': [
-    #         (11.0300000, 49.7200000),
-    #         (11.0400000, 49.7200000),
-    #         (11.0400000, 49.7300000),
-    #         (11.0300000, 49.7300000),
-    #         (11.0300000, 49.7200000)  # Close the polygon
-    #     ]
-    # },
-    # {
-    #     'postcode_id': 99997,
-    #     'plz': 88889,
-    #     'testing_plz': 91301,
-    #     'note': 'Forchheim testing area 2 - north',
-    #     'qkm': 1.0,
-    #     'population': 1000,
-    #     'coordinates': [
-    #         (11.0450000, 49.7400000),
-    #         (11.0550000, 49.7400000),
-    #         (11.0550000, 49.7500000),
-    #         (11.0450000, 49.7500000),
-    #         (11.0450000, 49.7400000)  # Close the polygon
-    #     ]
-    # },
+    {
+        'postcode_id': 99998,
+        'plz': 99998,
+        'testing_plz': 91301,
+        'note': 'Forchheim Test - Serlbach',
+        'qkm': 1.0,
+        'population': 1000,
+        'coordinates': [
+            (11.089368, 49.736172),
+            (11.100773, 49.736172),
+            (11.100773, 49.73191),
+            (11.089368, 49.73191),
+            (11.089368, 49.736172)  # Close the polygon
+        ]
+    },
 ]
 
 
