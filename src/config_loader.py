@@ -79,32 +79,26 @@ else:
 # =============================================================================
 # REGIONAL CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================
-REGIONAL_SCALE = CONFIG_GENERATION.get("REGIONAL_SCALE", "postcode")
 PLZ = CONFIG_GENERATION.get("PLZ")
 AGS = CONFIG_GENERATION.get("AGS")
 
-# Validate regional scale
-if REGIONAL_SCALE not in ["municipality", "postcode"]:
-    raise ValueError(f"Invalid REGIONAL_SCALE: {REGIONAL_SCALE}. Must be 'municipality' or 'postcode'.")
-
-# Determine execution mode based on regional scale and input type
-if REGIONAL_SCALE == "postcode":
-    if PLZ is None:
-        raise ValueError("PLZ must be specified when REGIONAL_SCALE is 'postcode'.")
-    
+# Auto-detect regional scale based on which parameter is provided
+if PLZ is not None and AGS is not None:
+    raise ValueError("Both PLZ and AGS cannot be specified. Please specify either PLZ or AGS.")
+elif PLZ is not None:
+    REGIONAL_SCALE = "postcode"
     if isinstance(PLZ, list):
         EXECUTION_MODE = "multiple_plz"
     else:
         EXECUTION_MODE = "single_plz"
-        
-elif REGIONAL_SCALE == "municipality":
-    if AGS is None:
-        raise ValueError("AGS must be specified when REGIONAL_SCALE is 'municipality'.")
-    
+elif AGS is not None:
+    REGIONAL_SCALE = "municipality"
     if isinstance(AGS, list):
         EXECUTION_MODE = "multiple_ags"
     else:
         EXECUTION_MODE = "single_ags"
+else:
+    raise ValueError("Either PLZ or AGS must be specified in the configuration.")
 
 # =============================================================================
 # EXECUTION CONFIGURATION (from CONFIG_GENERATION)
