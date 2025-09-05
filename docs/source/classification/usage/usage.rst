@@ -3,38 +3,38 @@ Usage
 
 Step 1: Configure the classification
 ====================================
-Open the file :code:`config_classification.py`. Set up the classification by giving it a classification version,
+Open the file :code:`config/config_classification.yaml`. Set up the classification by giving it a classification version,
 a description and a region, e.g.:
 
-.. code-block:: python
+.. code-block:: yaml
 
-    CLASSIFICATION_VERSION = 1
-    CLASSIFICATION_VERSION_COMMENT = "set sample with inspected building quality"
-    CLASSIFICATION_REGION = 'Bayern'
+    CLASSIFICATION_VERSION: 1
+    CLASSIFICATION_VERSION_COMMENT: "set sample with inspected building quality"
+    CLASSIFICATION_REGION: Bayern
 
 A classification version is a unique identifier for your classification and can only be used once. The version comment can be used
 to describe the settings used in the classification version.
 For the region either choose one of the federal states of Germany
 
-.. code-block:: python
+.. code-block:: yaml
 
-    REGION_DICT = {1: 'Schleswig-Hohlstein',
-               2: 'Hamburg',
-               3: 'Niedersachsen',
-               4: 'Bremen',
-               5: 'Nordrhein-Westfalen',
-               6: 'Hessen',
-               7: 'Rheinland-Pfalz',
-               8: 'Baden-Württemberg',
-               9: 'Bayern',
-               10: 'Saarland',
-               11: 'Berlin',
-               12: 'Brandenburg',
-               13: 'Mecklenburg-Vorpommern',
-               14: 'Sachsen',
-               15: 'Sachsen-Anhalt',
-               16: 'Thüringen',
-               }
+    REGION_DICT:
+      1: Schleswig-Hohlstein
+      2: Hamburg
+      3: Niedersachsen
+      4: Bremen
+      5: Nordrhein-Westfalen
+      6: Hessen
+      7: Rheinland-Pfalz
+      8: Baden-Württemberg
+      9: Bayern
+      10: Saarland
+      11: Berlin
+      12: Brandenburg
+      13: Mecklenburg-Vorpommern
+      14: Sachsen
+      15: Sachsen-Anhalt
+      16: Thüringen
 
 | that are listed as values in the dictionary or use :code:`'Germany'` for the entire country.
 | Make sure that you have the building data for the chosen region.
@@ -46,7 +46,7 @@ Step 2: Calculate the Data for Clustering
 ==========================================
 | To generate the grids, calculate the grid parameters and filter erroneous grids run the file :code:`prepare_data_for_clustering.py`.
 
-Threshold values for filtering can be set in :code:`clustering.config_clustering`.
+Threshold values for filtering can be set in :code:`config/config_clustering.yaml`.
 
 The processes run here are explained in :doc:`../classification_steps/sampling`,
 :doc:`../classification_steps/grid_generation_for_classification`,
@@ -97,7 +97,7 @@ Step 6: Choose parameters for clustering
 =========================================
 
 To fast track step 6  you can call :code:`get_parameters_for_clustering`. The optimal parameters for clustering
-are calculated and outputed in the console. They should then be inserted in :code:`clustering.config_clustering` as explained below.
+are calculated and outputed in the console. They should then be inserted in :code:`config/config_clustering.yaml` as explained below.
 
 The package :code:`examples_correlation_and_factor_analysis` has the tools to choose the parameters for clustering.
 In this work, it is proposed to choose the clustering parameters according to the factor analysis.
@@ -119,21 +119,21 @@ Additional information like the explained variance of the factors or components 
 
 The correlation matrix and clustermap are plotted in the notebook :code:`1_2_correlation_matrix`
 
-After you have choosen the parameters set them in :code:`clustering.config_clustering`, like:
+After you have choosen the parameters set them in :code:`config/config_clustering.yaml`, like:
 
-.. code-block:: python
+.. code-block:: yaml
 
     # set clustering parameters
-    param1 = 'no_branches'
-    param2 = 'avg_trafo_dis'
-    param3 = 'max_no_of_households_of_a_branch'
-    param4 = 'no_house_connections_per_branch'
-    LIST_OF_CLUSTERING_PARAMETERS = [param1, param2, param3, param4]
+    LIST_OF_CLUSTERING_PARAMETERS:
+      - no_branches
+      - avg_trafo_dis
+      - max_no_of_households_of_a_branch
+      - no_house_connections_per_branch
 
 Step 7: Choose number of clusters
 =================================
 To fast track step 6  you can call :code:`get_no_clusters_for_clustering`. The optimal no_clusters for clustering
-are calculated and outputed in the console. They should then be inserted in :code:`clustering.config_clustering` as explained below.
+are calculated and outputed in the console. They should then be inserted in :code:`config/config_clustering.yaml` as explained below.
 
 In the package :code:`examples_indices` you will find two indices for finding the optimal number of clusters:
 
@@ -148,14 +148,14 @@ It is recommended to choose the number of clusters with the CH index from the no
     :alt: Default view
 
 Again according to the goals of clustering with orientation of the index results set the numbers of clusters
-for the cluster algorithms in :code:`clustering.config_clustering`:
+for the cluster algorithms in :code:`config/config_clustering.yaml`:
 
-.. code-block:: python
+.. code-block:: yaml
 
     # set number of clusters
-    N_CLUSTERS_KMEDOID = 5
-    N_CLUSTERS_KMEANS = 5
-    N_CLUSTERS_GMM = 4  # refers to gmm tied
+    N_CLUSTERS_KMEDOID: 5
+    N_CLUSTERS_KMEANS: 5
+    N_CLUSTERS_GMM: 4  # refers to gmm tied
 
 Step 8: Clustering results
 ===========================

@@ -3,13 +3,13 @@ Generate Synthetic Grids
 
 Configuration
 =============
-| To allow distinction for different parameters you can define grids with different version entries in ``config.yaml``.
-| Please enter your VERSION_ID and your VERSION_COMMENT in the ``config.yaml`` file.
+| To allow distinction for different parameters you can define grids with different version entries in ``config/config_generation.yaml``.
+| Please enter your VERSION_ID and your VERSION_COMMENT in the ``config/config_generation.yaml`` file.
 | If you don't want to change any parameters you can start with the current base version configurations.
 
 Create your first grid
 =========================================
-After defining your configuration in the ``config.yaml`` file, you can run:
+After defining your configuration in the ``config/config_generation.yaml`` file, you can run:
 
 ::
 

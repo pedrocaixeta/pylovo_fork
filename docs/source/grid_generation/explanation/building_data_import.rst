@@ -33,7 +33,7 @@ The imported buildings can be inspected using the QGIS visualisation :doc:`../..
 With InfDB
 ----------
 
-When ``USE_INFDB: True`` is set in the ``config.yaml`` file, importing building data is handled differently.
+When ``USE_INFDB: True`` is set in the ``config/config_database.yaml`` file, importing building data is handled differently.
 The source for the building data becomes the InfDB database.
 
 The InfDB processor loads the Pylovo-relevant tables into the ``pylovo_input`` schema of the InfDB database.
