@@ -1,0 +1,40 @@
+# =============================================================================
+# ANALYSIS AND PLOTTING CONFIGURATION
+# =============================================================================
+# This file contains settings for grid analysis, plotting, and municipal register
+
+# =============================================================================
+# PLOTTING CONFIGURATION
+# =============================================================================
+# Color mapping for different transformer sizes in plots
+PLOT_COLOR_DICT:
+  100: gold
+  160: orange
+  200: darkorange
+  250: peru
+  315: orangered
+  400: red
+  515: crimson
+  500: crimson
+  630: purple
+  715: blue
+  800: darkblue
+  1260: black
+
+# =============================================================================
+# MUNICIPAL REGISTER CONFIGURATION
+# =============================================================================
+# Define the columns that should be included in the municipal register
+# These columns are used for regional data analysis and grid generation
+MUNICIPAL_REGISTER:
+  - plz
+  - pop
+  - area
+  - lat
+  - lon
+  - ags
+  - name_city
+  - fed_state
+  - regio7
+  - regio5
+  - pop_den

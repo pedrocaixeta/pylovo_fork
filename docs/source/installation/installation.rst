@@ -62,8 +62,8 @@ Create your database
 - Install `PostGIS <https://postgis.net/documentation/getting_started/>`_. If you installed Stack Builder use it to install PostGIS.
 - `GDAL <https://gdal.org/en/stable/index.html>`_ is required for some geo-transformations. Ensure it is installed on your system. (e.g. for Ubuntu 24.04: ``sudo apt install gdal-bin``).
 - Create your database with the appropriate configuration (dbname, user, password, host, port).
-- Create a ``.env`` file in the root directory of the repository with these configurations or adjust the connections parameters in the ``config_data.py``.
-- Your configurations might might look like this:
+- Create a ``.env`` file in the root directory of the repository with these configurations.
+- Your configurations might look like this:
 
 ::
 
@@ -100,7 +100,7 @@ To do so, setup the fully dockerized InfDB from the corresponding `GitHub reposi
 Make sure to also run the processor in your InfDB instance. For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
 
 | Then, before running the ``main_constructor.py`` script to initialize the pylovo database set the ``USE_INFDB: True`` in the
-``config_data.yaml`` file.
+``config/config_database.yaml`` file.
 | Next, the connection configurations set in the InfDB have to be added in the pylovo repository as
 well: add the InfDB configuration to your ``.env`` file below the pylovo configurations:
 

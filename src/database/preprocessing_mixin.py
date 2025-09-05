@@ -21,7 +21,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         version_exists = self.cur.fetchone()[0]
         if not version_exists:
             consumer_categories_str = CONSUMER_CATEGORIES.to_json().replace("'", "''")
-            connection_available_cables_str = str(CONNECTION_AVAILABLE_CABLES).replace("'", "''")
+            connection_available_cables_str = str(CONSUMER_CONNECTION_AVAILABLE_CABLES).replace("'", "''")
             other_parameters_dict = {"LARGE_COMPONENT_LOWER_BOUND": LARGE_COMPONENT_LOWER_BOUND,
                                      "LARGE_COMPONENT_DIVIDER": LARGE_COMPONENT_DIVIDER, "VN": VN,
                                      "V_BAND_LOW": V_BAND_LOW, "V_BAND_HIGH": V_BAND_HIGH, }
@@ -52,6 +52,10 @@ class PreprocessingMixin(BaseMixin, ABC):
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = None
+        
+        # For cables, application_area is not needed - set to None
+        if 'typ' in df.columns:
+            df.loc[df['typ'] == 'Cable', 'application_area'] = None
 
         # Keep only relevant columns
         df = df[expected_cols]

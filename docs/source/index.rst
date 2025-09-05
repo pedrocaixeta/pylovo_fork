@@ -27,6 +27,7 @@ Contents
 In this documentation you can find instructions and information on:
 
 * How to install pylovo in :doc:`installation/installation`.
+* How to configure pylovo in :doc:`configuration`.
 * How to generate grids in :doc:`grid_generation/index`.
 
 .. image:: images/grid_generation/grid_generation_part_forchheim.png
@@ -54,6 +55,7 @@ Structure
 
     self
     installation/installation
+    configuration
     grid_generation/index
     classification/index
     visualisation/index
