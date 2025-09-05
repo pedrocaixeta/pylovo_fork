@@ -351,7 +351,8 @@ class GridGenerator:
         consumer_cat_df = self.dbc.get_consumer_categories()
         settlement_type = self.dbc.get_settlement_type_from_plz(plz)
         transformer_capacities, _ = self.dbc.get_transformer_data(settlement_type)
-        double_trans = np.multiply(transformer_capacities[2:4], 2)
+        # Use the two largest available transformers
+        double_trans = np.multiply(transformer_capacities[-2:], 2)
 
         # Get distance matrix and prepare for hierarchical clustering
         localid2vid, dist_mat, vid2localid = self.dbc.get_distance_matrix_from_kcid(kcid)
@@ -1027,7 +1028,8 @@ class GridGenerator:
                 std_type=cable, name=f"Line to {end_vid}", geodata=line_geodata, parallel=count, )
 
             # Store cable information in database
-            self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=f"Line to {end_vid}",
+            line_name = f"L{end_vid}"[:15]  # Truncate to fit database column
+            self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
                               std_type=cable,
                               from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
                               to_bus=pp.get_element_index(net, "bus", f"Consumer Nodebus {end_vid}"), length_km=cost_km)
@@ -1117,7 +1119,8 @@ class GridGenerator:
             to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km, std_type=cable,
             name=f"Line to {end_vid}", geodata=line_geodata, parallel=count, )
 
-        self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=f"Line to {end_vid}",
+        line_name = f"L{end_vid}"[:15]  # Truncate to fit database column
+        self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
             std_type=cable, from_bus=pp.get_element_index(net, "bus", "LVbus 1"),
             to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km)
 
@@ -1145,7 +1148,8 @@ class GridGenerator:
             to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {branch_start_node}"), length_km=cost_km,
             std_type=cable, name=f"Line to {branch_start_node}", geodata=line_geodata, parallel=count, )
 
-        self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=f"Line to {branch_start_node}",
+        line_name = f"L{branch_start_node}"[:15]  # Truncate to fit database column
+        self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
                           std_type=cable, from_bus=pp.get_element_index(net, "bus", "LVbus 1"),
                           to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {branch_start_node}"),
                           length_km=cost_km)
@@ -1250,7 +1254,9 @@ class GridGenerator:
                 to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km,
                 std_type=cable, name=f"Line to {end_vid}", geodata=line_geodata, parallel=count, )
 
-            self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=f"Line to {end_vid}",
+            # Truncate line name to fit database column (15 characters max)
+            line_name = f"L{end_vid}"[:15]  # Use "L" prefix + truncated end_vid
+            self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
                 std_type=cable, from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
                 to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km)
         return local_length_dict
