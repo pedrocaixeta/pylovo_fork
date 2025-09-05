@@ -55,7 +55,7 @@ class GridGenerator:
         self.plz = plz
         print('-------------------- start', self.plz, '---------------------------')
         self.dbc.create_temp_tables(plz)  # create PLZ-suffixed temp tables
-        self.dbc.commit_changes()
+        # self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
 
         try:
             self.generate_grid()
@@ -174,7 +174,7 @@ class GridGenerator:
             # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
             buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
             self.dbc.set_buildings_table(buildings_data, self.plz)
-            self.dbc.commit_changes()
+            # self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
         else:
             self.dbc.set_residential_buildings_table(self.plz)
             self.dbc.set_other_buildings_table(self.plz)
