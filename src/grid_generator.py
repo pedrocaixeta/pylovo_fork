@@ -230,11 +230,11 @@ class GridGenerator:
 
         # Run preprocessing functions that segment roads and connect buildings
         self.dbc.preprocess_ways()
-        print("Ways preprocessing completed in ways_tem.")
+        self.logger.info(f"Ways preprocessing completed in ways_tem.")
 
         # Build pgRouting topology on the processed network
         self.dbc.build_pgr_network_topology(self.plz)
-        print("pgRouting network topology created from ways_tem.")
+        self.logger.info(f"pgRouting network topology created from ways_tem.")
 
         self.dbc.update_ways_cost()
         unconn = self.dbc.set_vertice_id()
