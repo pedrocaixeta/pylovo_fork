@@ -84,19 +84,15 @@ K_MEANS_SEED: 3329829316 # Has to be an integer between 0 and 4294967295
 # =============================================================================
 # CABLE DIMENSIONING PARAMETERS
 # =============================================================================
-# Load thresholds for different voltage drop limits
-SMALL_LOAD_THRESHOLD_KW: 100  # Threshold below which stricter voltage drop limits apply
-
-# Voltage drop limits (in V per km for consumer connections)
-VOLTAGE_DROP_SMALL_LOAD_V_PER_KM: 0.002  # 2e-3: Maximum voltage drop for loads ≤ 100kW (0.2% per km)
-VOLTAGE_DROP_LARGE_LOAD_V_PER_KM: 0.004  # 4e-3: Maximum voltage drop for loads > 100kW (0.4% per km)
-
-# Voltage drop limit for main distribution cables (total voltage drop as percentage of nominal voltage)
-VOLTAGE_DROP_DISTRIBUTION_PERCENT: 4.5  # 4.5% of 400V = 18V total voltage drop for distribution
-
-# =============================================================================
-# VOLTAGE PROPERTIES (mainly relevant for the pandapower output)
-# =============================================================================
 VN: 400  # Nominal voltage in the low voltage grid
 V_BAND_LOW: 0.95  # Relevant for worst case condition
-V_BAND_HIGH: 1.05 # +5%
+V_BAND_HIGH: 1.05 # Only for pandapower - not for dimensioning
+### Load thresholds for different voltage drop limits
+SMALL_LOAD_THRESHOLD_KW: 100  # Threshold below which stricter voltage drop limits apply
+# Voltage drop limits for consumer connections (as percentage of nominal voltage per km)
+VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM: 0.05  # 0.05% per km: Maximum voltage drop for loads ≤ 100kW (0.002V per km)
+VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM: 0.1   # 0.1% per km: Maximum voltage drop for loads > 100kW (0.004V per km)
+# Voltage drop limit for feeder cables (total voltage drop as percentage of nominal voltage)
+VOLTAGE_DROP_DISTRIBUTION_PERCENT: 4.5  # 4.5% of 400V = 18V total voltage drop for distribution
+
+

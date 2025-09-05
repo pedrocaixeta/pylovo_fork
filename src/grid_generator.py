@@ -994,17 +994,19 @@ class GridGenerator:
                 # SECONDARY CONSTRAINT: Filter cables by voltage drop limits
                 # Different voltage drop limits based on load size for economic optimization
                 if sim_load <= SMALL_LOAD_THRESHOLD_KW:
-                    # Small loads: Stricter voltage drop limit (0.2% per km)
+                    # Small loads: Stricter voltage drop limit (0.05% of nominal voltage per km)
                     # This ensures better power quality for sensitive equipment
+                    voltage_drop_limit = VN * VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM / 100
                     voltage_available_cables_df = current_available_cables_df[
                         current_available_cables_df["cable_impedence"] <= 
-                        VOLTAGE_DROP_SMALL_LOAD_V_PER_KM / (Imax * cost_km / count)]
+                        voltage_drop_limit / (Imax * cost_km / count)]
                 else:
-                    # Large loads: Relaxed voltage drop limit (0.4% per km)
+                    # Large loads: Relaxed voltage drop limit (0.1% of nominal voltage per km)
                     # This allows economic cable selection for larger loads
+                    voltage_drop_limit = VN * VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM / 100
                     voltage_available_cables_df = current_available_cables_df[
                         current_available_cables_df["cable_impedence"] <= 
-                        VOLTAGE_DROP_LARGE_LOAD_V_PER_KM / (Imax * cost_km / count)]
+                        voltage_drop_limit / (Imax * cost_km / count)]
 
                 if len(voltage_available_cables_df) == 0:
                     # No cable meets voltage drop requirements - try more parallel cables
