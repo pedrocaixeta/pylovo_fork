@@ -9,6 +9,7 @@ You can read about:
 * A short graphical summary of the grid generation is provided.
 * The main resources and interfaces to generate and visualise grids.
 * The steps of the building data import are explained.
+* How to use the interactive Transformer Map UI for managing transformer data.
 * There is a more detailed explanation of the grid generation process.
 * The underlying database structure of Pylovo.
 
@@ -21,6 +22,7 @@ You can read about:
    explanation/overview
    explanation/resources
    explanation/building_data_import
+   explanation/transformer_map_ui
    explanation/grid_generation_process
    explanation/database
    explanation/infdb_buildings_processor
