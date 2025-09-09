@@ -192,12 +192,15 @@ class TransformerMapUI:
     
     def _get_html_template(self):
         """Return the HTML template as a string."""
-        return '''<!DOCTYPE html>
+        return r'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transformer Map UI</title>
+        <title>Transformer Map UI - v2.0</title>
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body {
@@ -683,28 +686,42 @@ class TransformerMapUI:
         function addTransformerMarker(position) {
             console.log('addTransformerMarker called with:', position);
             console.log('WKT string:', position.geom_wkt);
+            console.log('WKT string length:', position.geom_wkt.length);
+            console.log('WKT string type:', typeof position.geom_wkt);
             
             // Parse WKT geometry to get coordinates (handle both POINT and MULTIPOINT)
             // Try single parentheses first (for manually added transformers)
-            let wktMatch = position.geom_wkt.match(/POINT\\(([^)]+)\\)/);
+            let wktMatch = position.geom_wkt.match(/POINT\(([^)]+)\)/);
             console.log('POINT (single) match:', wktMatch);
             
             if (!wktMatch) {
                 // Try double parentheses (for existing transformers)
-                wktMatch = position.geom_wkt.match(/POINT\\(\\(([^)]+)\\)\\)/);
+                wktMatch = position.geom_wkt.match(/POINT\(\(([^)]+)\)\)/);
                 console.log('POINT (double) match:', wktMatch);
             }
             
             if (!wktMatch) {
-                // Try MULTIPOINT with single parentheses
-                wktMatch = position.geom_wkt.match(/MULTIPOINT\\(([^)]+)\\)/);
-                console.log('MULTIPOINT (single) match:', wktMatch);
+                // Try MULTIPOINT with single parentheses (no space)
+                wktMatch = position.geom_wkt.match(/MULTIPOINT\(([^)]+)\)/);
+                console.log('MULTIPOINT (single, no space) match:', wktMatch);
             }
             
             if (!wktMatch) {
-                // Try MULTIPOINT with double parentheses
-                wktMatch = position.geom_wkt.match(/MULTIPOINT\\(\\(([^)]+)\\)\\)/);
-                console.log('MULTIPOINT (double) match:', wktMatch);
+                // Try MULTIPOINT with double parentheses (no space)
+                wktMatch = position.geom_wkt.match(/MULTIPOINT\(\(([^)]+)\)\)/);
+                console.log('MULTIPOINT (double, no space) match:', wktMatch);
+            }
+            
+            if (!wktMatch) {
+                // Try MULTIPOINT with single parentheses (with space)
+                wktMatch = position.geom_wkt.match(/MULTIPOINT\s+\(([^)]+)\)/);
+                console.log('MULTIPOINT (single, with space) match:', wktMatch);
+            }
+            
+            if (!wktMatch) {
+                // Try MULTIPOINT with double parentheses (with space)
+                wktMatch = position.geom_wkt.match(/MULTIPOINT\s+\(\(([^)]+)\)\)/);
+                console.log('MULTIPOINT (double, with space) match:', wktMatch);
             }
             
             if (!wktMatch) {
@@ -932,8 +949,32 @@ class TransformerMapUI:
             }, 5000);
         }
 
+        // Test regex patterns
+        function testRegexPatterns() {
+            console.log('=== TESTING REGEX PATTERNS ===');
+            const testWKT = 'MULTIPOINT ((11.04272614542871 49.70848183138922))';
+            console.log('Test WKT:', testWKT);
+            
+            // Test all patterns
+            const patterns = [
+                { name: 'POINT (single)', regex: /POINT\(([^)]+)\)/ },
+                { name: 'POINT (double)', regex: /POINT\(\(([^)]+)\)\)/ },
+                { name: 'MULTIPOINT (single, no space)', regex: /MULTIPOINT\(([^)]+)\)/ },
+                { name: 'MULTIPOINT (double, no space)', regex: /MULTIPOINT\(\(([^)]+)\)\)/ },
+                { name: 'MULTIPOINT (single, with space)', regex: /MULTIPOINT\s+\(([^)]+)\)/ },
+                { name: 'MULTIPOINT (double, with space)', regex: /MULTIPOINT\s+\(\(([^)]+)\)\)/ }
+            ];
+            
+            patterns.forEach(pattern => {
+                const match = testWKT.match(pattern.regex);
+                console.log(`${pattern.name}:`, match ? 'MATCH' : 'NO MATCH', match);
+            });
+            console.log('=== END TEST ===');
+        }
+
         // Initialize map when page loads
         document.addEventListener('DOMContentLoaded', function() {
+            testRegexPatterns();
             initMap();
             loadPLZList();
             loadTransformerCapacities();
