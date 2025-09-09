@@ -189,6 +189,59 @@ class TransformerMapUI:
                     return jsonify({"success": False, "error": "Transformer not found"})
             except Exception as e:
                 return jsonify({"success": False, "error": str(e)})
+        
+        @self.app.route('/api/bulk-update-capacities', methods=['POST'])
+        def bulk_update_capacities():
+            """Bulk update transformer capacities for a PLZ area."""
+            try:
+                data = request.get_json()
+                print(f"Bulk update request data: {data}")
+                
+                plz = int(data['plz'])
+                distribution_method = data['distribution_method']
+                
+                if distribution_method == 'uniform':
+                    # Set all transformers to the same capacity
+                    transformer_rated_power = int(data['transformer_rated_power'])
+                    print(f"Uniform update: PLZ={plz}, capacity={transformer_rated_power}")
+                    success = self.dbc.bulk_update_capacities_uniform_trafo_ui(plz, transformer_rated_power)
+                    
+                elif distribution_method == 'percentage':
+                    # Apply percentage-based distribution
+                    capacity_distribution = data['capacity_distribution']
+                    print(f"Percentage update: PLZ={plz}, distribution={capacity_distribution}")
+                    success = self.dbc.bulk_update_capacities_percentage_trafo_ui(plz, capacity_distribution)
+                    
+                else:
+                    return jsonify({"success": False, "error": "Invalid distribution method"})
+                
+                print(f"Update result: {success}")
+                if success:
+                    return jsonify({"success": True})
+                else:
+                    return jsonify({"success": False, "error": "Failed to update capacities"})
+            except Exception as e:
+                print(f"Bulk update error: {str(e)}")
+                return jsonify({"success": False, "error": str(e)})
+        
+        @self.app.route('/api/clear-capacities', methods=['POST'])
+        def clear_capacities():
+            """Clear all capacity information for transformers in a PLZ area."""
+            try:
+                data = request.get_json()
+                plz = int(data['plz'])
+                print(f"Clear capacities request for PLZ: {plz}")
+                
+                success = self.dbc.clear_capacities_trafo_ui(plz)
+                print(f"Clear capacities result: {success}")
+                
+                if success:
+                    return jsonify({"success": True})
+                else:
+                    return jsonify({"success": False, "error": "Failed to clear capacities"})
+            except Exception as e:
+                print(f"Clear capacities error: {str(e)}")
+                return jsonify({"success": False, "error": str(e)})
     
     def _get_html_template(self):
         """Return the HTML template as a string."""
@@ -396,6 +449,265 @@ class TransformerMapUI:
         .legend-marker.red {
             background: #dc3545;
         }
+        
+        /* Bulk Management Styles */
+        .radio-group {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            margin: 8px 0;
+            padding: 4px 8px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .radio-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        
+        .radio-label:hover {
+            background-color: #e9ecef;
+        }
+        
+        .radio-label input[type="radio"] {
+            margin-right: 4px;
+            margin-left: 0;
+        }
+        
+        .radio-label input[type="radio"]:checked + span {
+            color: #007bff;
+            font-weight: 600;
+        }
+        
+        .distribution-panel {
+            margin: 15px 0;
+            padding: 15px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background-color: #f8f9fa;
+        }
+        
+        .capacity-percentage-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            gap: 10px;
+        }
+        
+        .capacity-percentage-item label {
+            min-width: 120px;
+            font-size: 14px;
+        }
+        
+        .percentage-slider {
+            flex: 1;
+            margin: 0 10px;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 8px;
+            border-radius: 4px;
+            background: #e9ecef;
+            outline: none;
+            position: relative;
+        }
+        
+        .percentage-slider::-webkit-slider-track {
+            width: 100%;
+            height: 8px;
+            cursor: pointer;
+            background: #e9ecef;
+            border-radius: 4px;
+        }
+        
+        .percentage-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 0px;
+            height: 0px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 2;
+        }
+        
+        .percentage-slider::-moz-range-track {
+            width: 100%;
+            height: 8px;
+            cursor: pointer;
+            background: #e9ecef;
+            border-radius: 4px;
+            border: none;
+        }
+        
+        .percentage-slider::-moz-range-thumb {
+            width: 0px;
+            height: 0px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        
+        .percentage-slider:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Enhanced slider with visual fill */
+        .slider-container {
+            position: relative;
+            flex: 1;
+            margin: 0 10px;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: visible;
+            padding: 0 8px;
+        }
+        
+        .slider-fill {
+            position: absolute;
+            top: 6px;
+            left: 8px;
+            height: 8px;
+            background: #007bff;
+            border-radius: 4px;
+            transition: width 0.1s ease;
+            width: 0%;
+        }
+        
+        .slider-thumb {
+            position: absolute;
+            top: 50%;
+            left: 8px;
+            width: 16px;
+            height: 16px;
+            background: #007bff;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            z-index: 3;
+            transition: left 0.1s ease;
+        }
+        
+        .percentage-slider {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+            z-index: 1;
+            pointer-events: none;
+        }
+        
+        .percentage-slider::-webkit-slider-track {
+            width: 100%;
+            height: 8px;
+            cursor: pointer;
+            background: transparent;
+            border-radius: 4px;
+        }
+        
+        .percentage-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 0px;
+            height: 0px;
+            border-radius: 50%;
+            background: transparent;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .percentage-slider::-moz-range-track {
+            width: 100%;
+            height: 8px;
+            cursor: pointer;
+            background: transparent;
+            border-radius: 4px;
+            border: none;
+        }
+        
+        .percentage-slider::-moz-range-thumb {
+            width: 0px;
+            height: 0px;
+            border-radius: 50%;
+            background: transparent;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .percentage-slider:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .percentage-value {
+            min-width: 40px;
+            text-align: right;
+            font-weight: bold;
+            color: #495057;
+        }
+        
+        .percentage-summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .btn-small:hover {
+            background: #5a6268;
+        }
+        
+        .bulk-status {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .bulk-status div {
+            margin: 2px 0;
+        }
+        
+        #transformer-count {
+            font-weight: bold;
+            color: #495057;
+        }
     </style>
 </head>
 <body>
@@ -444,6 +756,58 @@ class TransformerMapUI:
             </div>
         </div>
         
+        <div class="form-section">
+            <h4>Bulk Capacity Management</h4>
+            <div class="form-group">
+                <label>Distribution Method:</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="distribution-method" value="uniform" checked>
+                        <span>Uniform</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="distribution-method" value="percentage">
+                        <span>Percentage Mix</span>
+                    </label>
+                </div>
+            </div>
+            
+            <div id="uniform-distribution" class="distribution-panel">
+                <div class="form-group">
+                    <label for="bulk-capacity-select">Set All Transformers to:</label>
+                    <select id="bulk-capacity-select">
+                        <option value="">Select capacity...</option>
+                    </select>
+                </div>
+                <button id="apply-uniform" class="btn" onclick="applyUniformCapacity()" style="background: #007bff;">Apply to All Transformers</button>
+            </div>
+            
+            <div id="percentage-distribution" class="distribution-panel" style="display: none;">
+                <div class="form-group">
+                    <label>Capacity Distribution (%):</label>
+                    <div id="capacity-percentages">
+                        <!-- Will be populated dynamically -->
+                    </div>
+                    <div class="percentage-summary">
+                        <span id="total-percentage">Total: 0%</span>
+                        <button id="reset-percentages" class="btn-small" onclick="resetPercentages()">Reset</button>
+                    </div>
+                </div>
+                <button id="apply-percentage" class="btn" onclick="applyPercentageDistribution()" style="background: #6f42c1;">Apply Distribution Randomly</button>
+            </div>
+            
+            <div class="bulk-status">
+                <div id="bulk-status-text"></div>
+                <div id="transformer-count">Transformers in area: 0</div>
+            </div>
+            
+            <div class="form-group" style="margin-top: 15px;">
+                <button id="clear-capacities" class="btn" onclick="clearAllCapacities()" style="background: #dc3545; color: white;">
+                    Clear All Capacities
+                </button>
+            </div>
+        </div>
+        
         <div class="instructions">
             <h4>Instructions:</h4>
             <ul>
@@ -452,6 +816,8 @@ class TransformerMapUI:
                 <li>Click "Start Adding Transformers" to enable adding mode</li>
                 <li>Click on map to add new transformer</li>
                 <li>Click on existing transformer to edit/delete</li>
+                <li><strong>Bulk Management:</strong> Set all transformers to same capacity or use percentage distribution</li>
+                <li>Use percentage sliders to define capacity mix (must total 100%)</li>
             </ul>
         </div>
         <div id="status"></div>
@@ -671,6 +1037,9 @@ class TransformerMapUI:
                     document.getElementById('current-plz-display').textContent = `Current PLZ: ${plzNum}`;
                     document.getElementById('current-plz-display').style.background = '#d4edda';
                     document.getElementById('current-plz-display').style.color = '#155724';
+                    
+                    // Update transformer count for bulk management
+                    updateTransformerCount(data.positions.length);
                     
                     showStatus(`Loaded ${data.positions.length} transformer positions for PLZ ${plz}`, 'success');
                 } else {
@@ -972,12 +1341,373 @@ class TransformerMapUI:
             console.log('=== END TEST ===');
         }
 
+        // Bulk Management Functions
+        let availableCapacities = [];
+        let transformerCount = 0;
+        
+        // Load transformer capacities for bulk management
+        async function loadTransformerCapacitiesForBulk() {
+            try {
+                const response = await fetch('/api/transformer-capacities');
+                const data = await response.json();
+                if (data.success) {
+                    // Extract numeric capacity values from the response
+                    availableCapacities = data.capacities.map(cap => {
+                        // Extract numeric value from the capacity object
+                        return parseInt(cap.value);
+                    });
+                    populateBulkCapacitySelects();
+                }
+            } catch (error) {
+                console.error('Error loading transformer capacities:', error);
+            }
+        }
+        
+        // Populate bulk capacity selects
+        function populateBulkCapacitySelects() {
+            const bulkSelect = document.getElementById('bulk-capacity-select');
+            const percentageContainer = document.getElementById('capacity-percentages');
+            
+            // Clear existing options
+            bulkSelect.innerHTML = '<option value="">Select capacity...</option>';
+            percentageContainer.innerHTML = '';
+            
+            // Add options to uniform select
+            availableCapacities.forEach(capacity => {
+                const option = document.createElement('option');
+                option.value = capacity;
+                option.textContent = `${capacity} kVA`;
+                bulkSelect.appendChild(option);
+            });
+            
+            // Create percentage sliders for each capacity
+            availableCapacities.forEach(capacity => {
+                const item = document.createElement('div');
+                item.className = 'capacity-percentage-item';
+                item.innerHTML = `
+                    <label>${capacity} kVA:</label>
+                    <div class="slider-container">
+                        <div class="slider-fill" style="width: 0%"></div>
+                        <div class="slider-thumb" style="left: 0%"></div>
+                        <input type="range" class="percentage-slider" 
+                               min="0" max="100" value="0" 
+                               data-capacity="${capacity}"
+                               oninput="updatePercentageValue(this)">
+                    </div>
+                    <span class="percentage-value">0%</span>
+                `;
+                percentageContainer.appendChild(item);
+                
+                // Add mouse event handlers to the custom thumb
+                const container = item.querySelector('.slider-container');
+                const thumb = item.querySelector('.slider-thumb');
+                const slider = item.querySelector('.percentage-slider');
+                
+                // Make the entire container clickable
+                container.addEventListener('click', function(e) {
+                    const rect = container.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    // Account for 8px padding on each side
+                    const availableWidth = rect.width - 16;
+                    const clickPosition = Math.max(0, Math.min(availableWidth, x - 8));
+                    const percentage = Math.max(0, Math.min(100, (clickPosition / availableWidth) * 100));
+                    slider.value = Math.round(percentage);
+                    updatePercentageValue(slider);
+                });
+                
+                // Make thumb draggable
+                let isDragging = false;
+                
+                thumb.addEventListener('mousedown', function(e) {
+                    isDragging = true;
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', function(e) {
+                    if (isDragging) {
+                        const rect = container.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        // Account for 8px padding on each side
+                        const availableWidth = rect.width - 16;
+                        const dragPosition = Math.max(0, Math.min(availableWidth, x - 8));
+                        const percentage = Math.max(0, Math.min(100, (dragPosition / availableWidth) * 100));
+                        slider.value = Math.round(percentage);
+                        updatePercentageValue(slider);
+                    }
+                });
+                
+                document.addEventListener('mouseup', function() {
+                    isDragging = false;
+                });
+            });
+        }
+        
+        // Update percentage value display
+        function updatePercentageValue(slider) {
+            const value = parseInt(slider.value);
+            const valueSpan = slider.parentElement.nextElementSibling;
+            const sliderFill = slider.previousElementSibling.previousElementSibling;
+            const sliderThumb = slider.previousElementSibling;
+            
+            // Calculate positions accounting for 8px padding on each side
+            const containerWidth = slider.parentElement.offsetWidth - 16; // 16px total padding
+            const fillWidth = (value / 100) * containerWidth;
+            const thumbPosition = 8 + fillWidth; // 8px left padding + fill width
+            
+            // Update the visual fill and thumb position
+            sliderFill.style.width = fillWidth + 'px';
+            sliderThumb.style.left = thumbPosition + 'px';
+            valueSpan.textContent = value + '%';
+            
+            // Calculate current total
+            const allSliders = document.querySelectorAll('.percentage-slider');
+            let currentTotal = 0;
+            allSliders.forEach(s => currentTotal += parseInt(s.value));
+            
+            // If this slider would make total > 100%, cap it
+            if (currentTotal > 100) {
+                const maxAllowed = 100 - (currentTotal - value);
+                slider.value = maxAllowed;
+                const cappedFillWidth = (maxAllowed / 100) * containerWidth;
+                const cappedThumbPosition = 8 + cappedFillWidth;
+                sliderFill.style.width = cappedFillWidth + 'px';
+                sliderThumb.style.left = cappedThumbPosition + 'px';
+                valueSpan.textContent = maxAllowed + '%';
+            }
+            
+            // Update other sliders' max values and disabled state
+            updateSliderConstraints();
+            updateTotalPercentage();
+        }
+        
+        // Update slider constraints based on current total
+        function updateSliderConstraints() {
+            const allSliders = document.querySelectorAll('.percentage-slider');
+            let currentTotal = 0;
+            allSliders.forEach(s => currentTotal += parseInt(s.value));
+            
+            allSliders.forEach(slider => {
+                const currentValue = parseInt(slider.value);
+                const remaining = 100 - (currentTotal - currentValue);
+                
+                // Set max value to remaining percentage
+                slider.max = Math.max(0, remaining);
+                
+                // Disable if at max and others are at 100%
+                if (currentTotal >= 100 && currentValue < remaining) {
+                    slider.disabled = true;
+                    slider.style.opacity = '0.5';
+                } else {
+                    slider.disabled = false;
+                    slider.style.opacity = '1';
+                }
+            });
+        }
+        
+        // Update total percentage
+        function updateTotalPercentage() {
+            const sliders = document.querySelectorAll('.percentage-slider');
+            let total = 0;
+            sliders.forEach(slider => {
+                total += parseInt(slider.value);
+            });
+            
+            const totalSpan = document.getElementById('total-percentage');
+            totalSpan.textContent = `Total: ${total}%`;
+            
+            // Change color based on total
+            if (total === 100) {
+                totalSpan.style.color = '#28a745';
+            } else if (total > 100) {
+                totalSpan.style.color = '#dc3545';
+            } else {
+                totalSpan.style.color = '#ffc107';
+            }
+        }
+        
+        // Reset all percentages to 0
+        function resetPercentages() {
+            const sliders = document.querySelectorAll('.percentage-slider');
+            sliders.forEach(slider => {
+                slider.value = 0;
+                slider.max = 100;
+                slider.disabled = false;
+                slider.style.opacity = '1';
+                // Update the visual fill and thumb
+                const sliderFill = slider.previousElementSibling.previousElementSibling;
+                const sliderThumb = slider.previousElementSibling;
+                sliderFill.style.width = '0px';
+                sliderThumb.style.left = '8px'; // 8px left padding
+                updatePercentageValue(slider);
+            });
+        }
+        
+        // Apply uniform capacity to all transformers
+        async function applyUniformCapacity() {
+            if (!currentPLZ) {
+                showStatus('Please load a PLZ first', 'error');
+                return;
+            }
+            
+            const capacity = document.getElementById('bulk-capacity-select').value;
+            if (!capacity) {
+                showStatus('Please select a capacity', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/bulk-update-capacities', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        plz: currentPLZ,
+                        distribution_method: 'uniform',
+                        transformer_rated_power: parseInt(capacity)
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showStatus(`Set all ${transformerCount} transformers to ${capacity} kVA`, 'success');
+                    // Reload the data to show changes
+                    loadPLZData();
+                } else {
+                    showStatus('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Error applying uniform capacity: ' + error.message, 'error');
+            }
+        }
+        
+        // Apply percentage distribution
+        async function applyPercentageDistribution() {
+            if (!currentPLZ) {
+                showStatus('Please load a PLZ first', 'error');
+                return;
+            }
+            
+            const sliders = document.querySelectorAll('.percentage-slider');
+            const distribution = {};
+            let total = 0;
+            
+            sliders.forEach(slider => {
+                const capacity = parseInt(slider.dataset.capacity);
+                const percentage = parseInt(slider.value);
+                if (percentage > 0) {
+                    distribution[capacity] = percentage;
+                    total += percentage;
+                }
+            });
+            
+            if (total !== 100) {
+                showStatus('Total percentage must equal 100%', 'error');
+                return;
+            }
+            
+            if (Object.keys(distribution).length === 0) {
+                showStatus('Please set at least one capacity percentage', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/bulk-update-capacities', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        plz: currentPLZ,
+                        distribution_method: 'percentage',
+                        capacity_distribution: distribution
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    const distributionText = Object.entries(distribution)
+                        .map(([cap, pct]) => `${pct}% ${cap}kVA`)
+                        .join(', ');
+                    showStatus(`Applied distribution: ${distributionText}`, 'success');
+                    // Reload the data to show changes
+                    loadPLZData();
+                } else {
+                    showStatus('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Error applying distribution: ' + error.message, 'error');
+            }
+        }
+        
+        // Clear all capacities for transformers in the current PLZ
+        async function clearAllCapacities() {
+            if (!currentPLZ) {
+                showStatus('Please load a PLZ first', 'error');
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to clear all capacity information for transformers in this PLZ area?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/clear-capacities', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        plz: currentPLZ
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    showStatus('All capacities cleared successfully!', 'success');
+                    // Refresh the map to show updated capacities
+                    loadPLZData();
+                } else {
+                    showStatus('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            }
+        }
+        
+        // Update transformer count display
+        function updateTransformerCount(count) {
+            transformerCount = count;
+            document.getElementById('transformer-count').textContent = `Transformers in area: ${count}`;
+        }
+        
+        // Handle distribution method change
+        function handleDistributionMethodChange() {
+            const uniformPanel = document.getElementById('uniform-distribution');
+            const percentagePanel = document.getElementById('percentage-distribution');
+            const method = document.querySelector('input[name="distribution-method"]:checked').value;
+            
+            if (method === 'uniform') {
+                uniformPanel.style.display = 'block';
+                percentagePanel.style.display = 'none';
+            } else {
+                uniformPanel.style.display = 'none';
+                percentagePanel.style.display = 'block';
+            }
+        }
+        
         // Initialize map when page loads
         document.addEventListener('DOMContentLoaded', function() {
             testRegexPatterns();
             initMap();
             loadPLZList();
             loadTransformerCapacities();
+            loadTransformerCapacitiesForBulk();
+            
+            // Add event listeners for distribution method
+            document.querySelectorAll('input[name="distribution-method"]').forEach(radio => {
+                radio.addEventListener('change', handleDistributionMethodChange);
+            });
         });
     </script>
 </body>

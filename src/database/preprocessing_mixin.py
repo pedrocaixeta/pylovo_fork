@@ -1048,3 +1048,168 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(query, {"osm_id": osm_id, "transformer_rated_power": transformer_rated_power})
         self.conn.commit()
         return self.cur.rowcount > 0
+    
+    def bulk_update_capacities_uniform_trafo_ui(self, plz: int, transformer_rated_power: int) -> bool:
+        """
+        Set all transformers in a PLZ area to the same capacity.
+        
+        Args:
+            plz (int): The PLZ code
+            transformer_rated_power (int): The rated power in kVA to set for all transformers
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # First, check if there are any transformers in this PLZ
+            check_query = """
+                SELECT COUNT(DISTINCT t.osm_id)
+                FROM transformers t
+                JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                WHERE p.plz = %(plz)s
+            """
+            self.cur.execute(check_query, {"plz": plz})
+            count = self.cur.fetchone()[0]
+            print(f"Found {count} transformers in PLZ {plz}")
+            
+            if count == 0:
+                print("No transformers found in PLZ area")
+                return False
+            
+            query = """
+                UPDATE transformers 
+                SET transformer_rated_power = %(transformer_rated_power)s
+                WHERE osm_id IN (
+                    SELECT DISTINCT t.osm_id
+                    FROM transformers t
+                    JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                    WHERE p.plz = %(plz)s
+                )
+            """
+            self.cur.execute(query, {"plz": plz, "transformer_rated_power": transformer_rated_power})
+            rows_updated = self.cur.rowcount
+            print(f"Updated {rows_updated} transformers")
+            self.conn.commit()
+            return rows_updated > 0
+        except Exception as e:
+            print(f"Error in bulk_update_capacities_uniform_trafo_ui: {str(e)}")
+            return False
+    
+    def bulk_update_capacities_percentage_trafo_ui(self, plz: int, capacity_distribution: dict) -> bool:
+        """
+        Apply percentage-based distribution of transformer capacities.
+        
+        Args:
+            plz (int): The PLZ code
+            capacity_distribution (dict): Dictionary with capacity values as keys and percentages as values
+            Example: {400: 30, 630: 50, 1000: 20} means 30% 400kVA, 50% 630kVA, 20% 1000kVA
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        import random
+        
+        try:
+            # Get all transformer OSM IDs in the PLZ area
+            query = """
+                SELECT DISTINCT t.osm_id
+                FROM transformers t
+                JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                WHERE p.plz = %(plz)s
+            """
+            self.cur.execute(query, {"plz": plz})
+            transformer_ids = [row[0] for row in self.cur.fetchall()]
+            print(f"Found {len(transformer_ids)} transformers for percentage distribution")
+            
+            if not transformer_ids:
+                print("No transformers found in PLZ area for percentage distribution")
+                return False
+        
+            # Create capacity list based on percentages
+            capacity_list = []
+            for capacity, percentage in capacity_distribution.items():
+                if percentage > 0:
+                    count = int(len(transformer_ids) * percentage / 100)
+                    capacity_list.extend([capacity] * count)
+                    print(f"Added {count} transformers with {capacity}kVA capacity ({percentage}%)")
+            
+            # Fill remaining with the most common capacity if we have fewer than expected
+            if len(capacity_list) < len(transformer_ids):
+                most_common_capacity = max(capacity_distribution.keys(), key=lambda k: capacity_distribution[k])
+                remaining = len(transformer_ids) - len(capacity_list)
+                capacity_list.extend([most_common_capacity] * remaining)
+                print(f"Added {remaining} more transformers with {most_common_capacity}kVA capacity")
+            
+            print(f"Total capacity list length: {len(capacity_list)}, transformer count: {len(transformer_ids)}")
+            
+            # Shuffle to randomize distribution
+            random.shuffle(capacity_list)
+            
+            # Update each transformer
+            update_query = """
+                UPDATE transformers 
+                SET transformer_rated_power = %(transformer_rated_power)s
+                WHERE osm_id = %(osm_id)s
+            """
+            
+            updated_count = 0
+            for i, osm_id in enumerate(transformer_ids):
+                if i < len(capacity_list):
+                    self.cur.execute(update_query, {
+                        "osm_id": osm_id, 
+                        "transformer_rated_power": capacity_list[i]
+                    })
+                    updated_count += 1
+            
+            print(f"Updated {updated_count} transformers with new capacities")
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error in bulk_update_capacities_percentage_trafo_ui: {str(e)}")
+            return False
+    
+    def clear_capacities_trafo_ui(self, plz: int) -> bool:
+        """
+        Clear all capacity information for transformers in a PLZ area.
+        
+        Args:
+            plz (int): The PLZ code
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # First, check if there are any transformers in this PLZ
+            check_query = """
+                SELECT COUNT(DISTINCT t.osm_id)
+                FROM transformers t
+                JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                WHERE p.plz = %(plz)s
+            """
+            self.cur.execute(check_query, {"plz": plz})
+            count = self.cur.fetchone()[0]
+            print(f"Found {count} transformers in PLZ {plz} to clear")
+            
+            if count == 0:
+                print("No transformers found in PLZ area to clear")
+                return False
+            
+            # Clear the capacity information (set to NULL)
+            query = """
+                UPDATE transformers 
+                SET transformer_rated_power = NULL
+                WHERE osm_id IN (
+                    SELECT DISTINCT t.osm_id
+                    FROM transformers t
+                    JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                    WHERE p.plz = %(plz)s
+                )
+            """
+            self.cur.execute(query, {"plz": plz})
+            rows_updated = self.cur.rowcount
+            print(f"Cleared capacity information for {rows_updated} transformers")
+            self.conn.commit()
+            return rows_updated > 0
+        except Exception as e:
+            print(f"Error in clear_capacities_trafo_ui: {str(e)}")
+            return False
