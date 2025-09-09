@@ -131,6 +131,23 @@ Data Formats
 * **EPSG:3035**: European Terrestrial Reference System for calculations
 * **JSON**: API communication format
 
+OSM ID Generation
+~~~~~~~~~~~~~~~~
+
+The UI uses a specific format for identifying transformers:
+
+* **OSM-imported transformers**: Use their original OpenStreetMap ID (e.g., `123456789`)
+* **Manually added transformers**: Use the format `manual/<timestamp>` (e.g., `manual/1694271234`)
+
+The timestamp is generated using `int(time.time())` which provides:
+* **Uniqueness**: Unix timestamp ensures unique IDs
+* **Chronological ordering**: Newer transformers have higher IDs
+* **Consistency**: Matches the existing pylovo notation convention
+
+This format allows the system to distinguish between:
+* Original OSM data (numeric IDs)
+* User-added data (prefixed with `manual/`)
+
 Configuration
 ~~~~~~~~~~~~~
 
