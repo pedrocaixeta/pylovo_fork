@@ -47,9 +47,37 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
         self.logger.debug(f"DatabaseClient is constructed and connected to {self.db_path}.")
 
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures proper cleanup."""
+        self.close()
+    
+    def close(self):
+        """Explicitly close all database connections."""
+        try:
+            if hasattr(self, 'cur') and self.cur:
+                self.cur.close()
+        except Exception as e:
+            print(f"Warning: Error closing cursor: {e}")
+        
+        try:
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
+        except Exception as e:
+            print(f"Warning: Error closing connection: {e}")
+        
+        try:
+            if hasattr(self, 'sqla_engine') and self.sqla_engine:
+                self.sqla_engine.dispose()
+        except Exception as e:
+            print(f"Warning: Error disposing SQLAlchemy engine: {e}")
+    
     def __del__(self):
-        self.cur.close()
-        self.conn.close()
+        """Clean up database connections."""
+        self.close()
 
     @override
     def get_connection(self):

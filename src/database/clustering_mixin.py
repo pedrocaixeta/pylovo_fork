@@ -393,6 +393,47 @@ class ClusteringMixin(BaseMixin, ABC):
 
         return buildings_df
 
+    def get_existing_transformer_capacity_trafo_ui(self, plz: int, kcid: int, bcid: int) -> Optional[int]:
+        """
+        Check if there's an existing transformer with a specific capacity for the given cluster.
+        
+        Args:
+            plz (int): The postal code
+            kcid (int): K-means cluster ID
+            bcid (int): Building cluster ID
+            
+        Returns:
+            Optional[int]: Transformer capacity if found, None otherwise
+        """
+        # Get the geometry of the cluster area
+        cluster_geom_query = """
+            SELECT ST_Collect(geom) as cluster_geom
+            FROM buildings_tem
+            WHERE kcid = %(kcid)s AND bcid = %(bcid)s
+        """
+        self.cur.execute(cluster_geom_query, {"kcid": kcid, "bcid": bcid})
+        result = self.cur.fetchone()
+        
+        if not result or not result[0]:
+            return None
+            
+        cluster_geom = result[0]
+        
+        # Check if there's a transformer with a specific capacity in this area
+        transformer_query = """
+            SELECT transformer_rated_power
+            FROM transformers t
+            WHERE t.transformer_rated_power IS NOT NULL
+            AND ST_Intersects(t.geom, %(cluster_geom)s)
+            LIMIT 1
+        """
+        self.cur.execute(transformer_query, {"cluster_geom": cluster_geom})
+        result = self.cur.fetchone()
+        
+        if result:
+            return int(result[0])
+        return None
+
     def update_transformer_rated_power(self, plz: int, kcid: int, bcid: int, note: int):
         """
         Update the field transformer_rated_power in grid_result for a given building cluster (bcid).
@@ -420,6 +461,21 @@ class ClusteringMixin(BaseMixin, ABC):
         Returns:
         None. Performs an in‑place database update.
         """
+        # First check if there's an existing transformer with a specific capacity
+        existing_capacity = self.get_existing_transformer_capacity_trafo_ui(plz, kcid, bcid)
+        if existing_capacity is not None:
+            # Use the existing transformer capacity
+            update_query = """UPDATE grid_result
+                              SET transformer_rated_power = %(n)s
+                              WHERE version_id = %(v)s
+                                AND plz = %(p)s
+                                AND kcid = %(k)s
+                                AND bcid = %(b)s;"""
+            self.cur.execute(update_query,
+                             {"v": VERSION_ID, "p": plz, "k": kcid, "b": bcid, "n": existing_capacity})
+            self.logger.debug(f"Using existing transformer capacity {existing_capacity} kVA for plz={plz}, kcid={kcid}, bcid={bcid}")
+            return
+        
         sdl = self.get_settlement_type_from_plz(plz)
         transformer_capacities, _ = self.get_transformer_data(sdl)
 

@@ -870,3 +870,181 @@ class PreprocessingMixin(BaseMixin, ABC):
         if row and row[0]:
             return int(row[0])
         return plz
+
+    def get_transformer_positions_for_plz_trafo_ui(self, plz: int) -> list[dict]:
+        """
+        Get all transformer positions for a given PLZ from the transformers table.
+        
+        Args:
+            plz (int): The postal code to get transformer positions for
+            
+        Returns:
+            list[dict]: List of transformer position dictionaries with keys:
+                - osm_id: OSM identifier
+                - area: Transformer area
+                - transformer_rated_power: Transformer power rating
+                - type: Transformer type
+                - geom_type: Geometry type
+                - within_shopping: Within shopping area flag
+                - geom_wkt: Geometry as WKT (Well-Known Text)
+        """
+        query = """
+            SELECT 
+                t.osm_id,
+                t.area,
+                t.transformer_rated_power,
+                t.type,
+                t.geom_type,
+                t.within_shopping,
+                ST_AsText(ST_Transform(t.geom, 4326)) as geom_wkt
+            FROM transformers t
+            JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+            WHERE p.plz = %(plz)s
+            LIMIT 1000
+        """
+        self.cur.execute(query, {"plz": plz})
+        columns = [desc[0] for desc in self.cur.description]
+        return [dict(zip(columns, row)) for row in self.cur.fetchall()]
+
+    def add_transformer_position_trafo_ui(self, plz: int, geom_wkt: str, osm_id: str = None, 
+                                comment: str = "Manual", kcid: int = None, bcid: int = None, 
+                                transformer_rated_power: int = None) -> str:
+        """
+        Add a new transformer to the transformers table.
+        
+        Args:
+            plz (int): The postal code (for reference, not stored)
+            geom_wkt (str): Geometry as Well-Known Text (Point format)
+            osm_id (str, optional): OSM identifier
+            comment (str): Comment for the transformer (stored in type field)
+            kcid (int, optional): K-means cluster ID (not used)
+            bcid (int, optional): Building cluster ID (not used)
+            transformer_rated_power (int, optional): Transformer power rating
+            
+        Returns:
+            str: The osm_id of the created transformer
+        """
+        # Generate a unique OSM ID if not provided
+        if not osm_id:
+            import time
+            osm_id = f"manual_{int(time.time())}"
+        
+        # Insert into transformers table
+        transformer_query = """
+            INSERT INTO transformers (osm_id, area, type, transformer_rated_power, geom_type, within_shopping, geom)
+            VALUES (%(osm_id)s, %(area)s, %(type)s, %(transformer_rated_power)s, %(geom_type)s, %(within_shopping)s, ST_Transform(ST_GeomFromText(%(geom_wkt)s, 4326), 3035))
+            RETURNING osm_id
+        """
+        self.cur.execute(transformer_query, {
+            "osm_id": osm_id,
+            "area": None,  # area
+            "type": comment,  # store comment in type field
+            "transformer_rated_power": transformer_rated_power,
+            "geom_type": "manual",
+            "within_shopping": False,
+            "geom_wkt": geom_wkt
+        })
+        
+        # Commit the transaction
+        self.conn.commit()
+        
+        return osm_id
+
+    def delete_transformer_position_trafo_ui(self, grid_result_id: int) -> bool:
+        """
+        Delete a transformer position by grid_result_id.
+        
+        Args:
+            grid_result_id (int): The grid_result_id to delete
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        # Check if the transformer position exists
+        check_query = "SELECT 1 FROM transformer_positions WHERE grid_result_id = %(grid_result_id)s"
+        self.cur.execute(check_query, {"grid_result_id": grid_result_id})
+        if not self.cur.fetchone():
+            return False
+            
+        # Delete the transformer position (grid_result will be deleted via CASCADE)
+        delete_query = "DELETE FROM transformer_positions WHERE grid_result_id = %(grid_result_id)s"
+        self.cur.execute(delete_query, {"grid_result_id": grid_result_id})
+        
+        return True
+
+    def delete_transformer_by_osm_id_trafo_ui(self, osm_id: str) -> bool:
+        """
+        Delete a transformer by osm_id from the transformers table.
+        
+        Args:
+            osm_id (str): The osm_id to delete
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        delete_query = "DELETE FROM transformers WHERE osm_id = %(osm_id)s"
+        self.cur.execute(delete_query, {"osm_id": osm_id})
+        
+        return self.cur.rowcount > 0
+
+    def get_plz_bounds_trafo_ui(self, plz: int) -> dict:
+        """
+        Get the bounding box for a given PLZ.
+        
+        Args:
+            plz (int): The postal code
+            
+        Returns:
+            dict: Bounding box with keys: minx, miny, maxx, maxy
+        """
+        query = """
+            SELECT ST_XMin(ST_Transform(geom, 4326)) as minx, ST_YMin(ST_Transform(geom, 4326)) as miny, 
+                   ST_XMax(ST_Transform(geom, 4326)) as maxx, ST_YMax(ST_Transform(geom, 4326)) as maxy
+            FROM postcode 
+            WHERE plz = %(plz)s
+        """
+        self.cur.execute(query, {"plz": plz})
+        row = self.cur.fetchone()
+        if row:
+            return {
+                "minx": float(row[0]),
+                "miny": float(row[1]), 
+                "maxx": float(row[2]),
+                "maxy": float(row[3])
+            }
+        return None
+
+    def get_available_plz_list_trafo_ui(self) -> list[int]:
+        """
+        Get list of available PLZ codes that have been processed.
+        
+        Returns:
+            list[int]: List of PLZ codes
+        """
+        query = """
+            SELECT DISTINCT plz 
+            FROM postcode 
+            ORDER BY plz
+        """
+        self.cur.execute(query)
+        return [row[0] for row in self.cur.fetchall()]
+    
+    def update_transformer_capacity_trafo_ui(self, osm_id: str, transformer_rated_power: int) -> bool:
+        """
+        Update transformer capacity.
+        
+        Args:
+            osm_id (str): The OSM ID of the transformer
+            transformer_rated_power (int): The new rated power in kVA
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        query = """
+            UPDATE transformers 
+            SET transformer_rated_power = %(transformer_rated_power)s
+            WHERE osm_id = %(osm_id)s
+        """
+        self.cur.execute(query, {"osm_id": osm_id, "transformer_rated_power": transformer_rated_power})
+        self.conn.commit()
+        return self.cur.rowcount > 0
