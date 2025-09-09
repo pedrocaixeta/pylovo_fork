@@ -598,8 +598,7 @@ class TransformerMapUI:
             background: #007bff;
             border: 2px solid #fff;
             border-radius: 50%;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            transform: translate(-50%, -50%);
+            transform: translate(0%, -50%);
             cursor: pointer;
             z-index: 3;
             transition: left 0.1s ease;
