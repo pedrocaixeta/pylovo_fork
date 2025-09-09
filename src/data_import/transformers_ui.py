@@ -144,7 +144,7 @@ class TransformerMapUI:
                 # Generate a unique OSM ID if not provided
                 if not osm_id:
                     import time
-                    osm_id = f"manual_{int(time.time())}"
+                    osm_id = f"manual/{int(time.time())}"
                 
                 result_osm_id = self.dbc.add_transformer_position_trafo_ui(
                     plz=plz,
@@ -749,7 +749,7 @@ class TransformerMapUI:
             console.log('Creating marker at:', [lat, lng]);
             
             // Determine if this is a manually added transformer
-            const isManual = position.osm_id && position.osm_id.startsWith('manual_');
+            const isManual = position.osm_id && position.osm_id.startsWith('manual/');
             const markerColor = isManual ? 'red' : 'blue';
             
             // Create custom icon based on transformer type
