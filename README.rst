@@ -12,15 +12,20 @@
    * - Documentation
      - |badge_documentation|
 
+============
 **pylovo (PYthon tool for LOw-VOltage distribution grid generation)**
 ============
 
+**Overview**
+------------
+
 pylovo is a Python-based tool for generating synthetic low-voltage (LV) distribution grids using open data sources. 
 Designed for energy system modeling and research, it generates realistic and analyzable grid models for user-defined geographic areas. 
-This enables researchers and practitioners to explore critical questions of the energy transition—such as the analysis of the potential integration of distributed energy resources, how their flexibilities can be leveraged (e.g. with home energy management systems) while accounting for electricity grid constraints.
+This enables researchers and practitioners to explore critical questions of the energy transition—such as the analysis of the potential integration of distributed energy resources, how their flexibilities can be leveraged while accounting for electricity grid constraints.
 
 
 **Key Features**
+------------
 
 * **Synthetic Grid Generation**: Creates realistic LV distribution networks with complete topology (nodes, lines, cables, transformers) using real-world geographic and infrastructure data.
 * **Comprehensive Data Preprocessing**: Uses a reproducible and scalable preprocessing pipeline using harmonized open datasets (see section "data Sources & Preprocessing Pipeline").
@@ -30,7 +35,7 @@ This enables researchers and practitioners to explore critical questions of the 
 * **Visualization Support**: Includes tools for grid visualization and analysis using QGIS and other geospatial tools.
 
 **Regional Coverage**
-
+------------
 * The default data currently supports all regions of Bavaria (extending to full Germany within the running `NEED <https://need.energy/>`_ project)
 * Other countries can be added by two steps:
 
@@ -38,7 +43,7 @@ This enables researchers and practitioners to explore critical questions of the 
   2. Adjusting parameters to consider different grid dimensioning strategies across countries in the ``config_generation.yaml`` file
 
 **Data Sources & Preprocessing Pipeline**
-
+------------
 pylovo leverages a reproducible and scalable open-data-based preprocessing pipeline within a dockerized environment that integrates multiple harmonized datasets into a unified Infrastructure Database (`InfDB <https://github.com/tum-ens/InfDB>`_):
 
 * **3D Building Models (LoD2)**: High-resolution building geometries for accurate spatial allocation
@@ -48,9 +53,9 @@ pylovo leverages a reproducible and scalable open-data-based preprocessing pipel
 * **Street Graph Construction**: Network routing consistent with cadastral information for realistic grid topology
 
 **Quick Start**
+------------
 
-**Requirements**: Python 3.12+ and PostgreSQL with PostGIS extension
-
+0. **Requirements**: Python 3.12+ and PostgreSQL with PostGIS extension
 1. **Setup InfDB**: Clone and set up the `InfDB <https://github.com/tum-ens/InfDB>`_ system using Docker
 2. **Run preprocessing pipeline**: Execute the data preprocessing as described in the InfDB documentation to populate InfDB with harmonized datasets
 3. **Clone pylovo**: ``git clone https://github.com/tum-ens/pylovo.git``
@@ -61,10 +66,10 @@ pylovo leverages a reproducible and scalable open-data-based preprocessing pipel
 8. **Analyze results**: Use provided visualization tools and statistical analysis features
 
 This setup ensures access to the full preprocessing pipeline with 3D building models, census data, and cadastral information for enhanced accuracy in grid generation.
-
 For detailed tutorials and documentation, see the `notebook_tutorials` directory and visit `https://pylovo.readthedocs.io <https://pylovo.readthedocs.io>`_.
 
 **Scientific Background**
+------------
 
 For detailed methodology, see: `Reveron Baecker et al. (2025): Generation of low-voltage synthetic grid data for energy system modeling with the pylovo tool <https://doi.org/10.1016/j.segan.2024.101617>`_
 
