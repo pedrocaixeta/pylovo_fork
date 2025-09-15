@@ -12,7 +12,7 @@
    * - Documentation
      - |badge_documentation|
 
-============
+
 **pylovo (PYthon tool for LOw-VOltage distribution grid generation)**
 ============
 
