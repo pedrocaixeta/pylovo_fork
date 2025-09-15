@@ -15,6 +15,7 @@ import sys
 import argparse
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
+import time
 
 try:
     from flask import Flask, render_template, request, jsonify
@@ -143,7 +144,6 @@ class TransformerMapUI:
                 
                 # Generate a unique OSM ID if not provided
                 if not osm_id:
-                    import time
                     osm_id = f"manual/{int(time.time())}"
                 
                 result_osm_id = self.dbc.add_transformer_position_trafo_ui(

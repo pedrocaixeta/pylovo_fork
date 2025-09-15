@@ -2,6 +2,7 @@ import json
 import warnings
 from abc import ABC
 import pandas as pd
+import time
 
 from src.config_loader import *
 from src.database.base_mixin import BaseMixin
@@ -926,7 +927,6 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         # Generate a unique OSM ID if not provided
         if not osm_id:
-            import time
             osm_id = f"manual_{int(time.time())}"
         
         # Insert into transformers table
