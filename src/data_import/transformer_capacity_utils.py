@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Utility functions for transformer capacity management.
 
@@ -69,40 +68,6 @@ def get_transformer_capacity_options() -> List[Dict[str, str]]:
         })
     
     return options
-
-
-def get_transformer_capacity_by_name(name: str) -> Optional[Dict[str, int]]:
-    """
-    Get transformer capacity details by equipment name.
-    
-    Args:
-        name (str): Equipment name (e.g., 'Tr_100')
-        
-    Returns:
-        Optional[Dict[str, int]]: Transformer capacity dictionary or None if not found
-    """
-    capacities = get_transformer_capacities()
-    for capacity in capacities:
-        if capacity['name'] == name:
-            return capacity
-    return None
-
-
-def get_transformer_capacity_by_kva(kva: int) -> Optional[Dict[str, int]]:
-    """
-    Get transformer capacity details by kVA rating.
-    
-    Args:
-        kva (int): Transformer capacity in kVA
-        
-    Returns:
-        Optional[Dict[str, int]]: Transformer capacity dictionary or None if not found
-    """
-    capacities = get_transformer_capacities()
-    for capacity in capacities:
-        if capacity['s_max_kva'] == kva:
-            return capacity
-    return None
 
 
 def validate_transformer_capacity(capacity: int) -> bool:

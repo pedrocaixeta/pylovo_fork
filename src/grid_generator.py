@@ -9,6 +9,7 @@ from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
 from sklearn.cluster import KMeans
 from concurrent.futures import ProcessPoolExecutor, as_completed  # lightweight parallel execution
+import multiprocessing as mp
 
 import src.database.database_client as dbc
 from src.infdb.infdb_client import InfdbClient
@@ -91,16 +92,10 @@ class GridGenerator:
         """
         plz_list = [int(row["plz"]) for _, row in df_plz.iterrows()]
         if parallel and N_JOBS > 1:
-            # use concurrent workers when multiple cores are available
-            with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
-                # Create a dictionary that maps futures to their corresponding PLZ.
-                futures = {
-                    executor.submit(GridGenerator._worker, plz, analyze_grids): plz
-                    for plz in plz_list
-                }
-                # as_completed returns futures as they complete. This allows processing
-                # results as they become available and handling exceptions from individual
-                # workers without blocking the entire process.
+            # use a spawn context so no DB connection is inherited by children
+            ctx = mp.get_context("spawn")
+            with ProcessPoolExecutor(max_workers=N_JOBS, mp_context=ctx) as executor:
+                futures = {executor.submit(GridGenerator._worker, plz, analyze_grids): plz for plz in plz_list}
                 for future in as_completed(futures):
                     plz = futures[future]
                     try:
@@ -171,7 +166,6 @@ class GridGenerator:
         INTO: buildings_tem
         """
         if USE_INFDB:
-            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
             buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
             self.dbc.set_buildings_table(buildings_data, self.plz)
             # self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
