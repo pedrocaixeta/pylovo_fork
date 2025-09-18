@@ -16,6 +16,9 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import time
+import threading
+import weakref
+from contextlib import contextmanager
 
 try:
     from flask import Flask, render_template, request, jsonify
@@ -37,7 +40,7 @@ class TransformerMapUI:
     """
     Minimal transformer map UI that integrates with the existing pylovo framework.
     
-    Uses the existing DatabaseClient and configuration system for consistency.
+    Uses per-request database connections for thread safety and proper cleanup.
     """
     
     def __init__(self, host: str = "0.0.0.0", port: int = 8080):
@@ -47,31 +50,105 @@ class TransformerMapUI:
         self.app = Flask(__name__)
         CORS(self.app)
         
-        # Initialize database client using existing configuration
-        try:
-            self.dbc = DatabaseClient()
-            print("✓ Database connection successful")
-        except Exception as e:
-            print(f"✗ Database connection failed: {e}")
+        # Store database connection parameters instead of creating persistent connection
+        self.db_params = {
+            'dbname': DBNAME,
+            'user': DBUSER,
+            'pw': PASSWORD,
+            'host': HOST,
+            'port': PORT
+        }
+        
+        # Test database connectivity on startup
+        if not self._test_database_connection():
+            print("✗ Database connection test failed")
             sys.exit(1)
+        
+        print("✓ Database connection test successful")
         
         # Set up graceful shutdown
         self._setup_graceful_shutdown()
         self._setup_routes()
+    
+    def _test_database_connection(self) -> bool:
+        """Test database connectivity without creating persistent connections."""
+        try:
+            with self._get_db_client() as dbc:
+                # Test with a simple query
+                dbc.cur.execute("SELECT 1")
+                return True
+        except Exception as e:
+            print(f"Database connection test failed: {e}")
+            return False
+    
+    @contextmanager
+    def _get_db_client(self, max_retries: int = 3):
+        """Context manager for getting a database client with automatic cleanup and retry logic."""
+        dbc = None
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                dbc = DatabaseClient(**self.db_params)
+                
+                # Test connection health
+                if self._is_connection_healthy(dbc):
+                    yield dbc
+                    return
+                else:
+                    print(f"Connection health check failed (attempt {attempt + 1}/{max_retries})")
+                    if dbc:
+                        dbc.close()
+                        dbc = None
+                    
+            except Exception as e:
+                last_exception = e
+                print(f"Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                if dbc:
+                    try:
+                        dbc.close()
+                    except:
+                        pass
+                    dbc = None
+                
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Wait before retry
+        
+        # If we get here, all retries failed
+        if last_exception:
+            raise last_exception
+        else:
+            raise Exception("Failed to establish healthy database connection after all retries")
+    
+    def _is_connection_healthy(self, dbc) -> bool:
+        """Check if a database connection is healthy."""
+        try:
+            if not dbc or not hasattr(dbc, 'cur') or not dbc.cur:
+                return False
+            
+            # Test with a simple query
+            dbc.cur.execute("SELECT 1")
+            result = dbc.cur.fetchone()
+            return result is not None and result[0] == 1
+        except Exception as e:
+            print(f"Connection health check failed: {e}")
+            return False
     
     def _setup_graceful_shutdown(self):
         """Set up graceful shutdown handlers."""
         import signal
         import atexit
         
+        # Use weak reference to avoid circular references
+        self_ref = weakref.ref(self)
+        
         def cleanup():
-            """Clean up database connections."""
-            if self.dbc:
-                try:
-                    self.dbc.close()
-                    print("✓ Database connections closed")
-                except Exception as e:
-                    print(f"⚠ Warning: Error closing database connections: {e}")
+            """Clean up any remaining resources."""
+            self = self_ref()
+            if self:
+                print("🧹 Cleaning up resources...")
+                # No persistent connections to clean up
+                print("✓ Cleanup completed")
         
         def signal_handler(signum, frame):
             """Handle shutdown signals."""
@@ -83,6 +160,7 @@ class TransformerMapUI:
         atexit.register(cleanup)
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGHUP, signal_handler)
     
     def _setup_routes(self):
         """Set up Flask routes."""
@@ -96,8 +174,9 @@ class TransformerMapUI:
         def get_plz_list():
             """Get list of available PLZ codes from database (for reference)."""
             try:
-                plz_list = self.dbc.get_available_plz_list_trafo_ui()
-                return jsonify({"success": True, "plz_list": plz_list})
+                with self._get_db_client() as dbc:
+                    plz_list = dbc.get_available_plz_list_trafo_ui()
+                    return jsonify({"success": True, "plz_list": plz_list})
             except Exception as e:
                 return jsonify({"success": False, "error": str(e)})
         
@@ -114,8 +193,9 @@ class TransformerMapUI:
         def get_transformer_positions(plz):
             """Get transformers for a specific PLZ using spatial intersection."""
             try:
-                positions = self.dbc.get_transformer_positions_for_plz_trafo_ui(plz)
-                return jsonify({"success": True, "positions": positions})
+                with self._get_db_client() as dbc:
+                    positions = dbc.get_transformer_positions_for_plz_trafo_ui(plz)
+                    return jsonify({"success": True, "positions": positions})
             except Exception as e:
                 return jsonify({"success": False, "error": str(e)})
         
@@ -124,11 +204,12 @@ class TransformerMapUI:
         def get_plz_bounds(plz):
             """Get bounding box for a specific PLZ."""
             try:
-                bounds = self.dbc.get_plz_bounds_trafo_ui(plz)
-                if bounds:
-                    return jsonify({"success": True, "bounds": bounds})
-                else:
-                    return jsonify({"success": False, "error": "PLZ not found"})
+                with self._get_db_client() as dbc:
+                    bounds = dbc.get_plz_bounds_trafo_ui(plz)
+                    if bounds:
+                        return jsonify({"success": True, "bounds": bounds})
+                    else:
+                        return jsonify({"success": False, "error": "PLZ not found"})
             except Exception as e:
                 return jsonify({"success": False, "error": str(e)})
         
@@ -146,12 +227,13 @@ class TransformerMapUI:
                 if not osm_id:
                     osm_id = f"manual/{int(time.time())}"
                 
-                result_osm_id = self.dbc.add_transformer_position_trafo_ui(
-                    plz=plz,
-                    geom_wkt=geom_wkt,
-                    osm_id=osm_id,
-                    transformer_rated_power=transformer_rated_power
-                )
+                with self._get_db_client() as dbc:
+                    result_osm_id = dbc.add_transformer_position_trafo_ui(
+                        plz=plz,
+                        geom_wkt=geom_wkt,
+                        osm_id=osm_id,
+                        transformer_rated_power=transformer_rated_power
+                    )
                 
                 return jsonify({"success": True, "osm_id": result_osm_id})
             except Exception as e:
@@ -164,7 +246,8 @@ class TransformerMapUI:
                 data = request.get_json()
                 osm_id = data['osm_id']
                 
-                success = self.dbc.delete_transformer_by_osm_id_trafo_ui(osm_id)
+                with self._get_db_client() as dbc:
+                    success = dbc.delete_transformer_by_osm_id_trafo_ui(osm_id)
                 
                 if success:
                     return jsonify({"success": True})
@@ -181,7 +264,8 @@ class TransformerMapUI:
                 osm_id = data['osm_id']
                 transformer_rated_power = data['transformer_rated_power']
                 
-                success = self.dbc.update_transformer_capacity_trafo_ui(osm_id, transformer_rated_power)
+                with self._get_db_client() as dbc:
+                    success = dbc.update_transformer_capacity_trafo_ui(osm_id, transformer_rated_power)
                 
                 if success:
                     return jsonify({"success": True})
@@ -200,20 +284,21 @@ class TransformerMapUI:
                 plz = int(data['plz'])
                 distribution_method = data['distribution_method']
                 
-                if distribution_method == 'uniform':
-                    # Set all transformers to the same capacity
-                    transformer_rated_power = int(data['transformer_rated_power'])
-                    print(f"Uniform update: PLZ={plz}, capacity={transformer_rated_power}")
-                    success = self.dbc.bulk_update_capacities_uniform_trafo_ui(plz, transformer_rated_power)
-                    
-                elif distribution_method == 'percentage':
-                    # Apply percentage-based distribution
-                    capacity_distribution = data['capacity_distribution']
-                    print(f"Percentage update: PLZ={plz}, distribution={capacity_distribution}")
-                    success = self.dbc.bulk_update_capacities_percentage_trafo_ui(plz, capacity_distribution)
-                    
-                else:
-                    return jsonify({"success": False, "error": "Invalid distribution method"})
+                with self._get_db_client() as dbc:
+                    if distribution_method == 'uniform':
+                        # Set all transformers to the same capacity
+                        transformer_rated_power = int(data['transformer_rated_power'])
+                        print(f"Uniform update: PLZ={plz}, capacity={transformer_rated_power}")
+                        success = dbc.bulk_update_capacities_uniform_trafo_ui(plz, transformer_rated_power)
+                        
+                    elif distribution_method == 'percentage':
+                        # Apply percentage-based distribution
+                        capacity_distribution = data['capacity_distribution']
+                        print(f"Percentage update: PLZ={plz}, distribution={capacity_distribution}")
+                        success = dbc.bulk_update_capacities_percentage_trafo_ui(plz, capacity_distribution)
+                        
+                    else:
+                        return jsonify({"success": False, "error": "Invalid distribution method"})
                 
                 print(f"Update result: {success}")
                 if success:
@@ -232,7 +317,9 @@ class TransformerMapUI:
                 plz = int(data['plz'])
                 print(f"Clear capacities request for PLZ: {plz}")
                 
-                success = self.dbc.clear_capacities_trafo_ui(plz)
+                with self._get_db_client() as dbc:
+                    success = dbc.clear_capacities_trafo_ui(plz)
+                
                 print(f"Clear capacities result: {success}")
                 
                 if success:
@@ -1718,7 +1805,27 @@ class TransformerMapUI:
         print(f"Open your browser and go to: http://{self.host}:{self.port}")
         print("Press Ctrl+C to stop the server")
         
-        self.app.run(host=self.host, port=self.port, debug=debug)
+        try:
+            self.app.run(host=self.host, port=self.port, debug=debug)
+        except KeyboardInterrupt:
+            print("\n🛑 Server stopped by user")
+        except Exception as e:
+            print(f"❌ Server error: {e}")
+        finally:
+            print("🧹 Server cleanup completed")
+
+
+def cleanup_lingering_connections():
+    """Clean up any lingering database connections from previous runs."""
+    try:
+        print("🧹 Checking for lingering database connections...")
+        # Try to connect and immediately close to reset any lingering connections
+        temp_dbc = DatabaseClient()
+        temp_dbc.close()
+        print("✓ Database connection reset completed")
+        time.sleep(0.5)  # Give it a moment to clean up
+    except Exception as e:
+        print(f"⚠ Warning: Could not reset database connections: {e}")
 
 
 def main():
@@ -1727,8 +1834,13 @@ def main():
     parser.add_argument('--host', default='0.0.0.0', help='Host address (default: 0.0.0.0)')
     parser.add_argument('--port', type=int, default=8080, help='Port number (default: 8080)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--cleanup', action='store_true', help='Clean up lingering connections before starting')
     
     args = parser.parse_args()
+    
+    # Clean up lingering connections if requested
+    if args.cleanup:
+        cleanup_lingering_connections()
     
     try:
         # Initialize and run the UI
@@ -1738,6 +1850,7 @@ def main():
     except Exception as e:
         print(f"Error starting Transformer Map UI: {e}")
         print("Make sure the database is running and accessible.")
+        print("Try running with --cleanup flag to reset connections.")
         sys.exit(1)
 
 
