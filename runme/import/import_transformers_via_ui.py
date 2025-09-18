@@ -3,9 +3,26 @@
 Import Transformers via UI
 
 A command-line interface to launch the transformer map UI for managing transformer positions.
+Includes automatic port detection and cleanup features to prevent common deployment issues.
 
 Usage:
-    python runme/import/import_transformers_via_ui.py [--host HOST] [--port PORT]
+    python runme/import/import_transformers_via_ui.py [--host HOST] [--port PORT] [--debug] [--cleanup]
+
+Features:
+    - Automatic port detection (use --port 0)
+    - Automatic cleanup of conflicting processes
+    - Database connection management
+    - Interactive web-based transformer management
+
+Examples:
+    # Auto-detect available port (recommended)
+    python runme/import/import_transformers_via_ui.py --port 0
+    
+    # Use specific port with auto-cleanup
+    python runme/import/import_transformers_via_ui.py --port 8088
+    
+    # Clean up database connections
+    python runme/import/import_transformers_via_ui.py --port 0 --cleanup
 """
 
 import sys

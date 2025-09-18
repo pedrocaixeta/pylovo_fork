@@ -259,15 +259,18 @@ class TransformerMapUI:
             try:
                 data = request.get_json()
                 osm_id = data['osm_id']
+                print(f"DEBUG: API received deletion request for OSM ID: {osm_id}")
                 
                 with self._get_db_client() as dbc:
                     success = dbc.delete_transformer_by_osm_id_trafo_ui(osm_id)
                 
+                print(f"DEBUG: Deletion result: {success}")
                 if success:
                     return jsonify({"success": True})
                 else:
                     return jsonify({"success": False, "error": "Transformer not found"})
             except Exception as e:
+                print(f"DEBUG: Deletion error: {e}")
                 return jsonify({"success": False, "error": str(e)})
         
         @self.app.route('/api/update-transformer-capacity', methods=['POST'])
@@ -1322,11 +1325,13 @@ class TransformerMapUI:
 
         // Delete transformer
         async function deleteTransformer(osmId) {
+            console.log('DEBUG: Attempting to delete transformer with OSM ID:', osmId);
             if (!confirm('Are you sure you want to delete this transformer?')) {
                 return;
             }
             
             try {
+                console.log('DEBUG: Sending deletion request for OSM ID:', osmId);
                 const response = await fetch('/api/delete-transformer', {
                     method: 'POST',
                     headers: {
@@ -1336,6 +1341,7 @@ class TransformerMapUI:
                 });
                 
                 const data = await response.json();
+                console.log('DEBUG: Deletion response:', data);
                 
                 if (data.success) {
                     // Remove the specific marker from the map
@@ -1349,6 +1355,7 @@ class TransformerMapUI:
                     showStatus('Error deleting transformer: ' + data.error, 'error');
                 }
             } catch (error) {
+                console.error('DEBUG: Deletion error:', error);
                 showStatus('Error deleting transformer: ' + error.message, 'error');
             }
         }
