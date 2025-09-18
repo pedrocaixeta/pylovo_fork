@@ -882,7 +882,6 @@ class PreprocessingMixin(BaseMixin, ABC):
         Returns:
             list[dict]: List of transformer position dictionaries with keys:
                 - osm_id: OSM identifier
-                - area: Transformer area
                 - transformer_rated_power: Transformer power rating
                 - type: Transformer type
                 - geom_type: Geometry type
@@ -892,7 +891,6 @@ class PreprocessingMixin(BaseMixin, ABC):
         query = """
             SELECT 
                 t.osm_id,
-                t.area,
                 t.transformer_rated_power,
                 t.type,
                 t.geom_type,
@@ -931,13 +929,12 @@ class PreprocessingMixin(BaseMixin, ABC):
         
         # Insert into transformers table
         transformer_query = """
-            INSERT INTO transformers (osm_id, area, type, transformer_rated_power, geom_type, within_shopping, geom)
-            VALUES (%(osm_id)s, %(area)s, %(type)s, %(transformer_rated_power)s, %(geom_type)s, %(within_shopping)s, ST_Transform(ST_GeomFromText(%(geom_wkt)s, 4326), 3035))
+            INSERT INTO transformers (osm_id, type, transformer_rated_power, geom_type, within_shopping, geom)
+            VALUES (%(osm_id)s, %(type)s, %(transformer_rated_power)s, %(geom_type)s, %(within_shopping)s, ST_Transform(ST_GeomFromText(%(geom_wkt)s, 4326), 3035))
             RETURNING osm_id
         """
         self.cur.execute(transformer_query, {
             "osm_id": osm_id,
-            "area": None,  # area
             "type": comment,  # store comment in type field
             "transformer_rated_power": transformer_rated_power,
             "geom_type": "manual",

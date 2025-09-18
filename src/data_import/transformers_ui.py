@@ -18,6 +18,8 @@ from typing import List, Dict, Optional, Tuple
 import time
 import threading
 import weakref
+import socket
+import subprocess
 from contextlib import contextmanager
 
 try:
@@ -87,14 +89,14 @@ class TransformerMapUI:
         dbc = None
         last_exception = None
         
+        # Try to establish a healthy connection first
         for attempt in range(max_retries):
             try:
                 dbc = DatabaseClient(**self.db_params)
                 
                 # Test connection health
                 if self._is_connection_healthy(dbc):
-                    yield dbc
-                    return
+                    break  # Success, exit the loop
                 else:
                     print(f"Connection health check failed (attempt {attempt + 1}/{max_retries})")
                     if dbc:
@@ -114,11 +116,23 @@ class TransformerMapUI:
                 if attempt < max_retries - 1:
                     time.sleep(1)  # Wait before retry
         
-        # If we get here, all retries failed
-        if last_exception:
-            raise last_exception
-        else:
-            raise Exception("Failed to establish healthy database connection after all retries")
+        # Check if we successfully established a connection
+        if dbc is None or not self._is_connection_healthy(dbc):
+            if last_exception:
+                raise last_exception
+            else:
+                raise Exception("Failed to establish healthy database connection after all retries")
+        
+        # Now yield the healthy connection exactly once
+        try:
+            yield dbc
+        finally:
+            # Clean up the connection
+            if dbc:
+                try:
+                    dbc.close()
+                except:
+                    pass
     
     def _is_connection_healthy(self, dbc) -> bool:
         """Check if a database connection is healthy."""
@@ -1233,7 +1247,6 @@ class TransformerMapUI:
                     <p><strong>OSM ID:</strong> ${position.osm_id || 'N/A'}</p>
                     <p><strong>Capacity:</strong> <span id="capacity-${position.osm_id}">${position.transformer_rated_power ? position.transformer_rated_power + ' kVA' : 'N/A'}</span></p>
                     <p><strong>Type:</strong> ${position.type || 'N/A'}</p>
-                    <p><strong>Area:</strong> ${position.area || 'N/A'}</p>
                     <p><strong>Geometry Type:</strong> ${position.geom_type || 'N/A'}</p>
                     <p><strong>Shopping:</strong> ${position.within_shopping ? 'Yes' : 'No'}</p>
                     <div style="margin-top: 10px;">
@@ -1815,6 +1828,56 @@ class TransformerMapUI:
             print("🧹 Server cleanup completed")
 
 
+def find_available_port(start_port: int = 8080, max_attempts: int = 10) -> int:
+    """Find an available port starting from start_port."""
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('0.0.0.0', port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(f"No available ports found in range {start_port}-{start_port + max_attempts - 1}")
+
+
+def cleanup_port_processes(port: int) -> bool:
+    """Clean up any processes using the specified port."""
+    try:
+        # Find processes using the port
+        result = subprocess.run(['lsof', '-ti', f':{port}'], 
+                              capture_output=True, text=True, timeout=5)
+        
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split('\n')
+            print(f"🧹 Found {len(pids)} process(es) using port {port}, cleaning up...")
+            
+            for pid in pids:
+                try:
+                    subprocess.run(['kill', pid], check=True, timeout=5)
+                    print(f"✓ Killed process {pid}")
+                except subprocess.CalledProcessError:
+                    print(f"⚠ Could not kill process {pid}")
+                except subprocess.TimeoutExpired:
+                    print(f"⚠ Timeout killing process {pid}")
+            
+            # Wait a moment for cleanup
+            time.sleep(1)
+            return True
+        else:
+            print(f"✓ Port {port} is available")
+            return True
+            
+    except subprocess.TimeoutExpired:
+        print(f"⚠ Timeout checking port {port}")
+        return False
+    except FileNotFoundError:
+        print(f"⚠ lsof command not found, cannot check port {port}")
+        return False
+    except Exception as e:
+        print(f"⚠ Error checking port {port}: {e}")
+        return False
+
+
 def cleanup_lingering_connections():
     """Clean up any lingering database connections from previous runs."""
     try:
@@ -1832,9 +1895,10 @@ def main():
     """Main function to run the transformer map UI."""
     parser = argparse.ArgumentParser(description='Transformer Map UI')
     parser.add_argument('--host', default='0.0.0.0', help='Host address (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=8080, help='Port number (default: 8080)')
+    parser.add_argument('--port', type=int, default=8080, help='Port number (default: 8080, 0 for auto-detect)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--cleanup', action='store_true', help='Clean up lingering connections before starting')
+    parser.add_argument('--auto-cleanup', action='store_true', default=True, help='Automatically clean up port conflicts (default: True)')
     
     args = parser.parse_args()
     
@@ -1842,15 +1906,37 @@ def main():
     if args.cleanup:
         cleanup_lingering_connections()
     
+    # Determine port to use
+    if args.port == 0:
+        # Auto-detect available port
+        try:
+            port = find_available_port(8080)
+            print(f"🔍 Auto-detected available port: {port}")
+        except RuntimeError as e:
+            print(f"❌ {e}")
+            return
+    else:
+        port = args.port
+        # Check if port is available, clean up if needed
+        if args.auto_cleanup:
+            cleanup_port_processes(port)
+    
     try:
         # Initialize and run the UI
-        ui = TransformerMapUI(host=args.host, port=args.port)
+        ui = TransformerMapUI(host=args.host, port=port)
         ui.run(debug=args.debug)
         
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print(f"❌ Port {port} is still in use after cleanup attempt.")
+            print("💡 Try running with --port 0 for automatic port detection")
+            print("💡 Or manually kill the process: lsof -i :{port} && kill <PID>")
+        else:
+            print(f"❌ Network error: {e}")
     except Exception as e:
-        print(f"Error starting Transformer Map UI: {e}")
-        print("Make sure the database is running and accessible.")
-        print("Try running with --cleanup flag to reset connections.")
+        print(f"❌ Error starting Transformer Map UI: {e}")
+        print("💡 Make sure the database is running and accessible.")
+        print("💡 Try running with --cleanup flag to reset connections.")
         sys.exit(1)
 
 
