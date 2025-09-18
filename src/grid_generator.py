@@ -73,8 +73,10 @@ class GridGenerator:
             self.dbc.conn.rollback()  # rollback the transaction
             self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
             traceback.print_exc()
+        finally:
+            # Always clean up temporary tables, even if there was an error
+            self.dbc.drop_temp_tables(plz)  # drop PLZ-suffixed temp tables
 
-        self.dbc.drop_temp_tables(plz)  # drop PLZ-suffixed temp tables
         if refresh_mv:
             # update the materialized views to reflect changes in their base tables
             self.dbc.refresh_materialized_views()
