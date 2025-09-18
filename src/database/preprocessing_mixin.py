@@ -925,7 +925,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         # Generate a unique OSM ID if not provided
         if not osm_id:
-            osm_id = f"manual_{int(time.time())}"
+            osm_id = f"manual/{int(time.time())}"
         
         # Insert into transformers table
         transformer_query = """
@@ -967,6 +967,9 @@ class PreprocessingMixin(BaseMixin, ABC):
         delete_query = "DELETE FROM transformer_positions WHERE grid_result_id = %(grid_result_id)s"
         self.cur.execute(delete_query, {"grid_result_id": grid_result_id})
         
+        # Commit the transaction to persist the deletion
+        self.conn.commit()
+        
         return True
 
     def delete_transformer_by_osm_id_trafo_ui(self, osm_id: str) -> bool:
@@ -979,10 +982,64 @@ class PreprocessingMixin(BaseMixin, ABC):
         Returns:
             bool: True if deletion was successful, False otherwise
         """
+        # Debug: Check if transformer exists before deletion
+        check_query = "SELECT osm_id, type FROM transformers WHERE osm_id = %(osm_id)s"
+        self.cur.execute(check_query, {"osm_id": osm_id})
+        existing = self.cur.fetchone()
+        
+        if existing:
+            print(f"DEBUG: Found transformer to delete: {existing}")
+        else:
+            print(f"DEBUG: No transformer found with osm_id: {osm_id}")
+            # Let's also check for similar OSM IDs
+            similar_query = "SELECT osm_id, type FROM transformers WHERE osm_id LIKE %(pattern)s"
+            self.cur.execute(similar_query, {"pattern": f"%{osm_id.split('/')[-1]}%"})
+            similar = self.cur.fetchall()
+            if similar:
+                print(f"DEBUG: Found similar OSM IDs: {similar}")
+        
         delete_query = "DELETE FROM transformers WHERE osm_id = %(osm_id)s"
         self.cur.execute(delete_query, {"osm_id": osm_id})
         
-        return self.cur.rowcount > 0
+        rows_affected = self.cur.rowcount
+        print(f"DEBUG: Deletion query affected {rows_affected} rows")
+        
+        # Commit the transaction to persist the deletion
+        if rows_affected > 0:
+            self.conn.commit()
+            print(f"DEBUG: Transaction committed successfully")
+        
+        return rows_affected > 0
+
+    def clear_capacities_trafo_ui(self, plz: int) -> bool:
+        """
+        Clear all capacity information for transformers in a PLZ area.
+        
+        Args:
+            plz (int): The PLZ code
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            query = """
+                UPDATE transformers 
+                SET transformer_rated_power = NULL
+                WHERE osm_id IN (
+                    SELECT t.osm_id
+                    FROM transformers t
+                    JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                    WHERE p.plz = %(plz)s
+                )
+            """
+            self.cur.execute(query, {"plz": plz})
+            rows_updated = self.cur.rowcount
+            print(f"Cleared capacities for {rows_updated} transformers")
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error in clear_capacities_trafo_ui: {str(e)}")
+            return False
 
     def get_plz_bounds_trafo_ui(self, plz: int) -> dict:
         """
