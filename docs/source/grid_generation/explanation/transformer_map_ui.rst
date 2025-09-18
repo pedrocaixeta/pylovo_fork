@@ -59,12 +59,24 @@ The Transformer Map UI can be launched using the dedicated import script:
 
     uv run python runme/import/import_transformers_via_ui.py --port 8080
 
-Optional parameters:
-* ``--host``: Host address (default: 0.0.0.0)
-* ``--port``: Port number (default: 8080)
+**Automatic Port Detection** (Recommended):
+.. code-block:: bash
 
-Access the interface by opening your web browser and navigating to:
-``http://localhost:8080``
+    uv run python runme/import/import_transformers_via_ui.py --port 0
+
+Command-line parameters:
+* ``--host``: Host address (default: 0.0.0.0)
+* ``--port``: Port number (default: 8080, use 0 for auto-detection)
+* ``--debug``: Enable debug mode
+* ``--cleanup``: Clean up lingering database connections
+* ``--auto-cleanup``: Automatically clean up port conflicts (default: True)
+
+**Port Management Features:**
+* **Automatic Port Detection**: Use ``--port 0`` to automatically find an available port
+* **Automatic Cleanup**: Automatically detects and kills processes using the target port
+* **No More "Address already in use" errors**: The system handles port conflicts automatically
+
+Access the interface by opening your web browser and navigating to the displayed URL (e.g., ``http://localhost:8080``)
 
 Basic Workflow
 ~~~~~~~~~~~~~~
@@ -163,6 +175,39 @@ Transformer capacities are loaded from ``config/config_generation.yaml``:
       - 630
       - 1000
 
+Port Management
+~~~~~~~~~~~~~~~
+
+The Transformer Map UI includes automatic port management features to prevent common deployment issues:
+
+**Automatic Port Detection:**
+* Use ``--port 0`` to automatically find an available port
+* Scans ports 8080-8089 by default
+* Displays the selected port in the startup message
+
+**Automatic Cleanup:**
+* Automatically detects processes using the target port
+* Kills conflicting processes using ``lsof`` and ``kill`` commands
+* Enabled by default with ``--auto-cleanup`` flag
+* Provides clear feedback about cleanup actions
+
+**Error Handling:**
+* Graceful handling of port conflicts
+* Clear error messages with helpful suggestions
+* Automatic fallback to port detection when conflicts occur
+
+**Example Usage:**
+.. code-block:: bash
+
+    # Recommended: Auto-detect available port
+    uv run python runme/import/import_transformers_via_ui.py --port 0
+    
+    # Use specific port with auto-cleanup (default)
+    uv run python runme/import/import_transformers_via_ui.py --port 8088
+    
+    # Disable auto-cleanup if needed
+    uv run python runme/import/import_transformers_via_ui.py --port 8088 --no-auto-cleanup
+
 Troubleshooting
 ---------------
 
@@ -187,6 +232,16 @@ Common Issues
    - Ensure PostgreSQL is running
    - Verify database credentials in ``.env`` file
    - Check that the pylovo schema exists
+
+5. **"Address already in use" errors**:
+   - Use ``--port 0`` for automatic port detection
+   - The system will automatically clean up conflicting processes
+   - Or manually kill the process: ``lsof -i :8080 && kill <PID>``
+
+6. **Port conflicts**:
+   - The system automatically detects and resolves port conflicts
+   - Use ``--auto-cleanup`` flag (enabled by default)
+   - For manual cleanup, use ``--cleanup`` flag to reset database connections
 
 Performance Considerations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
