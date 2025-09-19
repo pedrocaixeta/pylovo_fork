@@ -92,27 +92,96 @@ class GridGenerator:
         :param parallel: optionally use parallel workers, defaults to True
         """
         plz_list = [int(row["plz"]) for _, row in df_plz.iterrows()]
-        if parallel and N_JOBS > 1:
-            # use concurrent workers when multiple cores are available
-            with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
+        
+        # Use parallel processing if:
+        # 1. parallel=True AND
+        # 2. We have multiple PLZ to process AND  
+        # 3. We have more than 1 CPU core available (can't parallelize with 1 core)
+        should_use_parallel = parallel and len(plz_list) > 1 and N_JOBS > 1
+        
+        print(f"🔍 Parallel processing check:")
+        print(f"   - parallel parameter: {parallel}")
+        print(f"   - Number of PLZ to process: {len(plz_list)}")
+        print(f"   - Available CPU cores: {N_JOBS}")
+        print(f"   - Will use parallel processing: {should_use_parallel}")
+        
+        if should_use_parallel:
+            # Use parallel processing for multiple PLZ
+            # Use up to N_JOBS workers, but not more than the number of PLZ
+            max_workers = min(N_JOBS, len(plz_list))
+            print(f"   - Using {max_workers} workers for {len(plz_list)} PLZ")
+            
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 # Create a dictionary that maps futures to their corresponding PLZ.
                 futures = {
                     executor.submit(GridGenerator._worker, plz, analyze_grids): plz
                     for plz in plz_list
                 }
-                # as_completed returns futures as they complete. This allows processing
-                # results as they become available and handling exceptions from individual
-                # workers without blocking the entire process.
-                for future in as_completed(futures):
-                    plz = futures[future]
+                
+                completed_count = 0
+                total_count = len(plz_list)
+                
+                try:
+                    worker_timeout_minutes = CONFIG_GENERATION.get("WORKER_TIMEOUT_MINUTES", 30)
+                    worker_timeout = worker_timeout_minutes * 60  # Convert to seconds
+                    for future in as_completed(futures, timeout=worker_timeout):
+                        plz = futures[future]
+                        completed_count += 1
+                        
+                        try:
+                            # Calling future.result() will raise an exception if the worker process failed.
+                            future.result()
+                            print(f"✓ Completed PLZ {plz} ({completed_count}/{total_count})")
+                        except Exception as exc:
+                            # Log the exception to record the failed PLZ without stopping the execution
+                            # for other, potentially successful, PLZs.
+                            self.logger.error(f"PLZ {plz} generated an exception: {exc}")
+                            traceback.print_exc()
+                            print(f"✗ Failed PLZ {plz} ({completed_count}/{total_count})")
+                            
+                            # Clean up the failed future to prevent memory leaks
+                            try:
+                                future.cancel()
+                            except Exception:
+                                pass
+                            
+                except KeyboardInterrupt:
+                    print(f"\n⚠️  KeyboardInterrupt received. Shutting down gracefully...")
+                    print(f"   Completed: {completed_count}/{total_count} PLZ")
+                    
+                    # Cancel all pending futures
+                    for future in futures:
+                        future.cancel()
+                    
+                    # Wait a bit for ongoing processes to finish gracefully
+                    print("   Waiting for ongoing processes to finish...")
                     try:
-                        # Calling future.result() will raise an exception if the worker process failed.
-                        future.result()
-                    except Exception as exc:
-                        # Log the exception to record the failed PLZ without stopping the execution
-                        # for other, potentially successful, PLZs.
-                        self.logger.error(f"PLZ {plz} generated an exception: {exc}")
-                        traceback.print_exc()
+                        # Give processes time to finish gracefully based on config
+                        shutdown_timeout = CONFIG_GENERATION.get("GRACEFUL_SHUTDOWN_TIMEOUT", 5)
+                        for future in as_completed(futures, timeout=shutdown_timeout):
+                            if not future.cancelled():
+                                plz = futures[future]
+                                try:
+                                    future.result()
+                                    print(f"✓ Gracefully completed PLZ {plz}")
+                                except Exception as exc:
+                                    print(f"✗ PLZ {plz} failed during graceful shutdown: {exc}")
+                    except Exception:
+                        # Timeout or other exception during graceful shutdown
+                        pass
+                    
+                    print("   Shutdown complete.")
+                    raise KeyboardInterrupt("Grid generation interrupted by user")
+                    
+                except Exception as e:
+                    print(f"\n❌ Error during parallel processing: {e}")
+                    print(f"   Completed: {completed_count}/{total_count} PLZ")
+                    
+                    # Cancel all pending futures on any error
+                    for future in futures:
+                        future.cancel()
+                    
+                    raise
         else:
             for plz in plz_list:
                 # defer materialized view refresh until all PLZ are processed
@@ -121,8 +190,12 @@ class GridGenerator:
                 )
 
         # refresh materialized views once after all grids have been generated
-        self.dbc.refresh_materialized_views()
-        self.dbc.commit_changes()
+        try:
+            self.dbc.refresh_materialized_views()
+            self.dbc.commit_changes()
+        except Exception as e:
+            self.logger.error(f"Error refreshing materialized views: {e}")
+            # Don't re-raise here as individual PLZ processing might have succeeded
 
     @staticmethod
     def _worker(plz: int, analyze_grids: bool) -> None:
@@ -130,10 +203,51 @@ class GridGenerator:
         log_file = Path("log") / f"log_{plz}.txt"
         if log_file.exists():
             log_file.unlink()  # Overwrite log file if it exists
-        gg = GridGenerator(log_file=log_file)  # dedicated logger per PLZ
-        gg.generate_grid_for_single_plz(
-            plz=plz, analyze_grids=analyze_grids, refresh_mv=False
-        )
+        
+        # Create a dedicated GridGenerator instance for this worker
+        # This ensures each worker has its own database connection and logger
+        gg = None
+        try:
+            print(f"Worker starting for PLZ {plz}...")
+            gg = GridGenerator(log_file=log_file)  # dedicated logger per PLZ
+            print(f"Worker initialized for PLZ {plz}")
+            
+            # Generate grid with proper error handling
+            gg.generate_grid_for_single_plz(
+                plz=plz, analyze_grids=analyze_grids, refresh_mv=False
+            )
+            
+            print(f"Worker completed for PLZ {plz}")
+            
+        except Exception as e:
+            print(f"Worker failed for PLZ {plz}: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Ensure proper cleanup even on failure
+            if gg and hasattr(gg, 'dbc') and gg.dbc:
+                try:
+                    gg.dbc.conn.rollback()
+                except Exception as rollback_error:
+                    print(f"Rollback error for PLZ {plz}: {rollback_error}")
+            raise
+        finally:
+            # Ensure proper cleanup of database connections
+            if gg and hasattr(gg, 'dbc') and gg.dbc:
+                try:
+                    # Use the close method which handles all connection types
+                    gg.dbc.close()
+                except Exception as cleanup_error:
+                    print(f"Cleanup error for PLZ {plz}: {cleanup_error}")
+            
+            # Also ensure GridGenerator cleanup
+            if gg:
+                try:
+                    gg.__del__()
+                except Exception as del_error:
+                    print(f"GridGenerator cleanup error for PLZ {plz}: {del_error}")
+            
+            print(f"Worker cleanup completed for PLZ {plz}")
 
     def generate_grid(self):
         if self.dbc.is_grid_generated(self.plz):

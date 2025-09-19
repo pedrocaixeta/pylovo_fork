@@ -15,12 +15,9 @@ class PreprocessingMixin(BaseMixin, ABC):
         super().__init__()
 
     def insert_version_if_not_exists(self):
-        count_query = f"""SELECT COUNT(*) 
-            FROM version 
-            WHERE "version_id" = '{VERSION_ID}'"""
-        self.cur.execute(count_query)
-        version_exists = self.cur.fetchone()[0]
-        if not version_exists:
+        """Insert version if it doesn't exist, with proper handling for concurrent access."""
+        try:
+            # Use a more robust approach with ON CONFLICT to handle race conditions
             consumer_categories_str = CONSUMER_CATEGORIES.to_json().replace("'", "''")
             connection_available_cables_str = str(CONSUMER_CONNECTION_AVAILABLE_CABLES).replace("'", "''")
             other_parameters_dict = {"LARGE_COMPONENT_LOWER_BOUND": LARGE_COMPONENT_LOWER_BOUND,
@@ -28,10 +25,24 @@ class PreprocessingMixin(BaseMixin, ABC):
                                      "V_BAND_LOW": V_BAND_LOW, "V_BAND_HIGH": V_BAND_HIGH, }
             other_paramters_str = str(other_parameters_dict).replace("'", "''")
 
-            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, connection_available_cables, other_parameters) VALUES
-                ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{connection_available_cables_str}', '{other_paramters_str}')"""
+            # Use INSERT ... ON CONFLICT DO NOTHING to handle concurrent access safely
+            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, connection_available_cables, other_parameters) 
+                VALUES ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{connection_available_cables_str}', '{other_paramters_str}')
+                ON CONFLICT (version_id) DO NOTHING"""
+            
             self.cur.execute(insert_query)
-            self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
+            self.conn.commit()
+            
+            # Check if we actually inserted something (for logging purposes)
+            if self.cur.rowcount > 0:
+                self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
+            else:
+                self.logger.debug(f"Version: {VERSION_ID} (already exists)")
+                
+        except Exception as e:
+            self.logger.error(f"Error inserting version {VERSION_ID}: {e}")
+            self.conn.rollback()
+            raise
 
     def insert_equipment_data_from_config(self, equipment_data: pd.DataFrame):
         """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config.
