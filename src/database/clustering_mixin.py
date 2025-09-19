@@ -393,6 +393,69 @@ class ClusteringMixin(BaseMixin, ABC):
 
         return buildings_df
 
+    def get_existing_transformer_capacity_trafo_ui(self, plz: int, kcid: int, bcid: int) -> Optional[int]:
+        """
+        Check if there's an existing transformer with a specific capacity for the given cluster.
+        
+        Args:
+            plz (int): The postal code
+            kcid (int): K-means cluster ID
+            bcid (int): Building cluster ID
+            
+        Returns:
+            Optional[int]: Transformer capacity if found, None otherwise
+        """
+        # Get the geometry of the cluster area as text format for proper psycopg2 serialization
+        cluster_geom_query = """
+            SELECT ST_AsText(ST_Collect(geom)) as cluster_geom_wkt
+            FROM buildings_tem
+            WHERE kcid = %(kcid)s AND bcid = %(bcid)s
+        """
+        self.cur.execute(cluster_geom_query, {"kcid": kcid, "bcid": bcid})
+        result = self.cur.fetchone()
+        
+        if not result or not result[0]:
+            return None
+            
+        cluster_geom_wkt = result[0]
+        
+        # Check if there's a transformer with a specific capacity in this area
+        # Use a more robust approach to handle GEOS topology issues
+        transformer_query = """
+            SELECT transformer_rated_power
+            FROM transformers t
+            WHERE t.transformer_rated_power IS NOT NULL
+            AND ST_Intersects(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)))
+            LIMIT 1
+        """
+        
+        try:
+            self.cur.execute(transformer_query, {"cluster_geom_wkt": cluster_geom_wkt})
+            result = self.cur.fetchone()
+            
+            if result:
+                return int(result[0])
+        except Exception as e:
+            # If ST_Intersects fails due to topology issues, try with a small buffer
+            try:
+                fallback_query = """
+                    SELECT transformer_rated_power
+                    FROM transformers t
+                    WHERE t.transformer_rated_power IS NOT NULL
+                    AND ST_DWithin(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)), 1.0)
+                    LIMIT 1
+                """
+                self.cur.execute(fallback_query, {"cluster_geom_wkt": cluster_geom_wkt})
+                result = self.cur.fetchone()
+                
+                if result:
+                    return int(result[0])
+            except Exception as fallback_error:
+                # Log the error but don't fail the entire process
+                self.logger.warning(f"Could not check transformer intersection for plz={plz}, kcid={kcid}, bcid={bcid}: {fallback_error}")
+        
+        return None
+
     def update_transformer_rated_power(self, plz: int, kcid: int, bcid: int, note: int):
         """
         Update the field transformer_rated_power in grid_result for a given building cluster (bcid).
@@ -420,6 +483,21 @@ class ClusteringMixin(BaseMixin, ABC):
         Returns:
         None. Performs an in‑place database update.
         """
+        # First check if there's an existing transformer with a specific capacity
+        existing_capacity = self.get_existing_transformer_capacity_trafo_ui(plz, kcid, bcid)
+        if existing_capacity is not None:
+            # Use the existing transformer capacity
+            update_query = """UPDATE grid_result
+                              SET transformer_rated_power = %(n)s
+                              WHERE version_id = %(v)s
+                                AND plz = %(p)s
+                                AND kcid = %(k)s
+                                AND bcid = %(b)s;"""
+            self.cur.execute(update_query,
+                             {"v": VERSION_ID, "p": plz, "k": kcid, "b": bcid, "n": existing_capacity})
+            self.logger.debug(f"Using existing transformer capacity {existing_capacity} kVA for plz={plz}, kcid={kcid}, bcid={bcid}")
+            return
+        
         sdl = self.get_settlement_type_from_plz(plz)
         transformer_capacities, _ = self.get_transformer_data(sdl)
 

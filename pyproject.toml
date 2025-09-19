@@ -7,6 +7,8 @@ requires-python = ">=3.12"
 dependencies = [
     "contextily==1.6.2",
     "factor-analyzer==0.5.1",
+    "flask>=3.1.2",
+    "flask-cors>=6.0.1",
     "geoalchemy2==0.17.1",
     "geopandas==1.0.1",
     "igraph==0.11.8",

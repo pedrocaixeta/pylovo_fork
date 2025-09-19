@@ -24,8 +24,8 @@ class UtilsMixin(BaseMixin, ABC):
             # create a dedicated table for each PLZ
             self.cur.execute(query.replace(base_name, table_name))
             # expose a session-local view with the common name
-            # self.cur.execute(f"CREATE TEMP VIEW {base_name} AS SELECT * FROM {table_name}")
-            self.cur.execute(f"CREATE OR REPLACE VIEW {base_name} AS SELECT * FROM {table_name}")
+            self.cur.execute(f"CREATE TEMP VIEW {base_name} AS SELECT * FROM {table_name}")
+            # self.cur.execute(f"CREATE OR REPLACE VIEW {base_name} AS SELECT * FROM {table_name}") #only for debugging
 
     def drop_temp_tables(self, plz: int) -> None:
         """Drop PLZ-suffixed tables and their views."""
@@ -33,7 +33,8 @@ class UtilsMixin(BaseMixin, ABC):
             self.cur.execute(f"DROP VIEW IF EXISTS {base_name}")
             self.cur.execute(f"DROP TABLE IF EXISTS {base_name}_{plz}")
         self.cur.execute("DROP VIEW IF EXISTS ways_tem_vertices_pgr")
-        self.cur.execute(f"DROP TABLE IF EXISTS ways_tem_vertices_pgr_{plz}")
+        # Drop the vertices table created by pgr_createTopology (correct naming pattern)
+        self.cur.execute(f"DROP TABLE IF EXISTS ways_tem_{plz}_vertices_pgr")
 
     def refresh_materialized_views(self) -> None:
         for query in REFRESH_QUERIES.values():

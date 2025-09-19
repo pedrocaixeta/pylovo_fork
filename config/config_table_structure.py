@@ -224,7 +224,8 @@ CREATE_QUERIES = {
     "transformers": """CREATE TABLE IF NOT EXISTS transformers (
         osm_id varchar PRIMARY KEY,
         area double precision,
-        power varchar,
+        type varchar,
+        transformer_rated_power integer,
         geom_type varchar,
         within_shopping boolean,
         geom geometry(MultiPoint, 3035)

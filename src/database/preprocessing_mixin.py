@@ -2,6 +2,7 @@ import json
 import warnings
 from abc import ABC
 import pandas as pd
+import time
 
 from src.config_loader import *
 from src.database.base_mixin import BaseMixin
@@ -14,12 +15,9 @@ class PreprocessingMixin(BaseMixin, ABC):
         super().__init__()
 
     def insert_version_if_not_exists(self):
-        count_query = f"""SELECT COUNT(*) 
-            FROM version 
-            WHERE "version_id" = '{VERSION_ID}'"""
-        self.cur.execute(count_query)
-        version_exists = self.cur.fetchone()[0]
-        if not version_exists:
+        """Insert version if it doesn't exist, with proper handling for concurrent access."""
+        try:
+            # Use a more robust approach with ON CONFLICT to handle race conditions
             consumer_categories_str = CONSUMER_CATEGORIES.to_json().replace("'", "''")
             connection_available_cables_str = str(CONSUMER_CONNECTION_AVAILABLE_CABLES).replace("'", "''")
             other_parameters_dict = {"LARGE_COMPONENT_LOWER_BOUND": LARGE_COMPONENT_LOWER_BOUND,
@@ -27,10 +25,24 @@ class PreprocessingMixin(BaseMixin, ABC):
                                      "V_BAND_LOW": V_BAND_LOW, "V_BAND_HIGH": V_BAND_HIGH, }
             other_paramters_str = str(other_parameters_dict).replace("'", "''")
 
-            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, connection_available_cables, other_parameters) VALUES
-                ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{connection_available_cables_str}', '{other_paramters_str}')"""
+            # Use INSERT ... ON CONFLICT DO NOTHING to handle concurrent access safely
+            insert_query = f"""INSERT INTO version (version_id, version_comment, consumer_categories, connection_available_cables, other_parameters) 
+                VALUES ('{VERSION_ID}', '{VERSION_COMMENT}', '{consumer_categories_str}', '{connection_available_cables_str}', '{other_paramters_str}')
+                ON CONFLICT (version_id) DO NOTHING"""
+            
             self.cur.execute(insert_query)
-            self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
+            self.conn.commit()
+            
+            # Check if we actually inserted something (for logging purposes)
+            if self.cur.rowcount > 0:
+                self.logger.info(f"Version: {VERSION_ID} (created for the first time)")
+            else:
+                self.logger.debug(f"Version: {VERSION_ID} (already exists)")
+                
+        except Exception as e:
+            self.logger.error(f"Error inserting version {VERSION_ID}: {e}")
+            self.conn.rollback()
+            raise
 
     def insert_equipment_data_from_config(self, equipment_data: pd.DataFrame):
         """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config.
@@ -870,3 +882,353 @@ class PreprocessingMixin(BaseMixin, ABC):
         if row and row[0]:
             return int(row[0])
         return plz
+
+    def get_transformer_positions_for_plz_trafo_ui(self, plz: int) -> list[dict]:
+        """
+        Get all transformer positions for a given PLZ from the transformers table.
+        
+        Args:
+            plz (int): The postal code to get transformer positions for
+            
+        Returns:
+            list[dict]: List of transformer position dictionaries with keys:
+                - osm_id: OSM identifier
+                - transformer_rated_power: Transformer power rating
+                - type: Transformer type
+                - geom_type: Geometry type
+                - within_shopping: Within shopping area flag
+                - geom_wkt: Geometry as WKT (Well-Known Text)
+        """
+        query = """
+            SELECT 
+                t.osm_id,
+                t.transformer_rated_power,
+                t.type,
+                t.geom_type,
+                t.within_shopping,
+                ST_AsText(ST_Transform(t.geom, 4326)) as geom_wkt
+            FROM transformers t
+            JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+            WHERE p.plz = %(plz)s
+            LIMIT 1000
+        """
+        self.cur.execute(query, {"plz": plz})
+        columns = [desc[0] for desc in self.cur.description]
+        return [dict(zip(columns, row)) for row in self.cur.fetchall()]
+
+    def add_transformer_position_trafo_ui(self, plz: int, geom_wkt: str, osm_id: str = None, 
+                                comment: str = "Manual", kcid: int = None, bcid: int = None, 
+                                transformer_rated_power: int = None) -> str:
+        """
+        Add a new transformer to the transformers table.
+        
+        Args:
+            plz (int): The postal code (for reference, not stored)
+            geom_wkt (str): Geometry as Well-Known Text (Point format)
+            osm_id (str, optional): OSM identifier
+            comment (str): Comment for the transformer (stored in type field)
+            kcid (int, optional): K-means cluster ID (not used)
+            bcid (int, optional): Building cluster ID (not used)
+            transformer_rated_power (int, optional): Transformer power rating
+            
+        Returns:
+            str: The osm_id of the created transformer
+        """
+        # Generate a unique OSM ID if not provided
+        if not osm_id:
+            osm_id = f"manual/{int(time.time())}"
+        
+        # Insert into transformers table
+        transformer_query = """
+            INSERT INTO transformers (osm_id, type, transformer_rated_power, geom_type, within_shopping, geom)
+            VALUES (%(osm_id)s, %(type)s, %(transformer_rated_power)s, %(geom_type)s, %(within_shopping)s, ST_Transform(ST_GeomFromText(%(geom_wkt)s, 4326), 3035))
+            RETURNING osm_id
+        """
+        self.cur.execute(transformer_query, {
+            "osm_id": osm_id,
+            "type": comment,  # store comment in type field
+            "transformer_rated_power": transformer_rated_power,
+            "geom_type": "manual",
+            "within_shopping": False,
+            "geom_wkt": geom_wkt
+        })
+        
+        # Commit the transaction
+        self.conn.commit()
+        
+        return osm_id
+
+    def delete_transformer_position_trafo_ui(self, grid_result_id: int) -> bool:
+        """
+        Delete a transformer position by grid_result_id.
+        
+        Args:
+            grid_result_id (int): The grid_result_id to delete
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        # Check if the transformer position exists
+        check_query = "SELECT 1 FROM transformer_positions WHERE grid_result_id = %(grid_result_id)s"
+        self.cur.execute(check_query, {"grid_result_id": grid_result_id})
+        if not self.cur.fetchone():
+            return False
+            
+        # Delete the transformer position (grid_result will be deleted via CASCADE)
+        delete_query = "DELETE FROM transformer_positions WHERE grid_result_id = %(grid_result_id)s"
+        self.cur.execute(delete_query, {"grid_result_id": grid_result_id})
+        
+        # Commit the transaction to persist the deletion
+        self.conn.commit()
+        
+        return True
+
+    def delete_transformer_by_osm_id_trafo_ui(self, osm_id: str) -> bool:
+        """
+        Delete a transformer by osm_id from the transformers table.
+        
+        Args:
+            osm_id (str): The osm_id to delete
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        # Debug: Check if transformer exists before deletion
+        check_query = "SELECT osm_id, type FROM transformers WHERE osm_id = %(osm_id)s"
+        self.cur.execute(check_query, {"osm_id": osm_id})
+        existing = self.cur.fetchone()
+        
+        if existing:
+            print(f"DEBUG: Found transformer to delete: {existing}")
+        else:
+            print(f"DEBUG: No transformer found with osm_id: {osm_id}")
+            # Let's also check for similar OSM IDs
+            similar_query = "SELECT osm_id, type FROM transformers WHERE osm_id LIKE %(pattern)s"
+            self.cur.execute(similar_query, {"pattern": f"%{osm_id.split('/')[-1]}%"})
+            similar = self.cur.fetchall()
+            if similar:
+                print(f"DEBUG: Found similar OSM IDs: {similar}")
+        
+        delete_query = "DELETE FROM transformers WHERE osm_id = %(osm_id)s"
+        self.cur.execute(delete_query, {"osm_id": osm_id})
+        
+        rows_affected = self.cur.rowcount
+        print(f"DEBUG: Deletion query affected {rows_affected} rows")
+        
+        # Commit the transaction to persist the deletion
+        if rows_affected > 0:
+            self.conn.commit()
+            print(f"DEBUG: Transaction committed successfully")
+        
+        return rows_affected > 0
+
+    def clear_capacities_trafo_ui(self, plz: int) -> bool:
+        """
+        Clear all capacity information for transformers in a PLZ area.
+        
+        Args:
+            plz (int): The PLZ code
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            query = """
+                UPDATE transformers 
+                SET transformer_rated_power = NULL
+                WHERE osm_id IN (
+                    SELECT t.osm_id
+                    FROM transformers t
+                    JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                    WHERE p.plz = %(plz)s
+                )
+            """
+            self.cur.execute(query, {"plz": plz})
+            rows_updated = self.cur.rowcount
+            print(f"Cleared capacities for {rows_updated} transformers")
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error in clear_capacities_trafo_ui: {str(e)}")
+            return False
+
+    def get_plz_bounds_trafo_ui(self, plz: int) -> dict:
+        """
+        Get the bounding box for a given PLZ.
+        
+        Args:
+            plz (int): The postal code
+            
+        Returns:
+            dict: Bounding box with keys: minx, miny, maxx, maxy
+        """
+        query = """
+            SELECT ST_XMin(ST_Transform(geom, 4326)) as minx, ST_YMin(ST_Transform(geom, 4326)) as miny, 
+                   ST_XMax(ST_Transform(geom, 4326)) as maxx, ST_YMax(ST_Transform(geom, 4326)) as maxy
+            FROM postcode 
+            WHERE plz = %(plz)s
+        """
+        self.cur.execute(query, {"plz": plz})
+        row = self.cur.fetchone()
+        if row:
+            return {
+                "minx": float(row[0]),
+                "miny": float(row[1]), 
+                "maxx": float(row[2]),
+                "maxy": float(row[3])
+            }
+        return None
+
+    def get_available_plz_list_trafo_ui(self) -> list[int]:
+        """
+        Get list of available PLZ codes that have been processed.
+        
+        Returns:
+            list[int]: List of PLZ codes
+        """
+        query = """
+            SELECT DISTINCT plz 
+            FROM postcode 
+            ORDER BY plz
+        """
+        self.cur.execute(query)
+        return [row[0] for row in self.cur.fetchall()]
+    
+    def update_transformer_capacity_trafo_ui(self, osm_id: str, transformer_rated_power: int) -> bool:
+        """
+        Update transformer capacity.
+        
+        Args:
+            osm_id (str): The OSM ID of the transformer
+            transformer_rated_power (int): The new rated power in kVA
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        query = """
+            UPDATE transformers 
+            SET transformer_rated_power = %(transformer_rated_power)s
+            WHERE osm_id = %(osm_id)s
+        """
+        self.cur.execute(query, {"osm_id": osm_id, "transformer_rated_power": transformer_rated_power})
+        self.conn.commit()
+        return self.cur.rowcount > 0
+    
+    def bulk_update_capacities_uniform_trafo_ui(self, plz: int, transformer_rated_power: int) -> bool:
+        """
+        Set all transformers in a PLZ area to the same capacity.
+        
+        Args:
+            plz (int): The PLZ code
+            transformer_rated_power (int): The rated power in kVA to set for all transformers
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # First, check if there are any transformers in this PLZ
+            check_query = """
+                SELECT COUNT(DISTINCT t.osm_id)
+                FROM transformers t
+                JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                WHERE p.plz = %(plz)s
+            """
+            self.cur.execute(check_query, {"plz": plz})
+            count = self.cur.fetchone()[0]
+            print(f"Found {count} transformers in PLZ {plz}")
+            
+            if count == 0:
+                print("No transformers found in PLZ area")
+                return False
+            
+            query = """
+                UPDATE transformers 
+                SET transformer_rated_power = %(transformer_rated_power)s
+                WHERE osm_id IN (
+                    SELECT DISTINCT t.osm_id
+                    FROM transformers t
+                    JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                    WHERE p.plz = %(plz)s
+                )
+            """
+            self.cur.execute(query, {"plz": plz, "transformer_rated_power": transformer_rated_power})
+            rows_updated = self.cur.rowcount
+            print(f"Updated {rows_updated} transformers")
+            self.conn.commit()
+            return rows_updated > 0
+        except Exception as e:
+            print(f"Error in bulk_update_capacities_uniform_trafo_ui: {str(e)}")
+            return False
+    
+    def bulk_update_capacities_percentage_trafo_ui(self, plz: int, capacity_distribution: dict) -> bool:
+        """
+        Apply percentage-based distribution of transformer capacities.
+        
+        Args:
+            plz (int): The PLZ code
+            capacity_distribution (dict): Dictionary with capacity values as keys and percentages as values
+            Example: {400: 30, 630: 50, 1000: 20} means 30% 400kVA, 50% 630kVA, 20% 1000kVA
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        import random
+        
+        try:
+            # Get all transformer OSM IDs in the PLZ area
+            query = """
+                SELECT DISTINCT t.osm_id
+                FROM transformers t
+                JOIN postcode p ON ST_Intersects(t.geom, p.geom)
+                WHERE p.plz = %(plz)s
+            """
+            self.cur.execute(query, {"plz": plz})
+            transformer_ids = [row[0] for row in self.cur.fetchall()]
+            print(f"Found {len(transformer_ids)} transformers for percentage distribution")
+            
+            if not transformer_ids:
+                print("No transformers found in PLZ area for percentage distribution")
+                return False
+        
+            # Create capacity list based on percentages
+            capacity_list = []
+            for capacity, percentage in capacity_distribution.items():
+                if percentage > 0:
+                    count = int(len(transformer_ids) * percentage / 100)
+                    capacity_list.extend([capacity] * count)
+                    print(f"Added {count} transformers with {capacity}kVA capacity ({percentage}%)")
+            
+            # Fill remaining with the most common capacity if we have fewer than expected
+            if len(capacity_list) < len(transformer_ids):
+                most_common_capacity = max(capacity_distribution.keys(), key=lambda k: capacity_distribution[k])
+                remaining = len(transformer_ids) - len(capacity_list)
+                capacity_list.extend([most_common_capacity] * remaining)
+                print(f"Added {remaining} more transformers with {most_common_capacity}kVA capacity")
+            
+            print(f"Total capacity list length: {len(capacity_list)}, transformer count: {len(transformer_ids)}")
+            
+            # Shuffle to randomize distribution
+            random.shuffle(capacity_list)
+            
+            # Update each transformer
+            update_query = """
+                UPDATE transformers 
+                SET transformer_rated_power = %(transformer_rated_power)s
+                WHERE osm_id = %(osm_id)s
+            """
+            
+            updated_count = 0
+            for i, osm_id in enumerate(transformer_ids):
+                if i < len(capacity_list):
+                    self.cur.execute(update_query, {
+                        "osm_id": osm_id, 
+                        "transformer_rated_power": capacity_list[i]
+                    })
+                    updated_count += 1
+            
+            print(f"Updated {updated_count} transformers with new capacities")
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error in bulk_update_capacities_percentage_trafo_ui: {str(e)}")
+            return False

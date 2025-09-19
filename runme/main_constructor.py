@@ -10,11 +10,18 @@ from src.database.database_constructor import DatabaseConstructor
 from src import utils
 from src.config_loader import *
 
-# Delete and recreate the log directory
+# Delete and recreate the log directory (preserving .gitkeep)
 log_dir = Path("log")
 if log_dir.exists():
-    shutil.rmtree(log_dir)
-log_dir.mkdir(parents=True, exist_ok=True)
+    # Remove all files except .gitkeep
+    for item in log_dir.iterdir():
+        if item.name != ".gitkeep":
+            if item.is_file():
+                item.unlink()
+            elif item.is_dir():
+                shutil.rmtree(item)
+    # Ensure the directory exists
+    log_dir.mkdir(parents=True, exist_ok=True)
 
 logger = utils.create_logger(name="main_constructor", log_file=log_dir / "log.txt", log_level=LOG_LEVEL)
 
