@@ -405,9 +405,9 @@ class ClusteringMixin(BaseMixin, ABC):
         Returns:
             Optional[int]: Transformer capacity if found, None otherwise
         """
-        # Get the geometry of the cluster area
+        # Get the geometry of the cluster area as text format for proper psycopg2 serialization
         cluster_geom_query = """
-            SELECT ST_Collect(geom) as cluster_geom
+            SELECT ST_AsText(ST_Collect(geom)) as cluster_geom_wkt
             FROM buildings_tem
             WHERE kcid = %(kcid)s AND bcid = %(bcid)s
         """
@@ -417,21 +417,43 @@ class ClusteringMixin(BaseMixin, ABC):
         if not result or not result[0]:
             return None
             
-        cluster_geom = result[0]
+        cluster_geom_wkt = result[0]
         
         # Check if there's a transformer with a specific capacity in this area
+        # Use a more robust approach to handle GEOS topology issues
         transformer_query = """
             SELECT transformer_rated_power
             FROM transformers t
             WHERE t.transformer_rated_power IS NOT NULL
-            AND ST_Intersects(t.geom, %(cluster_geom)s)
+            AND ST_Intersects(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)))
             LIMIT 1
         """
-        self.cur.execute(transformer_query, {"cluster_geom": cluster_geom})
-        result = self.cur.fetchone()
         
-        if result:
-            return int(result[0])
+        try:
+            self.cur.execute(transformer_query, {"cluster_geom_wkt": cluster_geom_wkt})
+            result = self.cur.fetchone()
+            
+            if result:
+                return int(result[0])
+        except Exception as e:
+            # If ST_Intersects fails due to topology issues, try with a small buffer
+            try:
+                fallback_query = """
+                    SELECT transformer_rated_power
+                    FROM transformers t
+                    WHERE t.transformer_rated_power IS NOT NULL
+                    AND ST_DWithin(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)), 1.0)
+                    LIMIT 1
+                """
+                self.cur.execute(fallback_query, {"cluster_geom_wkt": cluster_geom_wkt})
+                result = self.cur.fetchone()
+                
+                if result:
+                    return int(result[0])
+            except Exception as fallback_error:
+                # Log the error but don't fail the entire process
+                self.logger.warning(f"Could not check transformer intersection for plz={plz}, kcid={kcid}, bcid={bcid}: {fallback_error}")
+        
         return None
 
     def update_transformer_rated_power(self, plz: int, kcid: int, bcid: int, note: int):
