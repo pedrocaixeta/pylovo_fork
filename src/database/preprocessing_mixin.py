@@ -96,8 +96,14 @@ class PreprocessingMixin(BaseMixin, ABC):
                                                                    typ              = EXCLUDED.typ,
                                                                    application_area = EXCLUDED.application_area;""")
         rows = df.to_dict(orient='records')
-        self.cur.executemany(insert_sql, rows)
-        self.logger.info(f"Inserted/updated equipment_data rows: {len(rows)} (version {VERSION_ID})")
+        try:
+            self.cur.executemany(insert_sql, rows)
+            self.conn.commit()  # Added commit to persist equipment data
+            self.logger.info(f"Inserted/updated equipment_data rows: {len(rows)} (version {VERSION_ID})")
+        except Exception as e:
+            self.conn.rollback()
+            self.logger.error(f"Failed inserting/updating equipment_data for version {VERSION_ID}: {e}")
+            raise
 
     def insert_consumer_categories_from_config(self, consumer_categories: pd.DataFrame):
         """Insert consumer_categories from config.
@@ -110,7 +116,6 @@ class PreprocessingMixin(BaseMixin, ABC):
             s = df['peak_load']
             mask = s == 'PEAK_LOAD_HOUSEHOLD'
             if mask.any():
-                # Explicitly assign numeric constant instead of using .replace to prevent FutureWarning
                 s = s.where(~mask, PEAK_LOAD_HOUSEHOLD)
             df['peak_load'] = s
 
@@ -143,8 +148,14 @@ class PreprocessingMixin(BaseMixin, ABC):
                                                                        yearly_consumption_per_m2 = EXCLUDED.yearly_consumption_per_m2,
                                                                        sim_factor                = EXCLUDED.sim_factor;""")
         rows = df.to_dict(orient='records')
-        self.cur.executemany(upsert_sql, rows)
-        self.logger.info(f"Inserted/updated consumer_categories rows: {len(rows)}")
+        try:
+            self.cur.executemany(upsert_sql, rows)
+            self.conn.commit()  # Added commit to persist consumer categories
+            self.logger.info(f"Inserted/updated consumer_categories rows: {len(rows)}")
+        except Exception as e:
+            self.conn.rollback()
+            self.logger.error(f"Failed inserting/updating consumer_categories: {e}")
+            raise
 
     def copy_postcode_result_table(self, plz: int) -> None:
         """
