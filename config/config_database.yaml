@@ -3,7 +3,7 @@
 # =============================================================================
 
 # Set to True if you want to use the InfDB database for building data
-USE_INFDB=True # ensure that you have the connection details in your .env file as shown below
+USE_INFDB: True  # ensure that you have the connection details in your .env file as shown below
 
 # It is recommended to use a .env file for sensitive database credentials
 # SETUP PROCESS:
