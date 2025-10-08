@@ -16,6 +16,11 @@ from src.parameter_calculator import ParameterCalculator
 from src import utils
 from src.config_loader import *
 
+# Import electrical backend components
+from src.electrical_backend.backend_interface import IElectricalBackend
+from src.electrical_backend import create_backend
+from src.cable_installer import CableInstaller
+
 class ResultExistsError(Exception):
     "Raised when the PLZ has already been created."
     pass
@@ -55,7 +60,7 @@ class GridGenerator:
         self.plz = plz
         print('-------------------- start', self.plz, '---------------------------')
         self.dbc.create_temp_tables(plz)  # create PLZ-suffixed temp tables
-        # self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
+        self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
 
         try:
             self.generate_grid()
@@ -269,6 +274,7 @@ class GridGenerator:
         Load data from config.
         """
         self.dbc.insert_equipment_data_from_config(equipment_data=EQUIPMENT_DATA)
+        self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
         self.dbc.insert_consumer_categories_from_config(consumer_categories=CONSUMER_CATEGORIES)
 
     def prepare_postcodes(self):
@@ -685,7 +691,31 @@ class GridGenerator:
 
     def install_cables(self):
         """
+        Installs electrical cables - dispatcher method.
+
+        Calls the appropriate implementation based on ELECTRICAL_BACKEND configuration:
+        - 'pandapower': Original direct pandapower calls
+        - 'pandapower_decoupled': New backend abstraction pattern
+        - Future: 'altdss', 'powerfactory', etc.
+        """
+        if ELECTRICAL_BACKEND == "pandapower_decoupled":
+            self.logger.info(f"Using backend: {ELECTRICAL_BACKEND} (decoupled pattern)")
+            self.install_cables_decoupled()
+        elif ELECTRICAL_BACKEND == "pandapower":
+            self.logger.info(f"Using backend: {ELECTRICAL_BACKEND} (original)")
+            self.install_cables_original()
+        else:
+            raise ValueError(
+                f"Unknown ELECTRICAL_BACKEND: {ELECTRICAL_BACKEND}. "
+                f"Valid options: 'pandapower', 'pandapower_decoupled'"
+            )
+
+
+    def install_cables_original(self):
+        """
         Installs electrical cables to connect buildings and transformers in power grid clusters.
+
+        ORIGINAL IMPLEMENTATION - Direct pandapower calls.
 
         This method creates a pandapower network for each building cluster (kcid, bcid) in the
         postal code area and connects the buildings with appropriate electrical cables. It follows
@@ -935,6 +965,7 @@ class GridGenerator:
     def create_connection_bus(self, connection_nodes: list, net: pp.pandapowerNet):
         for i in range(len(connection_nodes)):
             node_geodata = self.dbc.get_node_geom(connection_nodes[i])
+            
             pp.create_bus(net, name=f"Connection Nodebus {connection_nodes[i]}", vn_kv=VN * 1e-3, geodata=node_geodata,
                 max_vm_pu=V_BAND_HIGH, min_vm_pu=V_BAND_LOW, type="n", )
 
@@ -1202,8 +1233,6 @@ class GridGenerator:
         return length
 
 
-
-
     def deviate_bus_geodata(self, branch_node_list: list, branch_deviation: float, net: pp.pandapowerNet):
         for node in branch_node_list:
             net.bus_geodata.at[pp.get_element_index(net, "bus", f"Connection Nodebus {node}"), "x"] += (
@@ -1318,6 +1347,218 @@ class GridGenerator:
             pp.to_json(net, filename=savepath_file)
 
         json_string = pp.to_json(net, filename=None)
+
+        self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string)
+
+        self.logger.info(f"Grid with kcid:{kcid} bcid:{bcid} is stored. ")
+
+
+    def install_cables_decoupled(self):
+        """
+        Installs electrical cables using the decoupled electrical backend pattern.
+
+        This method is functionally identical to install_cables() but uses the new
+        IElectricalBackend abstraction instead of direct pandapower calls. This allows
+        for future backend swapping (e.g., to AltDSS or other simulation engines) without
+        changing the grid generation logic.
+
+        The algorithm works as follows:
+        1. Retrieves all clusters (kcid, bcid) for the postal code area
+        2. For each cluster:
+           a. Prepares building and connection data
+           b. Creates an electrical network via backend
+           c. Adds buses, transformers, and loads using ComponentSpecs
+           d. Installs cables using the same branch-by-branch greedy algorithm
+        3. Tracks progress and saves the network configurations
+
+        Key differences from install_cables():
+        - Uses IElectricalBackend instead of direct pp.create_*() calls
+        - Creates ComponentSpec objects (BusSpec, TransformerSpec, LineSpec, LoadSpec)
+        - Uses backend.create_component(spec) instead of pp.create_*()
+        - Uses backend.export_to_format() instead of pp.to_json()
+
+        Returns:
+            None
+        """
+        # Get all clusters for the postal code area
+        cluster_list = self.dbc.get_list_from_plz(self.plz)
+        if TESTING:
+            cluster_list = cluster_list[:5]  # Limit to first 5 clusters for testing
+        ci_count = 0
+        ci_process = 0
+
+        for id in cluster_list:
+            kcid, bcid = id
+            self.logger.info(f"Start cable installation for PLZ {self.plz} kcid {kcid} bcid {bcid}")
+
+            # Get data for this cluster
+            vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes = (
+                self.prepare_vertices_list(self.plz, kcid, bcid)
+            )
+            Pd, load_units, load_type = self.get_consumer_simultaneous_load_dict(consumer_list, buildings_df)
+
+            # Initialize backend using configuration
+            backend = create_backend(ELECTRICAL_BACKEND, logger=self.logger)
+            circuit_name = f"PLZ{self.plz}_kcid{kcid}_bcid{bcid}"
+            backend.initialize_circuit(name=circuit_name, source_bus="MVbus 1", primary_kv=20.0)
+
+            # Register cable types from equipment data
+            backend.register_cable_types(self.dbc.fetch_cables())
+
+            # Get all available cable types for main distribution
+            all_available_cables = list(backend.net.std_types["line"].keys())
+            local_length_dict = {c: 0 for c in all_available_cables}
+
+            # Create cable installer
+            installer = CableInstaller(backend, self.dbc, self.logger)
+            
+            # Create network components
+            installer.create_lvmv_bus(self.plz, kcid, bcid)
+            installer.create_transformer(self.plz, kcid, bcid)
+            installer.create_connection_bus(connection_nodes)
+            installer.create_consumer_bus_and_load(consumer_list, load_units, load_type, buildings_df, CONSUMER_CATEGORIES)
+
+            self.logger.info(
+                f"Backend network initialized (buses={len(backend.net.bus)}, loads={len(backend.net.load)}, "
+                f"transformer_rated_power={self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)} kVA)"
+            )
+
+            # Install cables branch by branch (same logic as original)
+            branch_deviation = 0
+            connection_node_list = connection_nodes
+            branch_index = 0
+
+            while connection_node_list:
+                # Handle single remaining node case
+                if len(connection_node_list) == 1:
+                    remaining = connection_node_list[0]
+                    self.logger.debug(
+                        f"Final remaining connection node {remaining} (kcid={kcid}, bcid={bcid}); installing direct connection."
+                    )
+                    sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, connection_node_list)
+                    Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
+
+                    # Install consumer cables
+                    local_length_dict = installer.install_consumer_cables(
+                        self.plz, bcid, kcid, branch_deviation, connection_node_list,
+                        ont_vertice, vertices_dict, Pd, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict,
+                    )
+
+                    # Connect to transformer
+                    if connection_node_list[0] == ont_vertice:
+                        cable, count = installer.find_minimal_available_cable(Imax)
+                        installer.create_line_ont_to_lv_bus(
+                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation, cable, count
+                        )
+                    else:
+                        cable, count = installer.find_minimal_available_cable(
+                            Imax, vertices_dict[connection_nodes[0]]
+                        )
+                        length = installer.create_line_start_to_lv_bus(
+                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation,
+                            vertices_dict, cable, count, ont_vertice
+                        )
+                        local_length_dict[cable] += length
+                        self.logger.info(
+                            f"Final branch backbone installed (PLZ={self.plz}, kcid={kcid}, bcid={bcid}, "
+                            f"start_node={connection_node_list[0]}, cable={cable}, parallels={count}, length_km={length:.4f})"
+                        )
+                    break
+
+                furthest_node_path_list = self.find_furthest_node_path_list(
+                    connection_node_list, vertices_dict, ont_vertice
+                )
+                branch_node_list, Imax = self.determine_maximum_load_branch(
+                    furthest_node_path_list, buildings_df, consumer_df
+                )
+                self.logger.debug(
+                    f"Selected branch {branch_index} (nodes={len(branch_node_list)}, first={branch_node_list[0]}, "
+                    f"last={branch_node_list[-1]}, Imax={Imax:.3f} kA)"
+                )
+
+                # Install cables for this branch
+                local_length_dict = installer.install_consumer_cables(
+                    self.plz, bcid, kcid, branch_deviation, branch_node_list,
+                    ont_vertice, vertices_dict, Pd, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict
+                )
+
+                # Select appropriate cable and connect nodes
+                branch_distance = vertices_dict[branch_node_list[0]]
+                cable, count = installer.find_minimal_available_cable(
+                    Imax, branch_distance
+                )
+
+                if len(branch_node_list) >= 2:
+                    local_length_dict = installer.create_line_node_to_node(
+                        self.plz, kcid, bcid, branch_node_list, branch_deviation,
+                        vertices_dict, local_length_dict, cable, ont_vertice, count
+                    )
+
+                # Connect branch to transformer
+                branch_start_node = branch_node_list[-1]
+                if branch_start_node == ont_vertice:
+                    installer.create_line_ont_to_lv_bus(
+                        self.plz, bcid, kcid, branch_start_node, branch_deviation, cable, count
+                    )
+                    self.logger.debug(
+                        f"Branch {branch_index} connected directly to transformer (cable={cable}, parallels={count})."
+                    )
+                else:
+                    length = installer.create_line_start_to_lv_bus(
+                        self.plz, bcid, kcid, branch_start_node, branch_deviation,
+                        vertices_dict, cable, count, ont_vertice
+                    )
+                    local_length_dict[cable] += length
+                    self.logger.debug(
+                        f"Branch {branch_index} connected to LV bus (cable={cable}, parallels={count}, length_km={length:.4f})."
+                    )
+
+                # Update processed nodes and visualization
+                for vertice in branch_node_list:
+                    connection_node_list.remove(vertice)
+
+                installer.deviate_bus_geodata(branch_node_list, branch_deviation)
+                branch_deviation += 1
+                branch_index += 1
+
+            # Cluster summary
+            total_length = sum(local_length_dict.values())
+            used_cables = {k: v for k, v in local_length_dict.items() if v > 0}
+            if used_cables:
+                cable_summary = ", ".join([f"{k}:{v:.3f} km" for k, v in sorted(used_cables.items(), key=lambda x: -x[1])])
+            else:
+                cable_summary = "no cables installed"
+            self.logger.info(
+                f"Finished cluster kcid={kcid}, bcid={bcid}: branches={branch_index}, lines={len(backend.net.line)}, "
+                f"total_length={total_length:.3f} km ({cable_summary})"
+            )
+
+            # Track and report progress
+            ci_count += 1
+            progress_increment = 10  # Report progress in 10% increments
+            progress_threshold = max(1, len(cluster_list) / progress_increment)
+
+            if ci_count >= progress_threshold:
+                ci_process += progress_increment
+                ci_count = 0
+                self.logger.info(
+                    f"Cable installation: {min(ci_process, 100)}% complete ({ci_process // progress_increment}/{progress_increment})"
+                )
+
+            self.save_net_decoupled(backend, kcid, bcid)
+
+    def save_net_decoupled(self, backend: IElectricalBackend, kcid, bcid):
+        """
+        Save grid to file and database using backend pattern.
+        """
+        if SAVE_GRID_FOLDER:
+            savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
+            savepath_folder.mkdir(parents=True, exist_ok=True)
+            filename = f"kcid{kcid}bcid{bcid}.json"
+            savepath_file = Path(savepath_folder, filename)
+            backend.export_to_format(filename=savepath_file)
+
+        json_string = backend.export_to_format(filename=None)
 
         self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string)
 

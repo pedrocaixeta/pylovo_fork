@@ -116,6 +116,9 @@ N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
 # Result directory configuration
 RESULT_DIR = os.path.join(os.getcwd(), CONFIG_GENERATION.get("RESULT_DIR", "results"))
 
+# Electrical backend configuration
+ELECTRICAL_BACKEND = CONFIG_GENERATION.get("ELECTRICAL_BACKEND", "pandapower")
+
 # =============================================================================
 # GRID GENERATION CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================

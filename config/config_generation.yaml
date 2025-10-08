@@ -1,7 +1,7 @@
 # =============================================================================
 # REGIONAL CONFIGURATION
 # =============================================================================
-PLZ: 91301
+PLZ: 80802
 # AGS: 9474126
 # PLZ: [80801, 80803]
 # AGS: [9162000, 9163000, 9164000]
@@ -10,12 +10,17 @@ TESTING: False # If True, only a small subset of data is used for faster testing
 # =============================================================================
 # EXECUTION CONFIGURATION
 # =============================================================================
-PARALLEL: True # Toggles whether the grid generation uses multiple workers in parallel
+PARALLEL: False # Toggles whether the grid generation uses multiple workers in parallel
 N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generation
 ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
 SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
 LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
 RESULT_DIR: results # Directory for storing analysis results and outputs
+
+# Electrical backend configuration
+# Options: 'pandapower' (original), 'pandapower_decoupled' (new pattern), 'altdss', 'powerfactory'
+ELECTRICAL_BACKEND: pandapower_decoupled
+# ELECTRICAL_BACKEND: pandapower_decoupled  # Uncomment to use new decoupled backend
 
 # =============================================================================
 # GRID GENERATION CONFIGURATION
