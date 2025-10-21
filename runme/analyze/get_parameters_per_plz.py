@@ -1,4 +1,4 @@
-from src.parameter_calculator import ParameterCalculator
+from src.analysis.parameter_calculator import ParameterCalculator
 
 plz = 80803
 pc = ParameterCalculator()
