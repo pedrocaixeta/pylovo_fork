@@ -302,3 +302,12 @@ class AnalysisMixin(BaseMixin, ABC):
         self.cur.execute(query, {"version_id": VERSION_ID, "plz": plz})
         result = self.cur.fetchone()
         return result is not None
+
+    def get_grids_from_plz(self, plz : int) -> pd.DataFrame:
+        grids_query = """SELECT * FROM grid_result
+                        WHERE plz = %(p)s"""
+        params = {"p": plz}
+        grids_df = pd.read_sql_query(grids_query, con=self.conn, params=params)
+        self.logger.debug(f"{len(grids_df)} grid data fetched.")
+
+        return grids_df
