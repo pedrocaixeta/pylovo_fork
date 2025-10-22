@@ -2,13 +2,10 @@ import pandapower as pp
 import pandas as pd
 import numpy as np
 import json
-import matplotlib.pyplot as plt
-from typing import Dict, List, Tuple, Optional, Union
-import warnings
+from typing import Dict, Optional, Union
 import logging
-import sys
-import os
 from pathlib import Path
+import copy
 
 from src.utils import oneSimultaneousLoad, create_logger
 
@@ -25,7 +22,7 @@ DEFAULT_COS_PHI = 0.95
 DEFAULT_LOAD_STD_RATIO = 0.1
 
 
-def process_and_collect_voltage_data(grids_df, peak_load_residential):
+def process_and_collect_voltage_data(grids_df: pd.DataFrame, peak_load_residential: float) -> pd.DataFrame:
     """
     Processes multiple pandapower networks, runs power flow calculations, and
     collects voltage magnitudes (vm_pu) from all buses into a single DataFrame.
@@ -45,25 +42,35 @@ def process_and_collect_voltage_data(grids_df, peak_load_residential):
     """
     result_data = []  # List to hold voltage data
 
-    for row in grids_df.iterrows():
-        bcid = row[1]['bcid']
-        grid_json_string = json.dumps(row[1]['grid'])
-        net = pp.from_json_string(grid_json_string)
+    for _, row in grids_df.iterrows():
+        try:
+            bcid = row['bcid']
+            grid_json_string = json.dumps(row['grid'])
+            net = pp.from_json_string(grid_json_string)
+        except Exception as e:
+            logger.warning(f"Skipping BCID {row.get('bcid', 'unknown')}: invalid grid data ({e})")
+            continue
+
         load_count = len(net.load)
         # Use oneSimultaneousLoad from utils.py to avoid double hard-coding
         sim_load = oneSimultaneousLoad(peak_load_residential, load_count, sim_factor=0.07)
-        preprocess_pylovo_network(net, avg_load=sim_load, min_vm_pu=0.95, max_vm_pu=1.05)
+        preprocess_pylovo_network(net, avg_load=sim_load, min_vm_pu=DEFAULT_MIN_VM_PU, max_vm_pu=DEFAULT_MAX_VM_PU)
+
         try:
-            pp.runpp(net)  # Perform power flow calculation on the current network
+            converged = run_powerflow(net)
+            if not converged:
+                logger.warning(f"Power flow did not converge for BCID {bcid}")
+                continue
             voltages = net.res_bus['vm_pu']  # Extract voltage magnitudes
             for bus, voltage in voltages.items():
-                result_data.append({"BCID": bcid, "Bus": bus, "vm_pu": voltage})
-        except:
-            print(f"Network from {bcid} could not be generated")
+                result_data.append({"BCID": bcid, "Bus": int(bus), "vm_pu": float(voltage)})
+        except Exception as e:
+            logger.warning(f"Network for BCID {bcid} could not be solved: {e}")
 
     # Convert result_data to a pandas DataFrame
     voltage_df = pd.DataFrame(result_data)
     return voltage_df
+
 
 def preprocess_pylovo_network(
     net: pp.pandapowerNet,
@@ -72,18 +79,20 @@ def preprocess_pylovo_network(
     max_vm_pu: float = DEFAULT_MAX_VM_PU,
     cos_phi: float = DEFAULT_COS_PHI,
     load_std_ratio: float = DEFAULT_LOAD_STD_RATIO,
-    adjust_transformer_line: bool = True
+    adjust_transformer_line: bool = True,
+    add_ext_grid_costs: bool = True,
+    seed: Optional[int] = None,
 ) -> pp.pandapowerNet:
     """
     Preprocess a pandapower network for power flow analysis by setting up loads,
-    voltage constraints, and cost functions.
+    voltage constraints, and (optionally) cost functions.
 
     This function prepares a PyLovo-generated network for validation by:
     - Removing existing loads
     - Assigning new Gaussian-distributed loads
     - Setting voltage constraints
     - Adjusting specific line parameters (if needed)
-    - Adding cost functions for external grids
+    - Optionally adding cost functions for external grids
 
     Parameters
     ----------
@@ -92,15 +101,19 @@ def preprocess_pylovo_network(
     avg_load : float
         Average apparent power (MVA) for Gaussian-distributed loads.
     min_vm_pu : float, optional
-        Minimum allowed per-unit voltage magnitude for buses (default: 0.95).
+        Minimum allowed per-unit voltage magnitude for buses
     max_vm_pu : float, optional
-        Maximum allowed per-unit voltage magnitude for buses (default: 1.05).
+        Maximum allowed per-unit voltage magnitude for buses
     cos_phi : float, optional
-        Power factor of the loads (default: 0.95).
+        Power factor of the loads
     load_std_ratio : float, optional
         Ratio of standard deviation to average load (default: 0.1).
     adjust_transformer_line : bool, optional
         Whether to adjust specific transformer line lengths (default: True).
+    add_ext_grid_costs : bool, optional
+        Whether to add polynomial cost functions to external grids (default: True).
+    seed : int, optional
+        Random seed for reproducible load assignment.
 
     Returns
     -------
@@ -122,17 +135,19 @@ def preprocess_pylovo_network(
     if adjust_transformer_line:
         _adjust_transformer_line_length(net, from_bus=0, to_bus=2, length_km=0.05)
 
-    # Add cost functions for external grids
-    _add_external_grid_costs(net, cp1_eur_per_mw=20, cp0_eur=100)
+    # Optionally add cost functions for external grids
+    if add_ext_grid_costs:
+        _add_external_grid_costs(net, cp1_eur_per_mw=20, cp0_eur=100)
 
     # Assign new Gaussian-distributed loads
-    std_dev = avg_load * load_std_ratio
+    std_dev = max(avg_load * load_std_ratio, 0.0)
     assign_gaussian_loads(
         net,
         avg_load=avg_load,
         std_dev=std_dev,
         cos_phi=cos_phi,
-        mode="underexcited"
+        mode="ind",
+        seed=seed,
     )
 
     # Set voltage magnitude constraints
@@ -214,7 +229,30 @@ def _add_external_grid_costs(
         logger.debug(f"Added cost functions to {len(net.ext_grid)} external grid(s)")
 
 
-def assign_random_loads(net, load_range, cos_phi, mode):
+def _ext_grid_buses(net: pp.pandapowerNet) -> set:
+    """Return set of buses connected to external grids (swing buses)."""
+    if net.ext_grid.empty:
+        return set()
+    return set(net.ext_grid['bus'].astype(int).tolist())
+
+
+def run_powerflow(net: pp.pandapowerNet) -> bool:
+    """Run a power flow with robust default options and return convergence status."""
+    try:
+        pp.runpp(net, algorithm="nr", calculate_voltage_angles=True, enforce_q_lims=True)
+        return getattr(net, 'converged', True)
+    except Exception as e:
+        logger.error(f"Power flow failed: {e}")
+        return False
+
+
+def assign_random_loads(
+    net: pp.pandapowerNet,
+    load_range: tuple,
+    cos_phi: float,
+    mode: str,
+    seed: Optional[int] = None
+) -> pp.pandapowerNet:
     """
     Assigns random loads to all buses in a given pandapower network.
 
@@ -223,18 +261,25 @@ def assign_random_loads(net, load_range, cos_phi, mode):
         load_range (tuple): Range of apparent power (MVA) for the loads, e.g., (0.002, 0.03).
         cos_phi (float): Power factor of the load.
         mode (str): "ind" for inductive or "cap" for capacitive behavior.
+        seed (int, optional): Random seed for reproducibility.
 
     Returns:
         pandapowerNet: The updated pandapower network with the added loads.
     """
-    # Get all buses in the network
-    buses = [bus for bus in net.bus.index.tolist() if bus != 1]
+    rng = np.random.default_rng(seed)
+
+    # Exclude buses connected to external grids (swing buses)
+    exclude = _ext_grid_buses(net)
+    buses = [bus for bus in net.bus.index.tolist() if bus not in exclude]
+
+    min_sn, max_sn = load_range
+    min_sn = max(0.0, float(min_sn))
+    max_sn = max(min_sn, float(max_sn))
 
     for bus in buses:
-        # Generate a random apparent power (sn_mva) within the specified range
-        sn_mva = np.random.uniform(load_range[0], load_range[1])
-
-        # Create a load on the bus with the generated apparent power
+        sn_mva = float(rng.uniform(min_sn, max_sn))
+        if sn_mva <= 0:
+            continue
         pp.create_load_from_cosphi(
             net=net,
             bus=bus,
@@ -244,10 +289,19 @@ def assign_random_loads(net, load_range, cos_phi, mode):
             name=f"Load at Bus {bus}"
         )
 
-    print(f"Random loads assigned to all {len(buses)} buses in the network.")
+    logger.info(f"Random loads assigned to {len(buses)} buses in the network.")
     return net
 
-def assign_gaussian_loads(net, avg_load, std_dev, cos_phi, mode):
+
+def assign_gaussian_loads(
+    net: pp.pandapowerNet,
+    avg_load: float,
+    std_dev: float,
+    cos_phi: float,
+    mode: str,
+    min_sn_mva: float = 0.0,
+    seed: Optional[int] = None,
+) -> pp.pandapowerNet:
     """
     Assigns loads to all buses in the network using a Gaussian (normal) distribution.
 
@@ -257,19 +311,25 @@ def assign_gaussian_loads(net, avg_load, std_dev, cos_phi, mode):
         std_dev (float): Standard deviation of the apparent power values.
         cos_phi (float): Power factor of the load.
         mode (str): "ind" for inductive or "cap" for capacitive behavior.
-        load_range (tuple): A tuple (min, max) specifying the allowable range of apparent power (MVA).
+        min_sn_mva (float): Minimum apparent power to allow (values are clipped at this).
+        seed (int, optional): Random seed for reproducibility.
 
     Returns:
         pandapowerNet: The updated pandapower network with the added loads.
     """
-    # Get all buses in the network, excluding a swing bus or a specific bus if necessary
-    buses = [bus for bus in net.bus.index.tolist() if bus != 1]
+    rng = np.random.default_rng(seed)
+
+    # Exclude buses connected to external grids (swing buses)
+    exclude = _ext_grid_buses(net)
+    buses = [bus for bus in net.bus.index.tolist() if bus not in exclude]
+
+    min_sn = max(0.0, float(min_sn_mva))
 
     for bus in buses:
-        # Generate a random apparent power (sn_mva) from a Gaussian distribution
-        sn_mva = np.random.normal(loc=avg_load, scale=std_dev)
-
-        # Create a load on the bus with the generated apparent power
+        sn_mva = float(rng.normal(loc=avg_load, scale=std_dev))
+        sn_mva = max(sn_mva, min_sn)
+        if sn_mva <= 0:
+            continue
         pp.create_load_from_cosphi(
             net=net,
             bus=bus,
@@ -281,13 +341,7 @@ def assign_gaussian_loads(net, avg_load, std_dev, cos_phi, mode):
 
     return net
 
-
-
-# ==================================================================================
-# NEW ANALYSIS FUNCTIONS FOR POWER FLOW VALIDATION
-# ==================================================================================
-
-def calculate_network_metrics(net: pp.pandapowerNet) -> Dict[str, float]:
+def calculate_network_metrics(net: pp.pandapowerNet) -> Dict[str, Union[float, int]]:
     """
     Calculate comprehensive metrics for a power network after power flow analysis.
 
@@ -309,7 +363,7 @@ def calculate_network_metrics(net: pp.pandapowerNet) -> Dict[str, float]:
     if net.res_bus.empty:
         raise ValueError("No power flow results found. Run pp.runpp(net) first.")
 
-    metrics = {}
+    metrics: Dict[str, Union[float, int]] = {}
 
     # Voltage metrics
     voltages = net.res_bus['vm_pu']
@@ -317,8 +371,8 @@ def calculate_network_metrics(net: pp.pandapowerNet) -> Dict[str, float]:
     metrics['voltage_std'] = float(voltages.std())
     metrics['voltage_min'] = float(voltages.min())
     metrics['voltage_max'] = float(voltages.max())
-    metrics['voltage_violations_low'] = int((voltages < 0.95).sum())
-    metrics['voltage_violations_high'] = int((voltages > 1.05).sum())
+    metrics['voltage_violations_low'] = int((voltages < DEFAULT_MIN_VM_PU).sum())
+    metrics['voltage_violations_high'] = int((voltages > DEFAULT_MAX_VM_PU).sum())
     metrics['voltage_violation_pct'] = float(
         (metrics['voltage_violations_low'] + metrics['voltage_violations_high']) / len(voltages) * 100
     )
@@ -467,7 +521,7 @@ def analyze_network_losses(net: pp.pandapowerNet) -> Dict[str, float]:
     if net.res_line.empty and net.res_trafo.empty:
         raise ValueError("No power flow results found. Run pp.runpp(net) first.")
 
-    losses = {}
+    losses: Dict[str, float] = {}
 
     # Line losses
     if not net.res_line.empty:
@@ -484,17 +538,17 @@ def analyze_network_losses(net: pp.pandapowerNet) -> Dict[str, float]:
         losses['trafo_count'] = len(net.res_trafo)
 
     # Total losses
-    total_losses = 0
+    total_losses = 0.0
     if 'total_line_losses_mw' in losses:
         total_losses += losses['total_line_losses_mw']
     if 'total_trafo_losses_mw' in losses:
         total_losses += losses['total_trafo_losses_mw']
 
-    losses['total_losses_mw'] = total_losses
+    losses['total_losses_mw'] = float(total_losses)
 
     # Loss percentage
     if not net.res_load.empty:
-        total_load = net.res_load['p_mw'].sum()
+        total_load = float(net.res_load['p_mw'].sum())
         if total_load > 0:
             losses['loss_percentage'] = float(total_losses / total_load * 100)
 
@@ -522,7 +576,7 @@ def generate_validation_report(
     dict
         Dictionary containing metrics, violations, and analysis results.
     """
-    report = {
+    report: Dict[str, Union[Dict, pd.DataFrame]] = {
         'bcid': bcid,
         'metrics': calculate_network_metrics(net),
         'voltage_violations': check_voltage_violations(net),
@@ -535,11 +589,11 @@ def generate_validation_report(
 
     # Add network size info
     report['network_info'] = {
-        'num_buses': len(net.bus),
-        'num_lines': len(net.line),
-        'num_loads': len(net.load),
-        'num_transformers': len(net.trafo) if hasattr(net, 'trafo') else 0,
-        'num_ext_grids': len(net.ext_grid)
+        'num_buses': int(len(net.bus)),
+        'num_lines': int(len(net.line)),
+        'num_loads': int(len(net.load)),
+        'num_transformers': int(len(net.trafo)) if hasattr(net, 'trafo') else 0,
+        'num_ext_grids': int(len(net.ext_grid))
     }
 
     return report
@@ -568,28 +622,30 @@ def compare_multiple_scenarios(
     results = []
 
     for scenario_name, params in scenarios.items():
-        # Create a copy of the network
-        net_copy = pp.from_json_string(pp.to_json(net))
+        # Create a deep copy of the network
+        net_copy = copy.deepcopy(net)
 
         try:
             # Clear and assign loads
             _clear_network_loads(net_copy)
             assign_gaussian_loads(
                 net_copy,
-                avg_load=params.get('avg_load', 0.01),
-                std_dev=params.get('std_dev', 0.001),
-                cos_phi=params.get('cos_phi', DEFAULT_COS_PHI),
-                mode=params.get('mode', 'underexcited')
+                avg_load=float(params.get('avg_load', 0.01)),
+                std_dev=float(params.get('std_dev', 0.001)),
+                cos_phi=float(params.get('cos_phi', DEFAULT_COS_PHI)),
+                mode=str(params.get('mode', 'ind')),
+                seed=int(params['seed']) if 'seed' in params and params['seed'] is not None else None,
             )
 
             # Run power flow
-            pp.runpp(net_copy)
+            converged = run_powerflow(net_copy)
+            if not converged:
+                raise RuntimeError('Power flow did not converge')
 
             # Calculate metrics
-            metrics = calculate_network_metrics(net_copy)
-            metrics['scenario'] = scenario_name
-            metrics['converged'] = True
-            results.append(metrics)
+            base_metrics = calculate_network_metrics(net_copy)
+            row = {**base_metrics, 'scenario': scenario_name, 'converged': True}
+            results.append(row)
 
         except Exception as e:
             logger.warning(f"Scenario '{scenario_name}' failed: {e}")
@@ -600,5 +656,4 @@ def compare_multiple_scenarios(
             })
 
     return pd.DataFrame(results)
-
 
