@@ -25,6 +25,7 @@ class ParameterCalculator:
         self.kcid = kcid
 
     def calc_parameters_per_plz(self):
+        """Calculate parameters for all grids of a PLZ."""
         grid_generated = self.dbc.is_grid_generated(self.plz)
         if not grid_generated:
             self.dbc.logger.info(f"Grid for the postcode area {self.plz} is not generated, yet. Generate it first.")

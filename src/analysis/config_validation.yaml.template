@@ -1,0 +1,25 @@
+# =============================================================================
+# TEST DATA CONFIGURATION (LOCAL, NOT COMMITTED)
+# =============================================================================
+# Copy this file to `config_validation.yaml` and adapt the values to your machine.
+# The copied file is already ignored by .gitignore, so your local paths stay private.
+#
+# Minimal setup: set data_dir to the folder that contains your pandapower JSON.
+# Optionally set json_filename if there are multiple JSON files in that folder.
+#
+# Example structure:
+#   /abs/path/to/your/validation/folder"
+#     ├─ grid.json
+#     └─ (CSV results will be written here)
+# =============================================================================
+
+# Absolute path to the folder that contains the pandapower JSON files for validation.
+data_dir: "/abs/path/to/your/validation/folder"
+
+# Optional: JSON file name inside data_dir. If omitted, the script will:
+# - use the only *.json file if exactly one exists in data_dir,
+# - otherwise raise an error asking you to set this value.
+json_filename: ""
+
+# EPSG code of your source data (the CRS of coordinates in the pandapower net).
+projection: "epsg:3035"
