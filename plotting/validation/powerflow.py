@@ -77,8 +77,8 @@ def plot_load_and_voltage_distribution(
 
     # Add voltage limit lines
     voltage_limits = {
-        0.95: {'label': 'Min limit (0.95)', 'color': 'red', 'linestyle': '--', 'linewidth': 1},
-        1.05: {'label': 'Max limit (1.05)', 'color': 'red', 'linestyle': '--', 'linewidth': 1}
+        0.9: {'label': 'Min limit (0.9)', 'color': 'red', 'linestyle': '--', 'linewidth': 1},
+        1.1: {'label': 'Max limit (1.1)', 'color': 'red', 'linestyle': '--', 'linewidth': 1}
     }
     add_limit_lines(axes[1], voltage_limits, orientation='vertical')
     axes[1].legend()
@@ -141,8 +141,8 @@ def plot_all_voltages_for_plz(
 
     # Add voltage limit lines
     voltage_limits = {
-        0.95: {'label': 'Min limit (0.95 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 2},
-        1.05: {'label': 'Max limit (1.05 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 2}
+        0.9: {'label': 'Min limit (0.9 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 2},
+        1.1: {'label': 'Max limit (1.1 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 2}
     }
     add_limit_lines(ax, voltage_limits, orientation='vertical')
     ax.legend(fontsize=10)
@@ -154,8 +154,8 @@ def plot_all_voltages_for_plz(
     max_v = voltage_df['vm_pu'].max()
 
     if show_violations:
-        violations_low = (voltage_df['vm_pu'] < 0.95).sum()
-        violations_high = (voltage_df['vm_pu'] > 1.05).sum()
+        violations_low = (voltage_df['vm_pu'] < 0.9).sum()
+        violations_high = (voltage_df['vm_pu'] > 1.1).sum()
         total_buses = len(voltage_df)
         violation_pct = (violations_low + violations_high) / total_buses * 100
 
@@ -223,8 +223,8 @@ def plot_voltage_profile(
 
     if show_limits:
         voltage_limits = {
-            0.95: {'label': 'Min limit (0.95 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 1.5},
-            1.05: {'label': 'Max limit (1.05 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 1.5},
+            0.9: {'label': 'Min limit (0.9 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 1.5},
+            1.1: {'label': 'Max limit (1.1 p.u.)', 'color': 'red', 'linestyle': '--', 'linewidth': 1.5},
             1.0: {'label': 'Nominal (1.0 p.u.)', 'color': 'green', 'linestyle': ':', 'linewidth': 1}
         }
         add_limit_lines(ax, voltage_limits, orientation='horizontal')

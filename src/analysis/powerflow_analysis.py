@@ -426,9 +426,9 @@ def check_voltage_violations(
     net : pandapowerNet
         Pandapower network with completed power flow results.
     min_vm_pu : float, optional
-        Minimum acceptable voltage in per unit (default: 0.95).
+        Minimum acceptable voltage in per unit
     max_vm_pu : float, optional
-        Maximum acceptable voltage in per unit (default: 1.05).
+        Maximum acceptable voltage in per unit
 
     Returns
     -------
@@ -597,63 +597,3 @@ def generate_validation_report(
     }
 
     return report
-
-
-def compare_multiple_scenarios(
-    net: pp.pandapowerNet,
-    scenarios: Dict[str, Dict[str, float]]
-) -> pd.DataFrame:
-    """
-    Compare network performance under multiple load scenarios.
-
-    Parameters
-    ----------
-    net : pandapowerNet
-        Base pandapower network (will be copied for each scenario).
-    scenarios : dict
-        Dictionary of scenario definitions. Each scenario contains load parameters.
-        Example: {'low_load': {'avg_load': 0.01, 'std_dev': 0.002}, ...}
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame comparing metrics across all scenarios.
-    """
-    results = []
-
-    for scenario_name, params in scenarios.items():
-        # Create a deep copy of the network
-        net_copy = copy.deepcopy(net)
-
-        try:
-            # Clear and assign loads
-            _clear_network_loads(net_copy)
-            assign_gaussian_loads(
-                net_copy,
-                avg_load=float(params.get('avg_load', 0.01)),
-                std_dev=float(params.get('std_dev', 0.001)),
-                cos_phi=float(params.get('cos_phi', DEFAULT_COS_PHI)),
-                mode=str(params.get('mode', 'ind')),
-                seed=int(params['seed']) if 'seed' in params and params['seed'] is not None else None,
-            )
-
-            # Run power flow
-            converged = run_powerflow(net_copy)
-            if not converged:
-                raise RuntimeError('Power flow did not converge')
-
-            # Calculate metrics
-            base_metrics = calculate_network_metrics(net_copy)
-            row = {**base_metrics, 'scenario': scenario_name, 'converged': True}
-            results.append(row)
-
-        except Exception as e:
-            logger.warning(f"Scenario '{scenario_name}' failed: {e}")
-            results.append({
-                'scenario': scenario_name,
-                'converged': False,
-                'error': str(e)
-            })
-
-    return pd.DataFrame(results)
-
