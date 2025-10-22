@@ -146,7 +146,7 @@ def preprocess_pylovo_network(
         avg_load=avg_load,
         std_dev=std_dev,
         cos_phi=cos_phi,
-        mode="ind",
+        mode="underexcited",
         seed=seed,
     )
 
