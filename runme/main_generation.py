@@ -14,7 +14,6 @@ Regional Scale Options:
 The script automatically detects the execution mode based on the REGIONAL_SCALE and input type in config/config.yaml.
 """
 
-import os
 import sys
 import time
 import pandas as pd
@@ -29,7 +28,7 @@ from src.classification.sampling.sample import get_municipal_register_as_datafra
 from src.data_import.import_buildings import import_buildings_for_single_plz, import_buildings_for_multiple_plz
 from src.grid_generator import GridGenerator
 from src.config_loader import ANALYZE_GRIDS, USE_INFDB, EXECUTION_MODE, PLZ, AGS, REGIONAL_SCALE
-from plotting.generation.statistics import plot_boxplot_plz, plot_pie_of_trafo_cables
+from plotting.validation.statistics import plot_boxplot_plz, plot_pie_of_trafo_cables
 
 
 def create_grid_single_plz(plz: int, plot_results: bool = False):
