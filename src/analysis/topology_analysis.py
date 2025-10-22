@@ -2,7 +2,7 @@ import math
 import json
 import statistics
 from math import radians
-
+import pandas as pd
 import geopandas as gpd
 import networkx as nx
 import pandapower as pp
@@ -17,185 +17,175 @@ from src import utils
 class ParameterCalculator:
     """Calculate and save grid parameters for a postal code area."""
 
-    def __init__(self):
+    def __init__(self, plz: int, bcid: int, kcid: int):
         self.dbc = dbc.DatabaseClient()
         self.version_id = VERSION_ID
-        self.plz = None
-        self.bcid = None
-        self.kcid = None
-        self.no_connection_buses = None
-        self.no_branches = None
-        self.no_house_connections = None
-        self.no_house_connections_per_branch = None
-        self.no_households = None
-        self.no_household_equ = None
-        self.no_households_per_branch = None
-        self.max_no_of_households_of_a_branch = None
-        self.house_distance_km = None
-        self.transformer_mva = None
-        self.osm_trafo = None
-        self.max_trafo_dis = None
-        self.avg_trafo_dis = None
-        self.cable_length_km = None
-        self.cable_len_per_house = None
-        self.max_power_mw = None
-        self.simultaneous_peak_load_mw = None
-        self.resistance = None
-        self.reactance = None
-        self.ratio = None
-        self.vsw_per_branch = None
-        self.max_vsw_of_a_branch = None
+        self.plz = plz
+        self.bcid = bcid
+        self.kcid = kcid
 
-
-
-    def calc_parameters_per_plz(self, plz):
-        grid_generated = self.dbc.is_grid_generated(plz)
+    def calc_parameters_per_plz(self):
+        grid_generated = self.dbc.is_grid_generated(self.plz)
         if not grid_generated:
-            self.dbc.logger.info(f"Grid for the postcode area {plz} is not generated, yet. Generate it first.")
+            self.dbc.logger.info(f"Grid for the postcode area {self.plz} is not generated, yet. Generate it first.")
             return
-        grid_analysed = self.dbc.is_grid_analyzed(plz)
+        grid_analysed = self.dbc.is_grid_analyzed(self.plz)
         if grid_analysed:
-            self.dbc.logger.info(f"Grid for the postcode area {plz} has already been analyzed.")
+            self.dbc.logger.info(f"Grid for the postcode area {self.plz} has already been analyzed.")
             return
 
         try:
             self.dbc.logger.info("Start basic result analysis")
-            self.analyse_basic_parameters_per_plz(plz)
+            self.analyse_basic_parameters_per_plz(self.plz)
             self.dbc.logger.info("Start cable counting")
-            self.analyse_cables_per_plz(plz)
+            self.analyse_cables_per_plz(self.plz)
             self.dbc.logger.info("Start per trafo analysis")
-            self.analyse_trafo_parameters_per_plz(plz)
+            self.analyse_trafo_parameters_per_plz(self.plz)
             self.dbc.logger.info("Result analysis finished")
             self.dbc.conn.commit()
         except Exception as e:
-            self.dbc.logger.error(f"Error during analysis for PLZ {plz}: {e}")
-            self.dbc.logger.info(f"Skipped PLZ {plz} due to analysis error.")
-            self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION),plz)  # delete from sample set
+            self.dbc.logger.error(f"Error during analysis for PLZ {self.plz}: {e}")
+            self.dbc.logger.info(f"Skipped PLZ {self.plz} due to analysis error.")
+            self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
 
-    def calc_parameters_per_grid(self, plz: int) -> None:
+    def calc_parameters_per_grid(self):
         """Calculate parameters for all grids of a PLZ."""
-        grid_analysed = self.dbc.is_grid_analyzed(plz)
+        grid_analysed = self.dbc.is_grid_analyzed(self.plz)
         if not grid_analysed:
-            self.dbc.logger.info(f"PLZ parameters for the postcode area {plz} missing. Please run calc_parameters_per_plz() first.")
+            self.dbc.logger.info(
+                f"PLZ parameters for the postcode area {self.plz} missing. Please run calc_parameters_per_plz() first.")
             return
 
-        parameter_count = self.dbc.count_clustering_parameters(plz=plz)
+        parameter_count = self.dbc.count_clustering_parameters(plz=self.plz)
         if parameter_count > 0:
-            print(f"The parameters for the grids of postcode area {plz} and version {VERSION_ID} "
+            print(f"The parameters for the grids of postcode area {self.plz} and version {VERSION_ID} "
                   f"have already been calculated.")
             return
 
-        cluster_list = self.dbc.get_list_from_plz(plz)
+        cluster_list = self.dbc.get_list_from_plz(self.plz)
         for kcid, bcid in cluster_list:
             print(bcid, kcid)
-            self.calc_grid_parameters(plz, bcid, kcid)
+            self.calc_grid_parameters(bcid, kcid)
 
-    def calc_grid_parameters(self, plz: int, bcid: int, kcid: int) -> None:
+    def calc_grid_parameters(self, bcid: int, kcid: int) -> None:
         """Calculate parameters for a single grid and save them."""
-
-        self.plz = plz
         self.bcid = bcid
         self.kcid = kcid
-        self.osm_trafo = self.has_osm_trafo()
+        osm_trafo = self.has_osm_trafo()
 
         net = self.dbc.read_net(self.plz, self.kcid, self.bcid)
-        self.compute_parameters(net)
-
-        params = {"version_id": self.version_id, "plz": self.plz, "bcid": self.bcid, "kcid": self.kcid,
-            "no_connection_buses": int(self.no_connection_buses), "no_branches": int(self.no_branches),
-            "no_house_connections": int(self.no_house_connections),
-            "no_house_connections_per_branch": float(self.no_house_connections_per_branch),
-            "no_households": int(self.no_households), "no_household_equ": float(self.no_household_equ),
-            "no_households_per_branch": float(self.no_households_per_branch),
-            "max_no_of_households_of_a_branch": float(self.max_no_of_households_of_a_branch),
-            "house_distance_km": float(self.house_distance_km), "transformer_mva": float(self.transformer_mva),
-            "osm_trafo": bool(self.osm_trafo), "max_trafo_dis": float(self.max_trafo_dis),
-            "avg_trafo_dis": float(self.avg_trafo_dis), "cable_length_km": float(self.cable_length_km),
-            "cable_len_per_house": float(self.cable_len_per_house), "max_power_mw": float(self.max_power_mw),
-            "simultaneous_peak_load_mw": float(self.simultaneous_peak_load_mw), "resistance": float(self.resistance),
-            "reactance": float(self.reactance), "ratio": float(self.ratio),
-            "vsw_per_branch": float(self.vsw_per_branch), "max_vsw_of_a_branch": float(self.max_vsw_of_a_branch), }
+        params = self.compute_parameters(net)
+        params.update({"version_id": self.version_id, "plz": self.plz, "bcid": self.bcid, "kcid": self.kcid,
+                       "osm_trafo": bool(osm_trafo)})
 
         self.dbc.insert_clustering_parameters(params)
 
-    def compute_parameters(self, net: pp.pandapowerNet) -> None:
-        """Compute all grid parameters."""
+    def compute_parameters(self, net: pp.pandapowerNet) -> dict:
+        """Compute all grid parameters and return them as a dictionary."""
+        no_house_connections = self.get_no_of_buses(net, "Consumer Nodebus")
+        no_connection_buses = self.get_no_of_buses(net, "Connection Nodebus")
+        no_households = self.get_no_households(net)
+        max_power_mw = self.get_max_power(net)
 
-        self.no_house_connections = self.get_no_of_buses(net, "Consumer Nodebus")
-        self.no_connection_buses = self.get_no_of_buses(net, "Connection Nodebus")
-        self.no_households = self.get_no_households(net)
-        self.max_power_mw = self.get_max_power(net)
+        no_household_equ = max_power_mw * 1000.0 / PEAK_LOAD_HOUSEHOLD
+        cable_length_km = self.get_cable_length(net)
+        cable_len_per_house = cable_length_km / no_house_connections if no_house_connections > 0 else 0.0
 
-        self.no_household_equ = self.max_power_mw * 1000.0 / PEAK_LOAD_HOUSEHOLD
-        self.cable_length_km = self.get_cable_length(net)
-        self.cable_len_per_house = self.cable_length_km / self.no_house_connections
+        G = pp.topology.create_nxgraph(net, respect_switches=False)
 
-        G = pp.topology.create_nxgraph(net)
+        no_branches = self.get_no_branches(G, net)
+        avg_trafo_dis, max_trafo_dis = self.get_distances_in_graph(net, G)
 
-        self.no_branches = self.get_no_branches(G, net)
-        self.avg_trafo_dis, self.max_trafo_dis = self.get_distances_in_graph(net, G)
-        self.no_house_connections_per_branch = self.no_house_connections / self.no_branches
-        self.no_households_per_branch = self.max_power_mw * 1000.0 / (PEAK_LOAD_HOUSEHOLD * self.no_branches)
+        # Zero-division protection for branch metrics
+        if no_branches > 0:
+            no_house_connections_per_branch = no_house_connections / no_branches
+            no_households_per_branch = max_power_mw * 1000.0 / (PEAK_LOAD_HOUSEHOLD * no_branches)
+        else:
+            no_house_connections_per_branch = 0.0
+            no_households_per_branch = 0.0
 
-        self.transformer_mva = self.get_trafo_power(net)
-        self.house_distance_km = self.calc_avg_house_distance(net)
-        self.simultaneous_peak_load_mw = self.get_simultaneous_peak_load()
-        (self.max_no_of_households_of_a_branch, self.resistance, self.reactance, self.ratio,
-         self.max_vsw_of_a_branch,) = self.calc_resistance(net, G)
+        transformer_mva = self.get_trafo_power(net)
+        house_distance_km = self.calc_avg_house_distance(net)
+        simultaneous_peak_load_mw = self.get_simultaneous_peak_load(transformer_mva, max_trafo_dis)
+        (max_no_of_households_of_a_branch, resistance, reactance, ratio,
+         max_vsw_of_a_branch,) = self.calc_resistance(net, G)
 
-        self.vsw_per_branch = self.resistance / self.no_branches
+        vsw_per_branch = resistance / no_branches if no_branches > 0 else 0.0
 
-    def get_parameters_as_dataframe(self) -> pd.DataFrame:
-        params = [value for key, value in vars(self).items() if key != "dbc"]
-        df_parameters = pd.DataFrame([params], columns=CLUSTERING_PARAMETERS)
-        return df_parameters
+        return {"no_connection_buses": int(no_connection_buses),
+                "no_branches": int(no_branches),
+                "no_house_connections": int(no_house_connections),
+                "no_house_connections_per_branch": float(no_house_connections_per_branch),
+                "no_households": int(no_households),
+                "no_household_equ": float(no_household_equ),
+                "no_households_per_branch": float(no_households_per_branch),
+                "max_no_of_households_of_a_branch": float(max_no_of_households_of_a_branch),
+                "house_distance_km": float(house_distance_km),
+                "transformer_mva": float(transformer_mva),
+                "max_trafo_dis": float(max_trafo_dis),
+                "avg_trafo_dis": float(avg_trafo_dis),
+                "cable_length_km": float(cable_length_km),
+                "cable_len_per_house": float(cable_len_per_house),
+                "max_power_mw": float(max_power_mw),
+                "simultaneous_peak_load_mw": float(simultaneous_peak_load_mw),
+                "resistance": float(resistance),
+                "reactance": float(reactance), "ratio": float(ratio),
+                "vsw_per_branch": float(vsw_per_branch),
+                "max_vsw_of_a_branch": float(max_vsw_of_a_branch)}
 
-    def get_simultaneous_peak_load(self) -> float:
+    def get_parameters_as_dataframe(self, net: pp.pandapowerNet) -> pd.DataFrame:
+        params = self.compute_parameters(net)
+        return pd.DataFrame([params], columns=CLUSTERING_PARAMETERS)
+
+    def get_simultaneous_peak_load(self, transformer_mva: float, max_trafo_dis: float) -> float:
         data_list, _, _ = self.dbc.read_per_trafo_dict(self.plz)
-        transformer_type_str = str(int(self.transformer_mva * 1000))
+        transformer_type_str = str(int(transformer_mva * 1000))
         max_trafo_distance_list = data_list[3][transformer_type_str]
-        if self.max_trafo_dis * 1000 in max_trafo_distance_list:
-            sim_load_index = max_trafo_distance_list.index(self.max_trafo_dis * 1000)
+        if max_trafo_dis * 1000 in max_trafo_distance_list:
+            sim_load_index = max_trafo_distance_list.index(max_trafo_dis * 1000)
             simultaneous_peak_load_mw = data_list[2][transformer_type_str][sim_load_index] / 1000
             return simultaneous_peak_load_mw
-        return None
+        return 0.0
 
     def has_osm_trafo(self) -> bool:
         return self.bcid < 0
 
-    def print_grid_parameters(self) -> None:
-        params = [value for key, value in vars(self).items() if key != "dbc"]
-        print(*params)
-
+    def print_grid_parameters(self, net: pp.pandapowerNet) -> None:
+        params = self.compute_parameters(net)
+        print(*params.values())
 
     def get_max_power(self, pandapower_net: pp.pandapowerNet) -> float:
         df_load = pandapower_net.load
         return df_load["max_p_mw"].sum()
 
-
     def get_no_households(self, pandapower_net: pp.pandapowerNet) -> int:
         df_load = pandapower_net.load
         return len(df_load["name"])
-
 
     def get_no_of_buses(self, pandapower_net: pp.pandapowerNet, bus_description: str) -> int:
         df_bus = pandapower_net.bus
         df_bus["type_bus"] = df_bus["name"].str.contains(bus_description)
         return df_bus["type_bus"].sum()
 
-
     def get_cable_length(self, pandapower_net: pp.pandapowerNet) -> float:
         df_line = pandapower_net.line
         return df_line["length_km"].sum()
 
-
     def calc_avg_house_distance(self, pandapower_net: pp.pandapowerNet) -> float:
-        bus_geo = pandapower_net.bus_geodata
+        """Calculate median of average distances to 4 nearest neighbors for all consumer buses."""
+        bus_geo = pandapower_net.bus_geodata.copy()
+
+        if len(bus_geo) == 0:
+            return 0.0
+
         bus_geo = gpd.GeoDataFrame(bus_geo, geometry=gpd.points_from_xy(bus_geo["x"], bus_geo["y"]))
-        bus = pandapower_net.bus
+        bus = pandapower_net.bus.copy()
         bus_geo = bus_geo.merge(bus, left_index=True, right_index=True)
         bus_geo["consumer_bus"] = bus_geo["name"].str.contains("Consumer Nodebus")
         bus_geo = bus_geo[bus_geo["consumer_bus"]]
+
+        if len(bus_geo) < 2:
+            return 0.0
 
         list_pt = []
         for pt in bus_geo["geometry"]:
@@ -203,18 +193,20 @@ class ParameterCalculator:
             list_pt.append(new_pt)
 
         dis_mat = haversine_distances(list_pt, list_pt)
-        dis_mat = dis_mat * 6371000 / 1000
+        dis_mat = dis_mat * 6371.0
         df_distances = pd.DataFrame(dis_mat)
         list_avg_dis4pts = []
 
         for column in df_distances:
             smallest = df_distances[column].nsmallest(5)
-            avg = smallest.sum() / 4
+            avg = (smallest.sum() - smallest.iloc[0]) / 4 if len(smallest) > 1 else 0.0
             list_avg_dis4pts.append(avg)
+
+        if not list_avg_dis4pts:
+            return 0.0
 
         median_dis = statistics.median(list_avg_dis4pts)
         return median_dis
-
 
     def get_root(self, pandapower_net: pp.pandapowerNet):
         root = pandapower_net.bus
@@ -223,29 +215,36 @@ class ParameterCalculator:
         root = list(root.index)[0]
         return root
 
-
     def get_no_branches(self, networkx_graph: nx.Graph, pandapower_net: pp.pandapowerNet) -> int:
+        """Get number of branches (main feeders) from the root bus."""
         root = self.get_root(pandapower_net)
-        return networkx_graph.degree(root) - 1
-
+        return max(networkx_graph.degree(root) - 1, 0)
 
     def get_distances_in_graph(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> tuple[float, float]:
+        """Calculate average and maximum electrical distances from transformer to consumer buses."""
         root = self.get_root(pandapower_net)
-        leaves = pandapower_net.bus
+        leaves = pandapower_net.bus.copy()
         leaves["consumer_bus"] = leaves["name"].str.contains("Consumer Nodebus")
         leaves = list(leaves[leaves["consumer_bus"]].index)
-        no_leaves = len(leaves)
+
+        if len(leaves) == 0:
+            return 0.0, 0.0
 
         path_length_to_leaves = []
         for leaf in leaves:
-            weighted_length = nx.dijkstra_path_length(networkx_graph, root, leaf)
-            path_length_to_leaves.append(weighted_length)
+            try:
+                weighted_length = nx.dijkstra_path_length(networkx_graph, root, leaf, weight='weight')
+                path_length_to_leaves.append(weighted_length)
+            except nx.NetworkXNoPath:
+                continue
+
+        if not path_length_to_leaves:
+            return 0.0, 0.0
 
         max_path_length = max(path_length_to_leaves)
-        avg_path_length = sum(path_length_to_leaves) / no_leaves
+        avg_path_length = sum(path_length_to_leaves) / len(path_length_to_leaves)
 
         return avg_path_length, max_path_length
-
 
     def get_trafo_power(self, pandapower_net: pp.pandapowerNet) -> float:
         df_trafo = pandapower_net.trafo.sn_mva
@@ -304,7 +303,7 @@ class ParameterCalculator:
 
         resistance = df_vsw["resistance"].sum()
         reactance = df_vsw["reactance"].sum()
-        ratio = resistance / reactance
+        ratio = resistance / reactance if reactance > 0 else 0.0
         max_vsw_of_a_branch = df_vsw.groupby("branch")["resistance"].sum().max()
 
         return max_no_of_households_of_a_branch, resistance, reactance, ratio, max_vsw_of_a_branch
