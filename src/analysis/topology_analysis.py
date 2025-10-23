@@ -494,14 +494,14 @@ class ParameterCalculator:
         # is needed to calculate the vsw-like resistance proxies.
 
         net_line_with_sim_factor = pandapower_net.line
-        net_line_with_sim_factor['sim_factor_cumulated'] = ''
-        net_line_with_sim_factor['sim_load'] = ''
-        net_line_with_sim_factor['no_commercial'] = ''
-        net_line_with_sim_factor['load_commercial_mw'] = ''
-        net_line_with_sim_factor['no_public'] = ''
-        net_line_with_sim_factor['load_public_mw'] = ''
-        net_line_with_sim_factor['no_residential'] = ''
-        net_line_with_sim_factor['load_residential_mw'] = ''
+        net_line_with_sim_factor['sim_factor_cumulated'] = 0.0
+        net_line_with_sim_factor['sim_load'] = 0.0
+        net_line_with_sim_factor['no_commercial'] = 0
+        net_line_with_sim_factor['load_commercial_mw'] = 0.0
+        net_line_with_sim_factor['no_public'] = 0
+        net_line_with_sim_factor['load_public_mw'] = 0.0
+        net_line_with_sim_factor['no_residential'] = 0
+        net_line_with_sim_factor['load_residential_mw'] = 0.0
         net_line_with_sim_factor.drop(['c_nf_per_km', 'g_us_per_km', 'max_i_ka', 'df', 'type', 'in_service'], axis=1,
                                       inplace=True)
         net_line_with_sim_factor = net_line_with_sim_factor.drop_duplicates()
