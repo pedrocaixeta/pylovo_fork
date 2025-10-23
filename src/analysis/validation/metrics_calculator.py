@@ -1,25 +1,29 @@
 """
-Standalone parameter calculator for external networks.
+Database-independent metrics calculator for external networks.
 
-This module provides a database-independent version of the ParameterCalculator
+This module provides a standalone version of the ParameterCalculator
 for analyzing external pandapower networks without database dependencies.
+Renamed from StandaloneParameterCalculator to MetricsCalculator for clarity.
 """
 
 import pandas as pd
 import pandapower as pp
 from typing import Dict, Any, Optional
 import logging
+import json
 
 # Import only the compute logic, not database dependencies
 from src.config_loader import (
     SIM_FACTOR,
-    CLUSTERING_PARAMETERS
+    CLUSTERING_PARAMETERS,
+    PEAK_LOAD_HOUSEHOLD
 )
+from ..utils import oneSimultaneousLoad
 
 
-class StandaloneParameterCalculator:
+class MetricsCalculator:
     """
-    Database-independent parameter calculator for pandapower networks.
+    Database-independent metrics calculator for pandapower networks.
 
     This class wraps the topology analysis logic without requiring database access,
     making it suitable for analyzing external networks (e.g., from DSO).
@@ -47,7 +51,7 @@ class StandaloneParameterCalculator:
 
         # Import the actual ParameterCalculator to reuse its methods
         # We'll use it as a delegate for computation methods
-        from src.analysis.topology_analysis import ParameterCalculator
+        from ..core.topology_analysis import ParameterCalculator
 
         # Create a minimal instance just for method access (won't use database methods)
         # Pass dummy values for plz, bcid, kcid since we won't use database
@@ -60,12 +64,12 @@ class StandaloneParameterCalculator:
             keyword_connection_bus=connection_bus_keyword
         )
 
-    def compute_parameters(self, net: pp.pandapowerNet) -> Dict[str, Any]:
+    def compute_metrics(self, net: pp.pandapowerNet) -> Dict[str, Any]:
         """
-        Compute topology parameters for a pandapower network.
+        Compute topology metrics for a pandapower network.
 
         This method reuses the existing compute_parameters logic but returns
-        only the computed parameters without database interaction.
+        only the computed metrics without database interaction.
 
         Parameters
         ----------
@@ -75,12 +79,12 @@ class StandaloneParameterCalculator:
         Returns
         -------
         dict
-            Dictionary of computed parameters with keys matching CLUSTERING_PARAMETERS
+            Dictionary of computed metrics with keys matching CLUSTERING_PARAMETERS
 
         Notes
         -----
-        The simultaneous_peak_load_mw parameter will be 0.0 since it requires
-        database lookup. All other parameters are computed from the network structure.
+        The simultaneous_peak_load_mw metric will be 0.0 since it requires
+        database lookup. All other metrics are computed from the network structure.
         """
         try:
             # Call the existing compute_parameters method
@@ -91,13 +95,13 @@ class StandaloneParameterCalculator:
         except (IndexError, KeyError, AttributeError) as e:
             # Database access failed - recompute without simultaneous load lookup
             self.logger.warning(f"Database access failed (expected for standalone mode): {e}")
-            self.logger.info("Computing parameters without database-dependent values...")
-            return self._compute_parameters_standalone(net)
+            self.logger.info("Computing metrics without database-dependent values...")
+            return self._compute_metrics_standalone(net)
         except Exception as e:
-            self.logger.error(f"Error computing parameters: {e}")
+            self.logger.error(f"Error computing metrics: {e}")
             raise
 
-    def _compute_parameters_standalone(self, net: pp.pandapowerNet) -> Dict[str, Any]:
+    def _compute_metrics_standalone(self, net: pp.pandapowerNet) -> Dict[str, Any]:
         """
         Compute parameters without database dependencies.
 
@@ -305,86 +309,75 @@ class StandaloneParameterCalculator:
         Returns
         -------
         dict
-            Dictionary of computed parameters
+            Dictionary of computed metrics
         """
-        import json
-
-        params = self.compute_parameters_with_fallback(net)
+        metrics = self.compute_with_estimation(net)
 
         if output_path:
             if output_format == 'json':
                 with open(output_path, 'w') as f:
-                    json.dump(params, f, indent=2)
+                    json.dump(metrics, f, indent=2)
                 self.logger.info(f"Results saved to {output_path}")
 
             elif output_format == 'csv':
-                df = pd.DataFrame([params])
+                df = pd.DataFrame([metrics])
                 df.to_csv(output_path, index=False)
                 self.logger.info(f"Results saved to {output_path}")
 
             elif output_format == 'excel':
-                df = pd.DataFrame([params])
+                df = pd.DataFrame([metrics])
                 df.to_excel(output_path, index=False)
                 self.logger.info(f"Results saved to {output_path}")
 
             else:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-        return params
+        return metrics
 
 
-def analyze_dso_network(
-    net_path: str,
+def analyze_network(
+    net: pp.pandapowerNet,
     output_path: Optional[str] = None,
     adapt_network: bool = True,
     zone_mapping: Optional[Dict[str, str]] = None,
     **adapter_kwargs
 ) -> Dict[str, Any]:
     """
-    Convenience function to analyze a DSO network from file.
+    Convenience function to analyze an external network.
 
     Parameters
     ----------
-    net_path : str
-        Path to pandapower JSON file
+    net : pp.pandapowerNet
+        Network to analyze
     output_path : str, optional
         Path to save analysis results
     adapt_network : bool
-        Whether to adapt the network structure (recommended for DSO data)
+        Whether to adapt the network structure first
     zone_mapping : dict, optional
-        Mapping from DSO zone names to standard zones
+        Zone mapping for adaptation
     **adapter_kwargs
-        Additional arguments passed to the network adapter
+        Additional arguments for network adaptation
 
     Returns
     -------
     dict
-        Dictionary of computed parameters
+        Dictionary of computed metrics
 
     Examples
     --------
-    >>> results = analyze_dso_network(
-    ...     '/data/SWF_V7.json',
-    ...     output_path='/data/SWF_V7_analysis.json',
+    >>> import pandapower as pp
+    >>> net = pp.from_json('/data/SWD_V7.json')
+    >>> results = analyze_network(
+    ...     net,
+    ...     output_path='/data/SWD_V7_analysis.json',
     ...     zone_mapping={'residential': 'Residential'}
     ... )
     >>> print(f"Cable length: {results['cable_length_km']:.2f} km")
     """
-    # Load network
-    net = pp.from_json(net_path)
-
-    # Adapt if requested
     if adapt_network:
-        from src.analysis.data_adapter import adapt_dso_network as adapt_net
+        from .network_adapter import adapt_network as adapt_net
         net = adapt_net(net, zone_mapping=zone_mapping, **adapter_kwargs)
 
-    # Analyze
-    calculator = StandaloneParameterCalculator()
-    results = calculator.analyze_and_export(
-        net,
-        output_path=output_path,
-        output_format='json' if output_path and output_path.endswith('.json') else 'csv'
-    )
-
-    return results
+    calculator = MetricsCalculator()
+    return calculator.analyze_and_export(net, output_path)
 

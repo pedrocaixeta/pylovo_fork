@@ -1,11 +1,11 @@
 """
-Multi-grid splitter for DSO networks.
+Grid splitter for DSO networks containing multiple LV grids.
 
 This module provides functionality to split a pandapower network containing
 multiple LV grids into individual grid networks for separate analysis.
 
 Supports both:
-- SWF naming convention (bus names like 7XXX for LV, 6XXX for transformers)
+- Naming convention-based splitting (SWD, Forchheim formats)
 - Generic topology-based splitting (for any network structure)
 """
 
@@ -15,6 +15,123 @@ from typing import List, Dict, Any, Optional
 import logging
 import pandas as pd
 import os
+
+
+class GridSplitter:
+    """
+    Class to split multi-grid networks into individual grids.
+
+    Automatically detects the appropriate splitting method based on
+    the network structure and naming conventions.
+    """
+
+    def __init__(
+        self,
+        net: pp.pandapowerNet,
+        method: str = 'auto',
+        lv_index: int = 7,
+        trafo_index: int = 6
+    ):
+        """
+        Initialize the grid splitter.
+
+        Parameters
+        ----------
+        net : pp.pandapowerNet
+            Network containing multiple LV grids
+        method : str
+            Splitting method: 'auto', 'naming', 'topology'
+        lv_index : int
+            Index for LV buses in naming convention (default: 7)
+        trafo_index : int
+            Index for transformers in naming convention (default: 6)
+        """
+        self.net = net
+        self.method = method
+        self.lv_index = lv_index
+        self.trafo_index = trafo_index
+        self.logger = logging.getLogger(__name__)
+
+    def split(self) -> List[pp.pandapowerNet]:
+        """
+        Split the network into individual grids.
+
+        Returns
+        -------
+        list of pp.pandapowerNet
+            List of individual grid networks, one per transformer
+        """
+        return split_multi_grid_network(
+            self.net,
+            use_naming_convention=(self.method != 'topology'),
+            lv_index=self.lv_index,
+            trafo_index=self.trafo_index
+        )
+
+    def save_grids(
+        self,
+        grids: List[pp.pandapowerNet],
+        output_dir: str,
+        prefix: str = "grid",
+        save_json: bool = True,
+        save_excel: bool = False,
+        save_info_csv: bool = True
+    ) -> pd.DataFrame:
+        """
+        Save split grids to files.
+
+        Parameters
+        ----------
+        grids : list of pp.pandapowerNet
+            Grids to save
+        output_dir : str
+            Output directory
+        prefix : str
+            Filename prefix
+        save_json : bool
+            Save JSON files
+        save_excel : bool
+            Save Excel files
+        save_info_csv : bool
+            Save summary CSV
+
+        Returns
+        -------
+        pd.DataFrame
+            Summary information
+        """
+        return save_split_grids(
+            grids,
+            output_dir=output_dir,
+            prefix=prefix,
+            save_json=save_json,
+            save_excel=save_excel,
+            save_info_csv=save_info_csv
+        )
+
+
+# Convenience function
+def split_network(net: pp.pandapowerNet, **kwargs) -> List[pp.pandapowerNet]:
+    """
+    Convenience function to split a multi-grid network.
+
+    Parameters
+    ----------
+    net : pp.pandapowerNet
+        Network to split
+    **kwargs
+        Arguments passed to GridSplitter
+
+    Returns
+    -------
+    list of pp.pandapowerNet
+        Individual grids
+    """
+    splitter = GridSplitter(net, **kwargs)
+    return splitter.split()
+
+
+# Original standalone functions preserved below
 
 
 def split_multi_grid_network(

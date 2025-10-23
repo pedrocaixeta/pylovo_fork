@@ -1,15 +1,21 @@
 """
-Enhanced data adapter for SWD networks with hierarchical naming convention.
+Naming convention parsers for different DSO network formats.
 
-This module provides functions to parse the SWD chr_name structure and extract
-network topology and element information.
+Supports:
+- SWD hierarchical naming convention (underscore-separated)
+- Forchheim naming convention (continuous numeric string)
+- Generic bus type detection
 """
 
 import pandas as pd
 import pandapower as pp
-from typing import Dict, Tuple
+from typing import Dict, Optional
 import logging
 
+
+# ============================================================================
+# SWD Naming Convention Parser
+# ============================================================================
 
 def parse_swd_chr_name(chr_name: str) -> Dict[str, str]:
     """
@@ -79,9 +85,9 @@ def parse_swd_chr_name(chr_name: str) -> Dict[str, str]:
         return {}
 
 
-def get_object_type_name(objekttyp_code: str) -> str:
+def get_swd_object_type_name(objekttyp_code: str) -> str:
     """
-    Get object type name from code.
+    Get object type name from SWD code.
 
     Object Type Codes:
     01 = Knoten (node)
@@ -143,7 +149,7 @@ def enhance_network_with_swd_info(net: pp.pandapowerNet) -> pp.pandapowerNet:
 
         # Add object type name if objekttyp exists
         if 'swd_objekttyp' in net.bus.columns:
-            net.bus['swd_object_type'] = net.bus['swd_objekttyp'].apply(get_object_type_name)
+            net.bus['swd_object_type'] = net.bus['swd_objekttyp'].apply(get_swd_object_type_name)
 
         logger.info(f"Enhanced {len(net.bus)} buses with SWD naming info")
 
@@ -157,7 +163,7 @@ def enhance_network_with_swd_info(net: pp.pandapowerNet) -> pp.pandapowerNet:
                 net.load[f'swd_{key}'] = parsed.apply(lambda x: x.get(key, ''))
 
         if 'swd_objekttyp' in net.load.columns:
-            net.load['swd_object_type'] = net.load['swd_objekttyp'].apply(get_object_type_name)
+            net.load['swd_object_type'] = net.load['swd_objekttyp'].apply(get_swd_object_type_name)
 
     # Lines get their info from connected buses
     if not net.line.empty:
@@ -173,158 +179,180 @@ def enhance_network_with_swd_info(net: pp.pandapowerNet) -> pp.pandapowerNet:
     return net
 
 
-def adapt_swd_network_for_analysis(
-    net: pp.pandapowerNet,
-    default_zone: str = 'Residential'
-) -> pp.pandapowerNet:
-    """
-    Adapt SWD network for parameter calculation and analysis.
+# ============================================================================
+# Forchheim Naming Convention Parser
+# ============================================================================
 
-    This function:
-    1. Parses SWD naming convention
-    2. Normalizes structure for analysis functions
-    3. Ensures required columns exist
+def parse_forchheim_chr_name(chr_name: str) -> Dict[str, str]:
+    """
+    Parse Forchheim naming convention (continuous numeric string).
+
+    Structure (30 digits total):
+    Position 1: Netzebene (voltage level) - 1=HöS ... 7=NS(LV)
+    Position 2-3: Netznummer (network identifier)
+    Position 4-5: SS-Nummer (substation number)
+    Position 6-7: Strangnummer (branch number)
+    Position 8-13: Hauptknoten 1 + 2 (main nodes, 2x3 digits)
+    Position 14-19: Optional repetition
+    Position 20-25: Further connections
+    Position 26-27: Objekttyp (object type)
+    Position 28-30: Objektnummer (object number)
+
+    Parameters
+    ----------
+    chr_name : str
+        The chr_name string to parse
+
+    Returns
+    -------
+    dict
+        Parsed components
+    """
+    name_str = str(chr_name).strip()
+
+    if len(name_str) < 13:
+        return {}
+
+    try:
+        result = {
+            'netzebene': name_str[0:1],
+            'netznummer': name_str[1:3],
+            'ss_nummer': name_str[3:5],
+            'strangnummer': name_str[5:7],
+            'hauptknoten_1': name_str[7:10],
+            'hauptknoten_2': name_str[10:13],
+        }
+
+        if len(name_str) >= 19:
+            result['optional_rep_1'] = name_str[13:16]
+            result['optional_rep_2'] = name_str[16:19]
+
+        if len(name_str) >= 25:
+            result['further_conn_1'] = name_str[19:22]
+            result['further_conn_2'] = name_str[22:25]
+
+        if len(name_str) >= 27:
+            result['objekttyp'] = name_str[25:27]
+
+        if len(name_str) >= 30:
+            result['objektnummer'] = name_str[27:30]
+
+        # Grid identifier for splitting
+        result['grid_id'] = name_str[0:7]  # Netzebene + Netznummer + SS-Nummer + Strangnummer
+
+        return result
+
+    except Exception:
+        return {}
+
+
+def get_forchheim_object_type_name(objekttyp_code: str) -> str:
+    """
+    Get object type name from Forchheim code.
+
+    Uses the same codes as SWD convention.
+    """
+    return get_swd_object_type_name(objekttyp_code)
+
+
+# ============================================================================
+# Auto-detection and Generic Functions
+# ============================================================================
+
+def detect_naming_convention(net: pp.pandapowerNet) -> str:
+    """
+    Auto-detect the naming convention used in a network.
 
     Parameters
     ----------
     net : pp.pandapowerNet
-        SWD network to adapt
-    default_zone : str
-        Default zone for loads
+        Network to analyze
 
     Returns
     -------
-    pp.pandapowerNet
-        Adapted network ready for analysis
+    str
+        One of: 'swd', 'forchheim', 'generic'
     """
-    import copy
-    logger = logging.getLogger(__name__)
+    if 'chr_name' not in net.bus.columns:
+        return 'generic'
 
-    # Create deep copy
-    adapted_net = copy.deepcopy(net)
+    # Sample a few chr_names
+    sample_names = net.bus['chr_name'].dropna().head(10).tolist()
 
-    # Parse SWD naming convention
-    if 'chr_name' in adapted_net.bus.columns:
-        logger.info("Detected SWD network with chr_name convention")
-        adapted_net = enhance_network_with_swd_info(adapted_net)
+    if not sample_names:
+        return 'generic'
 
-    # Convert all numeric columns to proper types (SWD data may have strings)
-    _ensure_numeric_types(adapted_net)
+    # Check for SWD pattern (contains underscores)
+    if any('_' in str(name) for name in sample_names):
+        return 'swd'
 
-    # Normalize load columns
-    if not adapted_net.load.empty:
-        # Ensure numeric columns are actually numeric (SWD data may have strings)
-        numeric_load_cols = ['p_mw', 'q_mvar', 'max_p_mw', 'scaling']
-        for col in numeric_load_cols:
-            if col in adapted_net.load.columns:
-                adapted_net.load[col] = pd.to_numeric(adapted_net.load[col], errors='coerce').fillna(0.0)
+    # Check for Forchheim pattern (all numeric, specific length)
+    if all(str(name).replace('_', '').isdigit() for name in sample_names):
+        avg_length = sum(len(str(name).replace('_', '')) for name in sample_names) / len(sample_names)
+        if 25 <= avg_length <= 32:
+            return 'forchheim'
 
-        if 'max_p_mw' not in adapted_net.load.columns and 'p_mw' in adapted_net.load.columns:
-            adapted_net.load['max_p_mw'] = adapted_net.load['p_mw']
-            logger.info("Created 'max_p_mw' from 'p_mw'")
-
-        if 'max_p_mw' not in adapted_net.load.columns:
-            adapted_net.load['max_p_mw'] = 0.0
-            logger.warning("No power data in loads, set max_p_mw to 0")
-
-        if 'name' not in adapted_net.load.columns:
-            adapted_net.load['name'] = [f"Load_{i}" for i in adapted_net.load.index]
-
-    # Ensure bus names exist
-    if 'name' not in adapted_net.bus.columns or adapted_net.bus['name'].isna().any():
-        adapted_net.bus['name'] = adapted_net.bus.apply(
-            lambda row: row.get('name') if pd.notna(row.get('name')) else
-                       row.get('chr_name', f"Bus_{row.name}"),
-            axis=1
-        )
-
-    # Add zones for simultaneity factor calculation
-    if 'zone' not in adapted_net.bus.columns:
-        adapted_net.bus['zone'] = default_zone
-    adapted_net.bus['zone'] = adapted_net.bus['zone'].fillna(default_zone)
-
-    # Ensure zones are valid
-    valid_zones = ['Residential', 'Commercial', 'Public']
-    adapted_net.bus['zone'] = adapted_net.bus['zone'].apply(
-        lambda z: z if z in valid_zones else default_zone
-    )
-
-    # Remove zone from loads if it exists (it should come from bus table)
-    if 'zone' in adapted_net.load.columns:
-        adapted_net.load.drop('zone', axis=1, inplace=True)
-
-    # Identify bus types using SWD info or heuristics
-    _identify_bus_types_swd(adapted_net)
-
-    logger.info(f"Adapted SWD network: {len(adapted_net.bus)} buses, "
-               f"{len(adapted_net.load)} loads, {len(adapted_net.line)} lines")
-
-    return adapted_net
+    return 'generic'
 
 
-def _ensure_numeric_types(net: pp.pandapowerNet) -> None:
+def identify_bus_type_generic(net: pp.pandapowerNet, bus_idx: int) -> str:
     """
-    Ensure all numeric columns in the network are actually numeric types.
-    
-    SWD data may have numeric values stored as strings, which causes
-    type errors in calculations.
+    Identify bus type using generic heuristics (no naming convention).
+
+    Parameters
+    ----------
+    net : pp.pandapowerNet
+        The network
+    bus_idx : int
+        Bus index to classify
+
+    Returns
+    -------
+    str
+        One of: 'lv_bus', 'consumer_bus', 'connection_bus'
     """
-    logger = logging.getLogger(__name__)
-    
-    # Bus numeric columns
-    bus_numeric = ['vn_kv', 'min_vm_pu', 'max_vm_pu']
-    for col in bus_numeric:
-        if col in net.bus.columns:
-            net.bus[col] = pd.to_numeric(net.bus[col], errors='coerce')
-    
-    # Line numeric columns
-    line_numeric = ['length_km', 'r_ohm_per_km', 'x_ohm_per_km', 'c_nf_per_km', 
-                    'g_us_per_km', 'max_i_ka', 'df']
-    for col in line_numeric:
-        if col in net.line.columns:
-            net.line[col] = pd.to_numeric(net.line[col], errors='coerce')
-    
-    # Transformer numeric columns
-    trafo_numeric = ['sn_mva', 'vn_hv_kv', 'vn_lv_kv', 'vk_percent', 'vkr_percent',
-                     'pfe_kw', 'i0_percent', 'shift_degree']
-    for col in trafo_numeric:
-        if col in net.trafo.columns:
-            net.trafo[col] = pd.to_numeric(net.trafo[col], errors='coerce')
-    
-    # Load numeric columns (done separately in adapt function)
-    # Sgen numeric columns if present
-    if not net.sgen.empty:
-        sgen_numeric = ['p_mw', 'q_mvar', 'sn_mva', 'scaling']
-        for col in sgen_numeric:
-            if col in net.sgen.columns:
-                net.sgen[col] = pd.to_numeric(net.sgen[col], errors='coerce')
-    
-    logger.debug("Converted numeric columns to proper types")
+    # Check if it's a transformer LV bus
+    if not net.trafo.empty:
+        if bus_idx in net.trafo['lv_bus'].values:
+            return 'lv_bus'
+
+    # Check if it has loads (consumer bus)
+    if not net.load.empty:
+        if bus_idx in net.load['bus'].values:
+            return 'consumer_bus'
+
+    # Otherwise, it's an internal connection bus
+    return 'connection_bus'
 
 
-def _identify_bus_types_swd(net: pp.pandapowerNet) -> None:
+def identify_bus_types_in_network(net: pp.pandapowerNet,
+                                  naming_convention: str = 'auto') -> None:
     """
-    Identify and label bus types for SWD networks.
+    Identify and label bus types for a network.
 
-    Uses SWD object type codes where available, otherwise uses heuristics.
+    Adds standardized bus name patterns for compatibility with
+    topology_analysis.ParameterCalculator.
+
+    Parameters
+    ----------
+    net : pp.pandapowerNet
+        Network to process (modified in-place)
+    naming_convention : str
+        One of: 'auto', 'swd', 'forchheim', 'generic'
     """
     logger = logging.getLogger(__name__)
 
-    # Use SWD object type if available
-    if 'swd_object_type' in net.bus.columns:
-        # Buses with type 'Substation' or transformer LV bus -> LVbus
-        if not net.trafo.empty:
-            for idx, trafo in net.trafo.iterrows():
-                lv_bus = trafo['lv_bus']
-                if lv_bus in net.bus.index:
-                    current_name = str(net.bus.loc[lv_bus, 'name'])
-                    if 'LVbus' not in current_name:
-                        net.bus.loc[lv_bus, 'name'] = f"LVbus_{lv_bus}"
-    else:
-        # Fallback: use heuristics
-        if not net.trafo.empty:
-            lv_bus = net.trafo.iloc[0]['lv_bus']
-            if 'LVbus' not in str(net.bus.loc[lv_bus, 'name']):
+    if naming_convention == 'auto':
+        naming_convention = detect_naming_convention(net)
+
+    logger.info(f"Identifying bus types using '{naming_convention}' convention")
+
+    # Identify LV bus (transformer LV side)
+    if not net.trafo.empty:
+        lv_bus = net.trafo.iloc[0]['lv_bus']
+        if lv_bus in net.bus.index:
+            current_name = str(net.bus.loc[lv_bus, 'name'])
+            if 'LVbus' not in current_name:
                 net.bus.loc[lv_bus, 'name'] = f"LVbus_{lv_bus}"
 
     # Mark consumer buses (with loads)
@@ -349,5 +377,5 @@ def _identify_bus_types_swd(net: pp.pandapowerNet) -> None:
             'Connection' not in current_name):
             net.bus.loc[bus_idx, 'name'] = f"Connection Nodebus_{bus_idx}"
 
-    logger.debug("Bus types identified for SWD network")
+    logger.debug(f"Bus types identified for {len(net.bus)} buses")
 
