@@ -92,7 +92,7 @@ def get_bus_line_geo_for_plz(plz: int) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFra
 
     # Loop over all networks and extract line and bus data
     for kcid, bcid in cluster_list:
-        net = dbc_client.read_net(plz, kcid, bcid)
+        net = dbc_client.read_net_db(plz, kcid, bcid)
         line_geo, bus_geo = get_bus_line_geo_for_network(
             pandapower_net=net, net_index=net_index, plz=plz
         )

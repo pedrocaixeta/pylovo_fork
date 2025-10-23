@@ -69,7 +69,7 @@ def read_net_with_grid_generator(plz: int, kcid: int, bcid: int):
     """
     gg = GridGenerator(plz=plz)
     dbc_client = gg.dbc
-    net = dbc_client.read_net(plz=plz, kcid=kcid, bcid=bcid)
+    net = dbc_client.read_net_db(plz=plz, kcid=kcid, bcid=bcid)
     return net
 
 
@@ -135,7 +135,7 @@ def plot_contextily(
         The Figure object containing the plot.
     """
     gg = GridGenerator(plz=plz)
-    net = gg.dbc.read_net(plz=plz, kcid=kcid, bcid=bcid)
+    net = gg.dbc.read_net_db(plz=plz, kcid=kcid, bcid=bcid)
     dbc_client = gg.dbc
 
     if ax is None:

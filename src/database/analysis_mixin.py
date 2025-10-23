@@ -94,7 +94,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
         return data_list, data_labels, trafo_dict
 
-    def read_net(self, plz: int, kcid: int, bcid: int) -> pp.pandapowerNet:
+    def read_net_db(self, plz: int, kcid: int, bcid: int) -> pp.pandapowerNet:
         """
         Reads a pandapower network from the database for the specified grid.
 

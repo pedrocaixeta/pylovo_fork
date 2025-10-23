@@ -161,7 +161,7 @@ def plot_cable_length_of_types(plz: int, figsize: Tuple[int, int] = (10, 6)) -> 
 
     for kcid, bcid in cluster_list:
         try:
-            net = dbc_client.read_net(plz, kcid, bcid)
+            net = dbc_client.read_net_db(plz, kcid, bcid)
         except Exception as e:
             print(f"Local network {kcid},{bcid} is problematic")
             raise e
@@ -217,7 +217,7 @@ def get_trafo_dicts(plz: int) -> Tuple[dict, dict, dict, dict]:
     for kcid, bcid in cluster_list:
         load_count = 0
         bus_list = []
-        net = dbc_client.read_net(plz, kcid, bcid)
+        net = dbc_client.read_net_db(plz, kcid, bcid)
 
         for row in net.load[["name", "bus"]].itertuples():
             load_count += 1
@@ -265,7 +265,7 @@ def plot_trafo_on_map(plz: int, save_plots: bool = False) -> None:
     set_mapbox_token("pk.eyJ1IjoiYmVuZWhhcm8iLCJhIjoiY205OGdwejJ1MDJsbzJsczl1ajdyYmlzaSJ9.HWA8ZLQm1Sp0Whs5PADxrw")
 
     for kcid, bcid in cluster_list:
-        net = dbc_client.read_net(plz, kcid, bcid)
+        net = dbc_client.read_net_db(plz, kcid, bcid)
         for row in net.trafo[["sn_mva", "lv_bus"]].itertuples():
             trafo_size = round(row.sn_mva * 1e3)
             trafo_geom = np.array(net.bus_geodata.loc[row.lv_bus, ["x", "y"]])
