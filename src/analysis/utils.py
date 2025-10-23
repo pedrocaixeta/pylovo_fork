@@ -1,5 +1,6 @@
 from pathlib import Path
 import yaml
+import pandapower as pp
 
 # Configuration lives next to this module
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -37,5 +38,13 @@ def load_config() -> tuple[Path, str, str]:
 
     net_name = (cfg.get("net_name") or "").strip()
     projection = (cfg.get("projection") or "epsg:3035").strip()
+    # plz = (cfg.get("plz") or "").strip()
 
     return data_dir, net_name, projection
+
+def read_net_json():
+    data_dir, net_name, _projection = load_config()
+    file_path = f"{data_dir}/{net_name}"
+    json_path = f"{file_path}.json"
+    net = pp.from_json(json_path)
+    return net, file_path

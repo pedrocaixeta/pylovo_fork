@@ -13,7 +13,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from path_loader import load_config
+from utils import load_config
 
 def export_geodata_as_csv():
     data_dir, json_filename, projection = load_config()
