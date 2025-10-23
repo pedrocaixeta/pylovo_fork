@@ -15,8 +15,51 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from path_loader import load_config
 
+def export_geodata_as_csv():
+    data_dir, json_filename, projection = load_config()
+    data_dir, net_name, _projection = load_config()
+    file_path = f"{data_dir}/{net_name}"
 
-def iter_nets_from_json(json_path: Path):
+    out_lines = data_dir / "lines_multiple_grids.csv"
+    out_buses = data_dir / "bus_multiple_grids.csv"
+
+    # clear old results
+    out_lines.unlink(missing_ok=True)
+    out_buses.unlink(missing_ok=True)
+
+    nets = list(_iter_nets_from_json(file_path))
+    pbar = tqdm(total=len(nets), desc="Processing nets")
+
+    all_lines, all_buses = [], []
+    for idx, net in nets:
+        line_gdf, bus_gdf = _get_bus_line_geo(net, idx, projection)
+        all_lines.append(line_gdf)
+        all_buses.append(bus_gdf)
+        pbar.update(1)
+
+    pbar.close()
+    gdf_line = pd.concat(all_lines, ignore_index=True) if all_lines else gpd.GeoDataFrame()
+    gdf_bus = pd.concat(all_buses, ignore_index=True) if all_buses else gpd.GeoDataFrame()
+
+    # Ensure GeoDataFrame type after concat
+    if not gdf_line.empty and "geometry" in gdf_line.columns and not isinstance(gdf_line, gpd.GeoDataFrame):
+        gdf_line = gpd.GeoDataFrame(gdf_line, geometry="geometry", crs="EPSG:4326")
+    if not gdf_bus.empty and "geometry" in gdf_bus.columns and not isinstance(gdf_bus, gpd.GeoDataFrame):
+        gdf_bus = gpd.GeoDataFrame(gdf_bus, geometry="geometry", crs="EPSG:4326")
+
+    # Convert geometry to WKT so QGIS can import
+    if not gdf_line.empty and "geometry" in gdf_line.columns:
+        gdf_line["geometry"] = gdf_line.geometry.to_wkt()
+    if not gdf_bus.empty and "geometry" in gdf_bus.columns:
+        gdf_bus["geometry"] = gdf_bus.geometry.to_wkt()
+
+    # Write results next to the JSON
+    if not gdf_line.empty:
+        gdf_line.to_csv(out_lines, index=False)
+    if not gdf_bus.empty:
+        gdf_bus.to_csv(out_buses, index=False)
+
+def _iter_nets_from_json(json_path: Path):
     """Load single or multiple pandapower nets from a JSON file."""
     try:
         net = pp.from_json(str(json_path))
@@ -42,7 +85,7 @@ def iter_nets_from_json(json_path: Path):
             tmp.unlink(missing_ok=True)
 
 
-def get_bus_line_geo(net, net_index: int, projection: str):
+def _get_bus_line_geo(net, net_index: int, projection: str):
     pp.plotting.plotly.geo_data_to_latlong(net, projection)
 
     # Lines
@@ -74,49 +117,6 @@ def get_bus_line_geo(net, net_index: int, projection: str):
     return gdf_line, gdf_bus
 
 
-def run():
-    data_dir, json_filename, projection = load_config()
-    json_path = resolve_json_path(data_dir, json_filename)
-
-    out_lines = data_dir / "lines_multiple_grids.csv"
-    out_buses = data_dir / "bus_multiple_grids.csv"
-
-    # clear old results
-    out_lines.unlink(missing_ok=True)
-    out_buses.unlink(missing_ok=True)
-
-    nets = list(iter_nets_from_json(json_path))
-    pbar = tqdm(total=len(nets), desc="Processing nets")
-
-    all_lines, all_buses = [], []
-    for idx, net in nets:
-        line_gdf, bus_gdf = get_bus_line_geo(net, idx, projection)
-        all_lines.append(line_gdf)
-        all_buses.append(bus_gdf)
-        pbar.update(1)
-
-    pbar.close()
-    gdf_line = pd.concat(all_lines, ignore_index=True) if all_lines else gpd.GeoDataFrame()
-    gdf_bus = pd.concat(all_buses, ignore_index=True) if all_buses else gpd.GeoDataFrame()
-
-    # Ensure GeoDataFrame type after concat
-    if not gdf_line.empty and "geometry" in gdf_line.columns and not isinstance(gdf_line, gpd.GeoDataFrame):
-        gdf_line = gpd.GeoDataFrame(gdf_line, geometry="geometry", crs="EPSG:4326")
-    if not gdf_bus.empty and "geometry" in gdf_bus.columns and not isinstance(gdf_bus, gpd.GeoDataFrame):
-        gdf_bus = gpd.GeoDataFrame(gdf_bus, geometry="geometry", crs="EPSG:4326")
-
-    # Convert geometry to WKT so QGIS can import
-    if not gdf_line.empty and "geometry" in gdf_line.columns:
-        gdf_line["geometry"] = gdf_line.geometry.to_wkt()
-    if not gdf_bus.empty and "geometry" in gdf_bus.columns:
-        gdf_bus["geometry"] = gdf_bus.geometry.to_wkt()
-
-    # Write results next to the JSON
-    if not gdf_line.empty:
-        gdf_line.to_csv(out_lines, index=False)
-    if not gdf_bus.empty:
-        gdf_bus.to_csv(out_buses, index=False)
-
 
 if __name__ == "__main__":
-    run()
+    export_geodata_as_csv()
