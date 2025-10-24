@@ -178,7 +178,9 @@ class ParameterCalculator:
         cable_length_km = self.get_cable_length(net)
         cable_len_per_house = cable_length_km / no_house_connections if no_house_connections > 0 else 0.0
 
-        G = pp.topology.create_nxgraph(net, respect_switches=False)
+        # CRITICAL FIX: respect_switches=True to analyze operational (radial) topology
+        # This is essential for DSO networks that use open switches for radial operation
+        G = pp.topology.create_nxgraph(net, respect_switches=True)
         no_branches = self.get_no_branches(G, net)
         avg_trafo_dis, max_trafo_dis = self.get_distances_in_graph(net, G)
 
@@ -275,8 +277,12 @@ class ParameterCalculator:
         """Compute a spatial neighbor metric for consumer buses.
 
         For each consumer bus, compute the mean distance to its 4 nearest other
-        consumer buses using haversine distances (km). Return the median of these
-        per-bus averages for robustness. Returns 0.0 if fewer than 2 consumer buses.
+        consumer buses. Return the median of these per-bus averages for robustness.
+        Returns 0.0 if fewer than 2 consumer buses.
+
+        Automatically detects coordinate system:
+        - Geographic (WGS84): uses haversine distance
+        - Projected (e.g., EPSG:3035): uses Euclidean distance in meters
         """
         bus_geo = pandapower_net.bus_geodata.copy()
 
@@ -292,14 +298,32 @@ class ParameterCalculator:
         if len(bus_geo) < 2:
             return 0.0
 
-        # Project lon/lat to radians for haversine; result distances in km (Earth radius ~6371 km)
+        # Detect coordinate system based on coordinate ranges
+        x_vals = bus_geo["geometry"].x
+        y_vals = bus_geo["geometry"].y
+        is_geographic = (x_vals.min() >= -180 and x_vals.max() <= 180 and
+                        y_vals.min() >= -90 and y_vals.max() <= 90)
+
         list_pt = []
         for pt in bus_geo["geometry"]:
-            new_pt = [radians(pt.x), radians(pt.y)]
+            if is_geographic:
+                # Geographic coordinates: convert to radians for haversine
+                new_pt = [radians(pt.x), radians(pt.y)]
+            else:
+                # Projected coordinates: use as-is (in meters)
+                new_pt = [pt.x, pt.y]
             list_pt.append(new_pt)
 
-        dis_mat = haversine_distances(list_pt, list_pt)
-        dis_mat = dis_mat * 6371.0
+        if is_geographic:
+            # Use haversine distance for geographic coordinates
+            dis_mat = haversine_distances(list_pt, list_pt)
+            dis_mat = dis_mat * 6371.0  # Convert to km (Earth radius)
+        else:
+            # Use Euclidean distance for projected coordinates
+            from scipy.spatial.distance import cdist
+            dis_mat = cdist(list_pt, list_pt, metric='euclidean')
+            dis_mat = dis_mat / 1000.0  # Convert meters to km
+
         df_distances = pd.DataFrame(dis_mat)
         list_avg_dis4pts = []
 
@@ -778,10 +802,11 @@ class ParameterCalculator:
 
                 load_bus = pd.unique(net.load["bus"]).tolist()
 
-                top.create_nxgraph(net, respect_switches=False)
+                # CRITICAL FIX: respect_switches=True for operational topology
+                top.create_nxgraph(net, respect_switches=True)
                 trafo_distance_to_buses = (
                     top.calc_distance_to_bus(net, net.trafo["lv_bus"].tolist()[0], weight="weight",
-                                             respect_switches=False, ).loc[load_bus].tolist())
+                                             respect_switches=True, ).loc[load_bus].tolist())
 
                 # calculate total sim_peak_load
                 residential_bus_index = net.bus[~net.bus["zone"].isin(["Commercial", "Public"])].index.tolist()

@@ -107,6 +107,10 @@ class MetricsCalculator:
 
         This method manually calls the individual calculation methods to avoid
         the database lookup for simultaneous peak load.
+
+        CRITICAL: Uses respect_switches=True to analyze operational (radial) topology
+        instead of physical (potentially meshed) topology. This is essential for
+        DSO networks that use open switches to create radial operation.
         """
         import pandapower.topology as top
 
@@ -123,7 +127,8 @@ class MetricsCalculator:
         cable_length_km = calc.get_cable_length(net)
         cable_len_per_house = cable_length_km / no_house_connections if no_house_connections > 0 else 0.0
 
-        G = top.create_nxgraph(net, respect_switches=False)
+        # CRITICAL FIX: respect_switches=True to get operational radial topology
+        G = top.create_nxgraph(net, respect_switches=True)
         no_branches = calc.get_no_branches(G, net)
         avg_trafo_dis, max_trafo_dis = calc.get_distances_in_graph(net, G)
 
@@ -202,7 +207,7 @@ class MetricsCalculator:
             Dictionary of computed parameters
         """
         # Compute standard parameters
-        params = self.compute_parameters(net)
+        params = self.compute_metrics(net)
 
         # If simultaneous load is 0 and estimation is requested, estimate it
         if estimate_simultaneous_load and params['simultaneous_peak_load_mw'] == 0.0:

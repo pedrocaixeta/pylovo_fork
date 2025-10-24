@@ -2,7 +2,7 @@
 Naming convention parsers for different DSO network formats.
 
 Supports:
-- SWD hierarchical naming convention (underscore-separated)
+- SWF hierarchical naming convention (underscore-separated)
 - Forchheim naming convention (continuous numeric string)
 - Generic bus type detection
 """
@@ -14,12 +14,12 @@ import logging
 
 
 # ============================================================================
-# SWD Naming Convention Parser
+# SWF Naming Convention Parser
 # ============================================================================
 
-def parse_swd_chr_name(chr_name: str) -> Dict[str, str]:
+def parse_SWF_chr_name(chr_name: str) -> Dict[str, str]:
     """
-    Parse SWD hierarchical naming convention.
+    Parse SWF hierarchical naming convention.
 
     Structure:
     Position 1: Netzebene (voltage level) - 1=HöS ... 7=NS(LV)
@@ -85,9 +85,9 @@ def parse_swd_chr_name(chr_name: str) -> Dict[str, str]:
         return {}
 
 
-def get_swd_object_type_name(objekttyp_code: str) -> str:
+def get_SWF_object_type_name(objekttyp_code: str) -> str:
     """
-    Get object type name from SWD code.
+    Get object type name from SWF code.
 
     Object Type Codes:
     01 = Knoten (node)
@@ -118,16 +118,16 @@ def get_swd_object_type_name(objekttyp_code: str) -> str:
     return type_map.get(str(objekttyp_code).zfill(2), 'Unknown')
 
 
-def enhance_network_with_swd_info(net: pp.pandapowerNet) -> pp.pandapowerNet:
+def enhance_network_with_SWF_info(net: pp.pandapowerNet) -> pp.pandapowerNet:
     """
-    Enhance network with parsed SWD naming information.
+    Enhance network with parsed SWF naming information.
 
     Adds columns to bus/load/line tables with parsed chr_name components.
 
     Parameters
     ----------
     net : pp.pandapowerNet
-        Network with SWD chr_name structure
+        Network with SWF chr_name structure
 
     Returns
     -------
@@ -139,41 +139,41 @@ def enhance_network_with_swd_info(net: pp.pandapowerNet) -> pp.pandapowerNet:
     # Parse bus names
     if 'chr_name' in net.bus.columns:
         logger.info("Parsing bus chr_names...")
-        parsed = net.bus['chr_name'].apply(parse_swd_chr_name)
+        parsed = net.bus['chr_name'].apply(parse_SWF_chr_name)
 
         # Add parsed columns
         for key in ['netzebene', 'netznummer', 'ss_nummer', 'strangnummer',
                     'hauptknoten_1', 'hauptknoten_2', 'objekttyp', 'grid_id']:
             if parsed.apply(lambda x: key in x).any():
-                net.bus[f'swd_{key}'] = parsed.apply(lambda x: x.get(key, ''))
+                net.bus[f'SWF_{key}'] = parsed.apply(lambda x: x.get(key, ''))
 
         # Add object type name if objekttyp exists
-        if 'swd_objekttyp' in net.bus.columns:
-            net.bus['swd_object_type'] = net.bus['swd_objekttyp'].apply(get_swd_object_type_name)
+        if 'SWF_objekttyp' in net.bus.columns:
+            net.bus['SWF_object_type'] = net.bus['SWF_objekttyp'].apply(get_SWF_object_type_name)
 
-        logger.info(f"Enhanced {len(net.bus)} buses with SWD naming info")
+        logger.info(f"Enhanced {len(net.bus)} buses with SWF naming info")
 
     # Parse load names if they have chr_name
     if not net.load.empty and 'chr_name' in net.load.columns:
         logger.info("Parsing load chr_names...")
-        parsed = net.load['chr_name'].apply(parse_swd_chr_name)
+        parsed = net.load['chr_name'].apply(parse_SWF_chr_name)
 
         for key in ['objekttyp', 'grid_id']:
             if parsed.apply(lambda x: key in x).any():
-                net.load[f'swd_{key}'] = parsed.apply(lambda x: x.get(key, ''))
+                net.load[f'SWF_{key}'] = parsed.apply(lambda x: x.get(key, ''))
 
-        if 'swd_objekttyp' in net.load.columns:
-            net.load['swd_object_type'] = net.load['swd_objekttyp'].apply(get_swd_object_type_name)
+        if 'SWF_objekttyp' in net.load.columns:
+            net.load['SWF_object_type'] = net.load['SWF_objekttyp'].apply(get_SWF_object_type_name)
 
     # Lines get their info from connected buses
     if not net.line.empty:
         logger.info("Enhancing lines with bus information...")
         # Add grid_id from from_bus
         net.line['from_bus_grid_id'] = net.line['from_bus'].map(
-            net.bus['swd_grid_id'] if 'swd_grid_id' in net.bus.columns else pd.Series()
+            net.bus['SWF_grid_id'] if 'SWF_grid_id' in net.bus.columns else pd.Series()
         )
         net.line['to_bus_grid_id'] = net.line['to_bus'].map(
-            net.bus['swd_grid_id'] if 'swd_grid_id' in net.bus.columns else pd.Series()
+            net.bus['SWF_grid_id'] if 'SWF_grid_id' in net.bus.columns else pd.Series()
         )
 
     return net
@@ -250,9 +250,9 @@ def get_forchheim_object_type_name(objekttyp_code: str) -> str:
     """
     Get object type name from Forchheim code.
 
-    Uses the same codes as SWD convention.
+    Uses the same codes as SWF convention.
     """
-    return get_swd_object_type_name(objekttyp_code)
+    return get_SWF_object_type_name(objekttyp_code)
 
 
 # ============================================================================
@@ -271,7 +271,7 @@ def detect_naming_convention(net: pp.pandapowerNet) -> str:
     Returns
     -------
     str
-        One of: 'swd', 'forchheim', 'generic'
+        One of: 'SWF', 'forchheim', 'generic'
     """
     if 'chr_name' not in net.bus.columns:
         return 'generic'
@@ -282,9 +282,9 @@ def detect_naming_convention(net: pp.pandapowerNet) -> str:
     if not sample_names:
         return 'generic'
 
-    # Check for SWD pattern (contains underscores)
+    # Check for SWF pattern (contains underscores)
     if any('_' in str(name) for name in sample_names):
-        return 'swd'
+        return 'SWF'
 
     # Check for Forchheim pattern (all numeric, specific length)
     if all(str(name).replace('_', '').isdigit() for name in sample_names):
@@ -338,7 +338,7 @@ def identify_bus_types_in_network(net: pp.pandapowerNet,
     net : pp.pandapowerNet
         Network to process (modified in-place)
     naming_convention : str
-        One of: 'auto', 'swd', 'forchheim', 'generic'
+        One of: 'auto', 'SWF', 'forchheim', 'generic'
     """
     logger = logging.getLogger(__name__)
 

@@ -189,16 +189,19 @@ def normalize_load_columns(net: pp.pandapowerNet) -> None:
     Args:
         net: pandapower network to normalize (modified in-place)
     """
-    if not net.load.empty:
-        # Create max_p_mw from p_mw if needed
-        if 'max_p_mw' not in net.load.columns and 'p_mw' in net.load.columns:
+    # Always ensure max_p_mw column exists (even for empty load table)
+    if 'max_p_mw' not in net.load.columns:
+        if not net.load.empty and 'p_mw' in net.load.columns:
             net.load['max_p_mw'] = net.load['p_mw']
+        else:
+            net.load['max_p_mw'] = pd.Series(dtype=float)
 
-        if 'max_p_mw' not in net.load.columns:
-            net.load['max_p_mw'] = 0.0
-
-        if 'name' not in net.load.columns:
+    # Ensure name column exists
+    if 'name' not in net.load.columns:
+        if not net.load.empty:
             net.load['name'] = [f"Load_{i}" for i in net.load.index]
+        else:
+            net.load['name'] = pd.Series(dtype=str)
 
 
 def normalize_bus_names(net: pp.pandapowerNet) -> None:

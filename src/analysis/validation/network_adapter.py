@@ -2,7 +2,7 @@
 Unified network adapter for external pandapower networks.
 
 This module provides a single adapter that works with different network formats:
-- SWD networks (with hierarchical chr_name convention)
+- SWF networks (with hierarchical chr_name convention)
 - Forchheim networks (with continuous numeric chr_name)
 - Generic networks (any other format)
 
@@ -24,7 +24,7 @@ from ..utils import (
 )
 from .naming_conventions import (
     detect_naming_convention,
-    enhance_network_with_swd_info,
+    enhance_network_with_SWF_info,
     identify_bus_types_in_network
 )
 
@@ -37,7 +37,7 @@ class NetworkAdapter:
     structure (bus naming conventions, zones, etc.) for compatibility with the
     ParameterCalculator without modifying the original analysis code.
 
-    Supports automatic detection of naming conventions (SWD, Forchheim, generic).
+    Supports automatic detection of naming conventions (SWF, Forchheim, generic).
     """
 
     def __init__(
@@ -54,7 +54,7 @@ class NetworkAdapter:
         net : pp.pandapowerNet
             The pandapower network to adapt
         naming_convention : str
-            One of: 'auto', 'swd', 'forchheim', 'generic'
+            One of: 'auto', 'SWF', 'forchheim', 'generic'
             If 'auto', will attempt to detect the convention
         config : dict, optional
             Configuration for adaptation. Keys:
@@ -109,13 +109,13 @@ class NetworkAdapter:
 
     def _enhance_with_naming_metadata(self, net: pp.pandapowerNet) -> None:
         """Parse and add metadata from naming convention."""
-        if self.naming_convention == 'swd':
-            self.logger.debug("Parsing SWD naming convention...")
-            enhance_network_with_swd_info(net)
+        if self.naming_convention == 'SWF':
+            self.logger.debug("Parsing SWF naming convention...")
+            enhance_network_with_SWF_info(net)
         elif self.naming_convention == 'forchheim':
             self.logger.debug("Parsing Forchheim naming convention...")
-            # Forchheim uses similar structure to SWD
-            enhance_network_with_swd_info(net)
+            # Forchheim uses similar structure to SWF
+            enhance_network_with_SWF_info(net)
         # Generic networks don't have special naming to parse
 
     def _normalize_structure(self, net: pp.pandapowerNet) -> None:
@@ -136,7 +136,7 @@ class NetworkAdapter:
         Ensure buses have zone information.
 
         Zones are used for simultaneity factor calculations:
-        - 'Residential': residential buildings (SFH, MFH, AB, TH)
+        - 'Residential': residential buildings (SFH, MFH, AB, TH, NS_Last_*)
         - 'Commercial': commercial buildings
         - 'Public': public buildings
         """
@@ -154,12 +154,37 @@ class NetworkAdapter:
         if zone_mapping:
             net.bus['zone'] = net.bus['zone'].replace(zone_mapping)
 
-        # Propagate zones from loads to buses if load zones exist
+        # IMPROVED: Infer zones from connected loads for DSO data
+        if 'name' in net.load.columns:
+            for bus_idx in net.load['bus'].unique():
+                if bus_idx not in net.bus.index:
+                    continue
+
+                bus_loads = net.load[net.load['bus'] == bus_idx]
+
+                # Check load names for patterns
+                load_names = bus_loads['name'].astype(str)
+
+                # NS_Last_* = Residential (DSO residential loads)
+                if load_names.str.contains('NS_Last_', regex=False).any():
+                    net.bus.loc[bus_idx, 'zone'] = 'Residential'
+                # NS_EZA_* = Generator (typically residential PV)
+                elif load_names.str.contains('NS_EZA_', regex=False).any():
+                    net.bus.loc[bus_idx, 'zone'] = 'Residential'
+                # MS_Last_* = Medium voltage loads (often commercial/industrial)
+                elif load_names.str.contains('MS_Last_', regex=False).any():
+                    net.bus.loc[bus_idx, 'zone'] = 'Commercial'
+
+        # Propagate zones from loads to buses if load zones exist (for other data sources)
         if 'zone' in net.load.columns:
             for bus_idx in net.load['bus'].unique():
+                if bus_idx not in net.bus.index:
+                    continue
                 load_zones = net.load[net.load['bus'] == bus_idx]['zone'].mode()
                 if len(load_zones) > 0:
-                    net.bus.loc[bus_idx, 'zone'] = load_zones.iloc[0]
+                    # Only override if not already set by load name pattern
+                    if net.bus.loc[bus_idx, 'zone'] == default_zone:
+                        net.bus.loc[bus_idx, 'zone'] = load_zones.iloc[0]
 
         # Ensure all zones are valid (Residential, Commercial, or Public)
         valid_zones = ['Residential', 'Commercial', 'Public']
@@ -217,7 +242,7 @@ def adapt_network(
     net : pp.pandapowerNet
         The pandapower network to adapt
     naming_convention : str
-        One of: 'auto', 'swd', 'forchheim', 'generic'
+        One of: 'auto', 'SWF', 'forchheim', 'generic'
     zone_mapping : dict, optional
         Mapping from DSO zone names to standard zones
         Example: {'residential': 'Residential', 'industrial': 'Commercial'}

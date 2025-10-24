@@ -1,8 +1,8 @@
-# SWD Naming Convention for Network Objects (chr_name)
+# SWF Naming Convention for Network Objects (chr_name)
 
 ## Overview
 
-SWD networks use a hierarchical naming convention where each element has a structured `chr_name` that encodes its position in the network hierarchy. Unlike Forchheim's continuous 30-digit format, SWD uses underscore-separated segments.
+SWF networks use a hierarchical naming convention where each element has a structured `chr_name` that encodes its position in the network hierarchy. Unlike Forchheim's continuous 30-digit format, SWF uses underscore-separated segments.
 
 ## Structure
 
@@ -80,7 +80,7 @@ chr_name: 7137137_001001_005005_002006_08_015
 
 ## Differences from Forchheim
 
-| Feature | SWD | Forchheim |
+| Feature | SWF | Forchheim |
 |---------|-----|-----------|
 | Format | Underscore-separated | Continuous digits |
 | Length | Variable (~30 chars) | Fixed 30 digits |
@@ -97,10 +97,10 @@ For splitting multi-grid networks, use the **grid identifier** (first 7 digits):
 ## Parsing in Code
 
 ```python
-from src.analysis.validation.naming_conventions import parse_swd_chr_name
+from src.analysis.validation.naming_conventions import parse_SWF_chr_name
 
 chr_name = "7137137_001001_005005_002006_06_042"
-parsed = parse_swd_chr_name(chr_name)
+parsed = parse_SWF_chr_name(chr_name)
 
 # Result:
 # {

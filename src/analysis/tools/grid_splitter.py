@@ -4,9 +4,13 @@ Grid splitter for DSO networks containing multiple LV grids.
 This module provides functionality to split a pandapower network containing
 multiple LV grids into individual grid networks for separate analysis.
 
-Supports both:
-- Naming convention-based splitting (SWD, Forchheim formats)
+Key feature: Respects switch states to extract operational (radial) topology
+instead of physical (meshed) topology, which is critical for DSO networks.
+
+Supports:
+- Naming convention-based splitting (SWF, Forchheim formats)
 - Generic topology-based splitting (for any network structure)
+- Hybrid approach combining topology + naming validation
 """
 
 import pandapower as pp
@@ -30,7 +34,8 @@ class GridSplitter:
         net: pp.pandapowerNet,
         method: str = 'auto',
         lv_index: int = 7,
-        trafo_index: int = 6
+        trafo_index: int = 6,
+        respect_switches: bool = True
     ):
         """
         Initialize the grid splitter.
@@ -45,11 +50,15 @@ class GridSplitter:
             Index for LV buses in naming convention (default: 7)
         trafo_index : int
             Index for transformers in naming convention (default: 6)
+        respect_switches : bool
+            If True, respect switch states for operational topology (default: True)
+            This is CRITICAL for DSO networks to get radial operational topology!
         """
         self.net = net
         self.method = method
         self.lv_index = lv_index
         self.trafo_index = trafo_index
+        self.respect_switches = respect_switches
         self.logger = logging.getLogger(__name__)
 
     def split(self) -> List[pp.pandapowerNet]:
@@ -65,7 +74,8 @@ class GridSplitter:
             self.net,
             use_naming_convention=(self.method != 'topology'),
             lv_index=self.lv_index,
-            trafo_index=self.trafo_index
+            trafo_index=self.trafo_index,
+            respect_switches=self.respect_switches
         )
 
     def save_grids(
@@ -131,17 +141,25 @@ def split_network(net: pp.pandapowerNet, **kwargs) -> List[pp.pandapowerNet]:
     return splitter.split()
 
 
-# Original standalone functions preserved below
-
-
+# Main splitting function with HYBRID approach
 def split_multi_grid_network(
     net: pp.pandapowerNet,
     use_naming_convention: bool = True,
     lv_index: int = 7,
-    trafo_index: int = 6
+    trafo_index: int = 6,
+    respect_switches: bool = True
 ) -> List[pp.pandapowerNet]:
     """
-    Split a pandapower network containing multiple LV grids into separate networks.
+    Split a multi-grid network into individual grids using HYBRID approach.
+
+    HYBRID STRATEGY:
+    1. Use naming convention to IDENTIFY which buses belong to which grid
+    2. Use topology-based extraction to BUILD the subnet with full control
+    3. Respect switches during extraction for operational radial topology
+
+    This combines the advantages of both approaches:
+    - Naming: Accurate grid identification even with complex topologies
+    - Topology: Full control over line/trafo data, proper switch handling
 
     This is necessary for DSO data that contains multiple independent LV grids
     in a single JSON file. Each grid is identified by its transformer.
@@ -151,12 +169,16 @@ def split_multi_grid_network(
     net : pp.pandapowerNet
         Network containing multiple LV grids
     use_naming_convention : bool
-        If True, tries to use SWF naming convention (bus names like 7XXX for LV)
-        If False or naming convention not found, uses topology-based approach
+        If True, tries to use naming convention (bus names like 7XXX for LV)
+        If False or naming convention not found, uses pure topology-based approach
     lv_index : int
         Index for LV buses in naming convention (default: 7)
     trafo_index : int
         Index for transformers in naming convention (default: 6)
+    respect_switches : bool
+        If True, respect switch states to extract operational (radial) topology.
+        If False, uses physical (potentially meshed) topology.
+        DEFAULT: True (recommended for DSO networks!)
 
     Returns
     -------
@@ -165,26 +187,17 @@ def split_multi_grid_network(
     """
     logger = logging.getLogger(__name__)
 
-    if net.trafo.empty:
-        logger.warning("Network has no transformers, returning as single grid")
-        return [net]
-
-    num_trafos = len(net.trafo)
-    logger.info(f"Network contains {num_trafos} transformers - splitting into individual grids...")
-
-    # Try naming convention approach first (SWF-specific)
     if use_naming_convention and _has_naming_convention(net, lv_index):
-        logger.info("Using naming convention approach (SWF format detected)")
-        return _split_by_naming_convention(net, lv_index, trafo_index)
-
-    # Fall back to topology-based approach
-    logger.info("Using topology-based approach")
-    return _split_by_topology(net)
+        logger.info("Using HYBRID approach: naming for identification + topology for extraction")
+        return _split_hybrid(net, lv_index, trafo_index, respect_switches)
+    else:
+        logger.info(f"Using pure topology-based splitting (respect_switches={respect_switches})")
+        return _split_by_topology(net, respect_switches=respect_switches)
 
 
 def _has_naming_convention(net: pp.pandapowerNet, lv_index: int) -> bool:
     """
-    Check if network uses SWF naming convention.
+    Check if network uses naming convention.
 
     Returns True if bus names follow pattern like 7XXX (where X are digits).
     """
@@ -208,31 +221,33 @@ def _split_by_naming_convention(
     Split network using naming convention.
 
     Supports two patterns:
-    1. SWF: Transformers named "6XXX", buses "7XXX" where XXX is grid code
-    2. SWD: Transformers named "MSNS_TrSt_XXXX", LV buses "7XXXYYY..." where XXX is grid code
+    1. Forchheim: Transformers named "6XXX", buses "7XXX" where XXX is grid code
+    2. SWF: Hierarchical naming with underscore separation
     """
     logger = logging.getLogger(__name__)
 
-    # Check if transformers follow pattern "6XXX" (SWF) or need alternative approach (SWD)
+    # Check if transformers follow pattern "6XXX" (Forchheim) or need alternative approach (SWF)
     trafo_has_grid_codes = net.trafo["name"].astype(str).str.startswith(str(trafo_index)).any()
 
     if trafo_has_grid_codes:
-        # SWF pattern: use transformer names to identify grids
-        logger.info("Detected SWF pattern (transformers with 6XXX naming)")
-        return _split_by_naming_swf(net, lv_index, trafo_index)
+        # Forchheim pattern: use transformer names to identify grids
+        logger.info("Detected Forchheim pattern (transformers with 6XXX naming)")
+        return _split_by_naming_forchheim(net, lv_index, trafo_index)
     else:
-        # SWD pattern: use LV bus names connected to transformers
-        logger.info("Detected SWD pattern (using LV bus names from transformers)")
-        return _split_by_naming_swd(net, lv_index)
+        # SWF pattern: use LV bus names connected to transformers
+        logger.info("Detected SWF pattern (using LV bus names from transformers)")
+        return _split_by_naming_swf(net, lv_index)
 
 
-def _split_by_naming_swf(
+def _split_by_naming_forchheim(
     net: pp.pandapowerNet,
     lv_index: int = 7,
     trafo_index: int = 6
 ) -> List[pp.pandapowerNet]:
     """
-    Split network using SWF naming convention (original swf_subnets logic).
+    Split network using Forchheim naming convention.
+
+    Pattern: Transformers named "6XXX", buses "7XXX" where XXX is grid code.
     """
     logger = logging.getLogger(__name__)
 
@@ -272,6 +287,11 @@ def _split_by_naming_swf(
             # Extract subnet
             subnet = pp.select_subnet(net, buses=subbuses, keep_everything_else=True)
 
+            # CRITICAL FIX: Remove switches to prevent disconnected components
+            if hasattr(subnet, 'switch') and not subnet.switch.empty:
+                logger.debug(f"Removing {len(subnet.switch)} switches from extracted grid {lv_index}{grid_code}")
+                subnet.switch.drop(subnet.switch.index, inplace=True)
+
             # Add external grids at HV buses
             for trafo_idx, trafo in trafos.iterrows():
                 pp.create_ext_grid(
@@ -287,16 +307,16 @@ def _split_by_naming_swf(
             logger.warning(f"Failed to extract grid {grid_code}: {e}")
             continue
 
-    logger.info(f"Successfully extracted {len(grids)} grids using SWF naming convention")
+    logger.info(f"Successfully extracted {len(grids)} grids using Forchheim naming convention")
     return grids
 
 
-def _split_by_naming_swd(
+def _split_by_naming_swf(
     net: pp.pandapowerNet,
     lv_index: int = 7
 ) -> List[pp.pandapowerNet]:
     """
-    Split network using SWD hierarchical naming convention.
+    Split network using SWF hierarchical naming convention.
 
     The chr_name structure uses underscore-separated format:
     NNNNNNN_XXXXXX_YYYYYY_ZZZZZZ_WWWWW
@@ -313,7 +333,6 @@ def _split_by_naming_swd(
     logger = logging.getLogger(__name__)
 
     # Extract grid identifiers from all LV buses
-    # For buses with underscores, use first part; otherwise use first 7 chars
     lv_buses_df = net.bus[net.bus["chr_name"].astype(str).str.startswith(str(lv_index))].copy()
 
     if lv_buses_df.empty:
@@ -338,8 +357,7 @@ def _split_by_naming_swd(
 
     for grid_code in grid_codes:
         try:
-            # Get all LV buses for this grid (matching the full grid code)
-            # Use the extracted grid_code to find matching buses
+            # Get all LV buses for this grid
             matching_buses = lv_buses_df[lv_buses_df['grid_code'] == grid_code]
             lv_bus_indices = list(matching_buses.index)
 
@@ -348,7 +366,6 @@ def _split_by_naming_swd(
                 continue
 
             # Find all transformers connecting to this grid
-            # Transformer's LV bus should belong to this grid
             grid_trafos = []
             for t_idx, t_row in net.trafo.iterrows():
                 if t_row['lv_bus'] in lv_bus_indices:
@@ -367,10 +384,16 @@ def _split_by_naming_swd(
             # Extract subnet using pandapower's select_subnet
             subnet = pp.select_subnet(net, buses=subbuses, keep_everything_else=True)
 
+            # CRITICAL FIX: Remove switches to prevent disconnected components
+            # Switches copied from the original network may create isolated islands
+            # in the extracted grid, causing metrics calculation to fail
+            if hasattr(subnet, 'switch') and not subnet.switch.empty:
+                logger.debug(f"Removing {len(subnet.switch)} switches from extracted grid {grid_code}")
+                subnet.switch.drop(subnet.switch.index, inplace=True)
+
             # Add external grids at HV buses (to make grids independently solvable)
             for t_idx, t_row in grid_trafos:
-                hv_bus_in_subnet = t_row['hv_bus']  # This is the original bus index
-                # Find the corresponding bus in subnet
+                hv_bus_in_subnet = t_row['hv_bus']
                 if hv_bus_in_subnet in subnet.bus.index:
                     pp.create_ext_grid(
                         subnet,
@@ -389,22 +412,37 @@ def _split_by_naming_swd(
             logger.debug(traceback.format_exc())
             continue
 
-    logger.info(f"Successfully extracted {len(grids)} grids using SWD naming convention")
+    logger.info(f"Successfully extracted {len(grids)} grids using SWF naming convention")
     return grids
 
 
-def _split_by_topology(net: pp.pandapowerNet) -> List[pp.pandapowerNet]:
+def _split_by_topology(
+    net: pp.pandapowerNet,
+    respect_switches: bool = True
+) -> List[pp.pandapowerNet]:
     """
     Split network using topology-based approach.
 
-    This approach works for any network structure by finding connected
-    components downstream of each transformer.
+    Creates a network graph and extracts connected components for each transformer.
+
+    Parameters
+    ----------
+    net : pp.pandapowerNet
+        Complete network
+    respect_switches : bool
+        If True, respects switch states to get operational (radial) topology.
+        If False, ignores switches to get physical (potentially meshed) topology.
+
+    Returns
+    -------
+    list of pp.pandapowerNet
+        Individual grids
     """
     logger = logging.getLogger(__name__)
 
-    # Create network graph once for efficiency
-    logger.info("Creating network graph...")
-    mg = top.create_nxgraph(net, respect_switches=False)
+    # Create network graph with switch handling
+    logger.info(f"Creating network graph (respect_switches={respect_switches})...")
+    mg = top.create_nxgraph(net, respect_switches=respect_switches)
     logger.info("Graph created successfully")
 
     grids = []
@@ -414,7 +452,7 @@ def _split_by_topology(net: pp.pandapowerNet) -> List[pp.pandapowerNet]:
             # Extract subnet for this transformer
             lv_bus = trafo_row['lv_bus']
             hv_bus = trafo_row['hv_bus']
-            subnet = extract_grid_by_lv_bus_optimized(net, mg, lv_bus, hv_bus, trafo_idx)
+            subnet = extract_grid_by_lv_bus(net, mg, lv_bus, hv_bus, trafo_idx)
 
             if subnet is not None:
                 grids.append(subnet)
@@ -429,22 +467,26 @@ def _split_by_topology(net: pp.pandapowerNet) -> List[pp.pandapowerNet]:
     return grids
 
 
-def extract_grid_by_lv_bus_optimized(
+def extract_grid_by_lv_bus(
     net: pp.pandapowerNet,
-    mg,  # Pre-created network graph
+    mg,  # Pre-created network graph (with respect_switches applied)
     lv_bus: int,
     hv_bus: int,
     trafo_idx: int
 ) -> Optional[pp.pandapowerNet]:
     """
-    Extract a single LV grid starting from an LV bus (optimized version).
+    Extract a single LV grid using topology-based approach.
+
+    Uses BFS (breadth-first search) to find all buses connected to the LV bus
+    through the operational topology (respecting switch states if mg was created
+    with respect_switches=True).
 
     Parameters
     ----------
     net : pp.pandapowerNet
         Complete network
     mg : networkx.Graph
-        Pre-created network graph
+        Pre-created network graph (with switches respected!)
     lv_bus : int
         LV bus index (downstream side of transformer)
     hv_bus : int
@@ -455,25 +497,29 @@ def extract_grid_by_lv_bus_optimized(
     Returns
     -------
     pp.pandapowerNet or None
-        Subnet containing only this LV grid
+        Subnet containing only this LV grid (operational topology)
     """
-    # Get all nodes in the connected component containing lv_bus
+    logger = logging.getLogger(__name__)
+
     if lv_bus not in mg.nodes():
+        logger.warning(f"LV bus {lv_bus} not in network graph")
         return None
 
     # Find connected component using BFS (breadth-first search)
+    # This respects switch states -> gives operational (radial) topology
     connected_buses = set()
     to_visit = [lv_bus]
     visited = set()
 
     while to_visit:
         bus = to_visit.pop(0)  # Use pop(0) for BFS
+
         if bus in visited or bus == hv_bus:  # Don't cross to HV side
             continue
         visited.add(bus)
         connected_buses.add(bus)
 
-        # Add neighbors
+        # Add neighbors (only those connected through CLOSED switches/lines)
         for neighbor in mg.neighbors(bus):
             if neighbor not in visited and neighbor != hv_bus:
                 to_visit.append(neighbor)
@@ -493,6 +539,10 @@ def extract_grid_by_lv_bus_optimized(
                                      if k in ['vn_kv', 'name', 'type', 'zone', 'in_service']},
                          index=new_idx)
 
+            # Copy chr_name if present
+            if 'chr_name' in bus_data:
+                subnet.bus.loc[new_idx, 'chr_name'] = bus_data['chr_name']
+
             # Copy geodata if available
             if old_idx in net.bus_geodata.index:
                 subnet.bus_geodata.loc[new_idx] = net.bus_geodata.loc[old_idx]
@@ -504,6 +554,9 @@ def extract_grid_by_lv_bus_optimized(
         hv_bus_idx = len(subnet.bus)
         pp.create_bus(subnet, vn_kv=trafo_data.get('vn_hv_kv', 20.0),
                      name=f"HV_bus_{trafo_idx}", index=hv_bus_idx)
+
+        # Add external grid at HV bus
+        pp.create_ext_grid(subnet, bus=hv_bus_idx, name=f"ext_grid_{trafo_idx}")
 
         # Create transformer with explicit parameters (avoid std_type issues)
         pp.create_transformer_from_parameters(
@@ -540,6 +593,10 @@ def extract_grid_by_lv_bus_optimized(
                 in_service=line.get('in_service', True)
             )
 
+            # Copy chr_name if present
+            if 'chr_name' in net.line.columns:
+                subnet.line.loc[len(subnet.line)-1, 'chr_name'] = line.get('chr_name')
+
     # Copy loads
     for load_idx, load in net.load.iterrows():
         bus = load['bus']
@@ -558,7 +615,140 @@ def extract_grid_by_lv_bus_optimized(
             if 'max_p_mw' in net.load.columns:
                 subnet.load.loc[len(subnet.load)-1, 'max_p_mw'] = load.get('max_p_mw')
 
+    # Copy sgens (static generators, e.g., PV)
+    if hasattr(net, 'sgen') and not net.sgen.empty:
+        for sgen_idx, sgen in net.sgen.iterrows():
+            bus = sgen['bus']
+            if bus in bus_mapping:
+                pp.create_sgen(
+                    subnet,
+                    bus=bus_mapping[bus],
+                    p_mw=sgen.get('p_mw', 0.0),
+                    q_mvar=sgen.get('q_mvar', 0.0),
+                    name=sgen.get('name', f"SGen_{sgen_idx}"),
+                    scaling=sgen.get('scaling', 1.0),
+                    in_service=sgen.get('in_service', True)
+                )
+
+    logger.debug(f"Extracted {len(connected_buses)} buses from operational topology")
     return subnet
+
+
+def _split_hybrid(
+    net: pp.pandapowerNet,
+    lv_index: int = 7,
+    trafo_index: int = 6,
+    respect_switches: bool = True
+) -> List[pp.pandapowerNet]:
+    """
+    HYBRID splitting approach: Naming for identification + Topology for extraction.
+
+    This is the most robust approach that handles all known issues:
+    1. Uses naming convention to identify which buses belong to which grid
+    2. Uses topology-based extraction (with respect_switches) to build subnets
+    3. Manually creates lines/transformers with full parameter control
+    4. Avoids pp.select_subnet() issues with switches and missing columns
+
+    Parameters
+    ----------
+    net : pp.pandapowerNet
+        Complete network
+    lv_index : int
+        Index for LV buses in naming convention
+    trafo_index : int
+        Index for transformers in naming convention
+    respect_switches : bool
+        Whether to respect switch states during topology extraction
+
+    Returns
+    -------
+    list of pp.pandapowerNet
+        Individual grids with proper line data and no switches
+    """
+    logger = logging.getLogger(__name__)
+
+    # Step 1: Identify grids using naming convention (same as _split_by_naming_swf)
+    lv_buses_df = net.bus[net.bus["chr_name"].astype(str).str.startswith(str(lv_index))].copy()
+
+    if lv_buses_df.empty:
+        logger.warning("No LV buses found, falling back to pure topology splitting")
+        return _split_by_topology(net, respect_switches=respect_switches)
+
+    def extract_grid_code(name):
+        name_str = str(name)
+        if '_' in name_str:
+            return name_str.split('_')[0]
+        else:
+            return name_str[:7] if len(name_str) >= 7 else name_str
+
+    lv_buses_df['grid_code'] = lv_buses_df['chr_name'].apply(extract_grid_code)
+    grid_codes = sorted(lv_buses_df['grid_code'].unique())
+
+    logger.info(f"Identified {len(grid_codes)} grids using naming convention")
+
+    # Step 2: Create network graph ONCE with respect_switches for topology analysis
+    logger.info(f"Creating network graph with respect_switches={respect_switches}...")
+    mg = top.create_nxgraph(net, respect_switches=respect_switches)
+    logger.info("Network graph created successfully")
+
+    grids = []
+
+    # Step 3: For each identified grid, extract using topology-based method
+    for grid_code in grid_codes:
+        try:
+            # Get LV buses for this grid from naming
+            matching_buses = lv_buses_df[lv_buses_df['grid_code'] == grid_code]
+            lv_bus_indices = list(matching_buses.index)
+
+            if not lv_bus_indices:
+                continue
+
+            # Find transformers for this grid
+            grid_trafos = []
+            for t_idx, t_row in net.trafo.iterrows():
+                if t_row['lv_bus'] in lv_bus_indices:
+                    grid_trafos.append((t_idx, t_row))
+
+            if not grid_trafos:
+                logger.debug(f"No transformers found for grid {grid_code}, skipping")
+                continue
+
+            # Use the FIRST transformer's LV bus as the root for topology extraction
+            primary_trafo_idx, primary_trafo = grid_trafos[0]
+            lv_root = primary_trafo['lv_bus']
+            hv_root = primary_trafo['hv_bus']
+
+            # Extract subnet using topology-based method (with switches respected!)
+            # This gives us full control over line data and avoids pp.select_subnet() issues
+            subnet = extract_grid_by_lv_bus(net, mg, lv_root, hv_root, primary_trafo_idx)
+
+            if subnet is None:
+                logger.warning(f"Failed to extract grid {grid_code} using topology method")
+                continue
+
+            # Ensure no switches in the extracted grid
+            if hasattr(subnet, 'switch') and not subnet.switch.empty:
+                logger.debug(f"Removing {len(subnet.switch)} switches from grid {grid_code}")
+                subnet.switch.drop(subnet.switch.index, inplace=True)
+
+            # Validate the extracted grid
+            if len(subnet.bus) == 0 or len(subnet.trafo) == 0:
+                logger.warning(f"Grid {grid_code} extraction resulted in empty network, skipping")
+                continue
+
+            grids.append(subnet)
+            logger.debug(f"Extracted grid {grid_code}: {len(subnet.bus)} buses, "
+                        f"{len(subnet.load)} loads, {len(subnet.trafo)} trafos, "
+                        f"{len(subnet.line)} lines")
+
+        except Exception as e:
+            logger.warning(f"Failed to extract grid {grid_code}: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            continue
+
+    logger.info(f"Successfully extracted {len(grids)} grids using HYBRID approach")
+    return grids
 
 
 def save_split_grids(
@@ -649,7 +839,8 @@ def save_split_grids(
 def analyze_multi_grid_network(
     net: pp.pandapowerNet,
     adapt_networks: bool = True,
-    max_grids: int = None
+    max_grids: int = None,
+    respect_switches: bool = True
 ) -> List[Dict[str, Any]]:
     """
     Analyze a multi-grid DSO network by splitting and analyzing each grid.
@@ -662,6 +853,8 @@ def analyze_multi_grid_network(
         Whether to adapt each grid's structure
     max_grids : int, optional
         Maximum number of grids to analyze (for testing/debugging)
+    respect_switches : bool
+        If True, respects switch states for operational topology
 
     Returns
     -------
@@ -674,7 +867,7 @@ def analyze_multi_grid_network(
     logger = logging.getLogger(__name__)
 
     # Split into individual grids
-    grids = split_multi_grid_network(net)
+    grids = split_multi_grid_network(net, respect_switches=respect_switches)
 
     if max_grids:
         grids = grids[:max_grids]
