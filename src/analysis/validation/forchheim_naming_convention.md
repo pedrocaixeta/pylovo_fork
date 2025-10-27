@@ -17,9 +17,9 @@ Segment Structure:
 Position | Length | Segment Name           | Example | Meaning
 ---------------------------------------------------------------------
 1         | 1       | Netzebene              | 7       | Voltage level (1 = HöS … 7 = NS)
-2-7       | 2       | Netznummer (1+2)       | 182     | Network identifier within voltage level
-8–13      | 2       | SS-Nummer (1+1)        | 182     | Busbar number
-14–19     | 2       | Strangnummer (1+2)     | 001001  | Branch number
+2-7       | 6 (2×3) | Netznummer (1+2)       | 182     | Network identifier within voltage level
+8–13      | 6 (2×3) | SS-Nummer (1+1)        | 182     | Busbar number
+14–19     | 6 (2×3) | Strangnummer (1+2)     | 001001  | Branch number
 20–25     | 6 (2×3) | Hauptknoten 1 + 2      | 002006  | Main nodes connected by the element
 26–27     | 2       | Objekttyp              | 06      | Object type (see below)
 28–30     | 3       | Objektnummer           | 002     | Running number within type

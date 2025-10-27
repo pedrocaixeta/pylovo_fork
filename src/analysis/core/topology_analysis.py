@@ -445,7 +445,11 @@ class ParameterCalculator:
                 if branch[1] in row["path"]:
                     df_vsw.at[index, "branch"] = branch
 
-        max_no_of_households_of_a_branch = df_vsw.groupby("branch")["household_equivalents"].sum().max()
+        if len(df_vsw) > 0:
+            grp = df_vsw.groupby("branch")["household_equivalents"].sum()
+            max_no_of_households_of_a_branch = grp.max() if len(grp) > 0 else 0.0
+        else:
+            max_no_of_households_of_a_branch = 0.0
 
         # Accumulate section impedances weighted by HE and simultaneity factor per line
         df_vsw["resistance"] = ""
@@ -461,12 +465,15 @@ class ParameterCalculator:
             for i in range(length - 1):
                 start_node = path_list[i]
                 end_node = path_list[i + 1]
-                line = df_line[df_line["from_bus"] == start_node]
-                line = line[line["to_bus"] == end_node].head(1)
+                # match either orientation
+                line = df_line[(df_line["from_bus"] == start_node) & (df_line["to_bus"] == end_node)]
+                if line.empty:
+                    line = df_line[(df_line["from_bus"] == end_node) & (df_line["to_bus"] == start_node)]
                 if line.empty:
                     raise ValueError(
                         f"No line segment found for path edge {start_node}->{end_node} in grid (PLZ {self.plz}, "
                         f"kcid {self.kcid}, bcid {self.bcid}). This indicates a malformed or non-radial net.")
+                line = line.head(1)
                 # Cable section parameters (per km); apply simultaneity factor to resistance proxy
                 length_km = line["length_km"].iloc[0]
                 r_ohm_per_km = line["r_ohm_per_km"].iloc[0]
@@ -561,35 +568,39 @@ class ParameterCalculator:
         # Enter these values into the upstream line that ends at the consumer bus (to_bus)
         for index, row in load_count_cat.iterrows():
             bus = row['bus']
-            index_line = net_line_with_sim_factor.index[net_line_with_sim_factor['to_bus'] == bus].tolist()
-            if len(index_line) == 0:
+            # find the unique incident line regardless of orientation
+            idx_to = net_line_with_sim_factor.index[net_line_with_sim_factor['to_bus'] == bus].tolist()
+            idx_fr = net_line_with_sim_factor.index[net_line_with_sim_factor['from_bus'] == bus].tolist()
+            idx = (idx_to + idx_fr)
+            if len(idx) == 0:
                 self.dbc.logger.warning(
-                    f"No upstream line (to_bus={bus}) found to annotate simultaneity for PLZ {self.plz}, "
+                    f"No upstream line (incident to bus={bus}) found to annotate simultaneity for PLZ {self.plz}, "
                     f"kcid {self.kcid}, bcid {self.bcid}. Skipping bus.")
                 continue
-            net_line_with_sim_factor.at[index_line[0], 'sim_factor_cumulated'] = row['sim_factor_level1']
-            net_line_with_sim_factor.at[index_line[0], 'sim_load'] = row['sim_load_level1']
+            target_index = idx[0]
+            net_line_with_sim_factor.at[target_index, 'sim_factor_cumulated'] = row['sim_factor_level1']
+            net_line_with_sim_factor.at[target_index, 'sim_load'] = row['sim_load_level1']
             if row['description'] == 'Commercial':
-                net_line_with_sim_factor.at[index_line[0], 'no_commercial'] = row['count']
-                net_line_with_sim_factor.at[index_line[0], 'load_commercial_mw'] = row['max_p_mw']
-                net_line_with_sim_factor.at[index_line[0], 'no_public'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'load_public_mw'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'no_residential'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'load_residential_mw'] = 0
+                net_line_with_sim_factor.at[target_index, 'no_commercial'] = row['count']
+                net_line_with_sim_factor.at[target_index, 'load_commercial_mw'] = row['max_p_mw']
+                net_line_with_sim_factor.at[target_index, 'no_public'] = 0
+                net_line_with_sim_factor.at[target_index, 'load_public_mw'] = 0
+                net_line_with_sim_factor.at[target_index, 'no_residential'] = 0
+                net_line_with_sim_factor.at[target_index, 'load_residential_mw'] = 0
             elif row['description'] == 'Public':
-                net_line_with_sim_factor.at[index_line[0], 'no_commercial'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'load_commercial_mw'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'no_public'] = row['count']
-                net_line_with_sim_factor.at[index_line[0], 'load_public_mw'] = row['max_p_mw']
-                net_line_with_sim_factor.at[index_line[0], 'no_residential'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'load_residential_mw'] = 0
+                net_line_with_sim_factor.at[target_index, 'no_commercial'] = 0
+                net_line_with_sim_factor.at[target_index, 'load_commercial_mw'] = 0
+                net_line_with_sim_factor.at[target_index, 'no_public'] = row['count']
+                net_line_with_sim_factor.at[target_index, 'load_public_mw'] = row['max_p_mw']
+                net_line_with_sim_factor.at[target_index, 'no_residential'] = 0
+                net_line_with_sim_factor.at[target_index, 'load_residential_mw'] = 0
             elif row['description'] == 'Residential':
-                net_line_with_sim_factor.at[index_line[0], 'no_commercial'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'load_commercial_mw'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'no_public'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'load_public_mw'] = 0
-                net_line_with_sim_factor.at[index_line[0], 'no_residential'] = row['count']
-                net_line_with_sim_factor.at[index_line[0], 'load_residential_mw'] = row['max_p_mw']
+                net_line_with_sim_factor.at[target_index, 'no_commercial'] = 0
+                net_line_with_sim_factor.at[target_index, 'load_commercial_mw'] = 0
+                net_line_with_sim_factor.at[target_index, 'no_public'] = 0
+                net_line_with_sim_factor.at[target_index, 'load_public_mw'] = 0
+                net_line_with_sim_factor.at[target_index, 'no_residential'] = row['count']
+                net_line_with_sim_factor.at[target_index, 'load_residential_mw'] = row['max_p_mw']
 
         # Work on the connection nodebuses and their aggregated simultaneity factors
 
@@ -626,10 +637,14 @@ class ParameterCalculator:
             connected_upstream = net_line_with_sim_factor[net_line_with_sim_factor['to_bus'] == furthest_connection_bus]
             upstream_index = connected_upstream.index
             if len(upstream_index) == 0:
-                self.dbc.logger.warning(
-                    f"No upstream line (to_bus={furthest_connection_bus}) to record aggregated loads for PLZ {self.plz}, "
-                    f"kcid {self.kcid}, bcid {self.bcid}. Skipping.")
-                continue
+                # try from_bus orientation
+                connected_upstream = net_line_with_sim_factor[net_line_with_sim_factor['from_bus'] == furthest_connection_bus]
+                upstream_index = connected_upstream.index
+                if len(upstream_index) == 0:
+                    self.dbc.logger.warning(
+                        f"No upstream line (incident to bus={furthest_connection_bus}) to record aggregated loads for PLZ {self.plz}, "
+                        f"kcid {self.kcid}, bcid {self.bcid}. Skipping.")
+                    continue
             net_line_with_sim_factor.at[upstream_index[0], 'no_commercial'] = connected_downstream[
                 'no_commercial'].sum()
             net_line_with_sim_factor.at[upstream_index[0], 'load_commercial_mw'] = connected_downstream[

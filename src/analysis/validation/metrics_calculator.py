@@ -16,9 +16,7 @@ import json
 from src.config_loader import (
     SIM_FACTOR,
     CLUSTERING_PARAMETERS,
-    PEAK_LOAD_HOUSEHOLD
 )
-from ..utils import oneSimultaneousLoad
 
 
 class MetricsCalculator:
@@ -63,6 +61,11 @@ class MetricsCalculator:
             keyword_consumer_bus=consumer_bus_keyword,
             keyword_connection_bus=connection_bus_keyword
         )
+        # Suppress noisy DB logger in standalone mode
+        try:
+            self._calculator.dbc.logger.setLevel(logging.ERROR)
+        except Exception:
+            pass
 
     def compute_metrics(self, net: pp.pandapowerNet) -> Dict[str, Any]:
         """
@@ -86,20 +89,79 @@ class MetricsCalculator:
         The simultaneous_peak_load_mw metric will be 0.0 since it requires
         database lookup. All other metrics are computed from the network structure.
         """
+        # Always use the standalone path for external nets to avoid DB and heavy lookups
+        return self._compute_metrics_standalone(net)
+
+    def _prepare_external_net_for_metrics(self, net: pp.pandapowerNet) -> pp.pandapowerNet:
+        """Patch external/DSO subgrid to match ParameterCalculator expectations.
+
+        - Ensure load.max_p_mw exists (copy from p_mw if needed)
+        - Ensure sgen.max_p_mw exists (copy from p_mw if present)
+        - Ensure bus.zone exists (default 'Residential')
+        - Mark LV root bus name to include lvbus_keyword (trafo.lv_bus)
+        - Mark consumer buses (with loads or sgens) to include consumer_bus_keyword in names
+        - Mark remaining buses as connection buses by including connection_bus_keyword
+        """
+        # 1) load.max_p_mw
+        if hasattr(net, 'load'):
+            if 'max_p_mw' not in net.load.columns:
+                if 'p_mw' in net.load.columns:
+                    net.load['max_p_mw'] = net.load['p_mw']
+                else:
+                    net.load['max_p_mw'] = 0.0
+            else:
+                net.load['max_p_mw'] = net.load['max_p_mw'].fillna(0.0)
+        # 1b) sgen.max_p_mw
+        if hasattr(net, 'sgen'):
+            if 'max_p_mw' not in net.sgen.columns:
+                if 'p_mw' in net.sgen.columns:
+                    net.sgen['max_p_mw'] = net.sgen['p_mw']
+                else:
+                    net.sgen['max_p_mw'] = 0.0
+            else:
+                net.sgen['max_p_mw'] = net.sgen['max_p_mw'].fillna(0.0)
+        # 2) bus.zone
+        if hasattr(net, 'bus') and len(net.bus) > 0:
+            if 'zone' not in net.bus.columns:
+                net.bus['zone'] = 'Residential'
+            else:
+                net.bus['zone'] = net.bus['zone'].fillna('Residential')
+        # 3) Names
         try:
-            # Call the existing compute_parameters method
-            # Note: get_simultaneous_peak_load will fail without database,
-            # so we catch and handle it
-            params = self._calculator.compute_parameters(net)
-            return params
-        except (IndexError, KeyError, AttributeError) as e:
-            # Database access failed - recompute without simultaneous load lookup
-            self.logger.warning(f"Database access failed (expected for standalone mode): {e}")
-            self.logger.info("Computing metrics without database-dependent values...")
-            return self._compute_metrics_standalone(net)
-        except Exception as e:
-            self.logger.error(f"Error computing metrics: {e}")
-            raise
+            # ensure string names
+            if 'name' not in net.bus.columns:
+                net.bus['name'] = ''
+            net.bus['name'] = net.bus['name'].astype(str).fillna('')
+            # LV bus
+            lv_bus = None
+            if hasattr(net, 'trafo') and len(net.trafo) > 0 and 'lv_bus' in net.trafo.columns:
+                lv_bus = int(net.trafo['lv_bus'].iloc[0])
+                if lv_bus in net.bus.index:
+                    nm = net.bus.at[lv_bus, 'name']
+                    if self.lvbus_keyword not in nm:
+                        net.bus.at[lv_bus, 'name'] = (nm + ' ' + self.lvbus_keyword).strip()
+            # consumer buses
+            consumer_buses = []
+            if hasattr(net, 'load') and len(net.load) > 0 and 'bus' in net.load.columns:
+                consumer_buses.extend(list(set(net.load['bus'].astype(int).tolist())))
+            if hasattr(net, 'sgen') and len(net.sgen) > 0 and 'bus' in net.sgen.columns:
+                consumer_buses.extend(list(set(net.sgen['bus'].astype(int).tolist())))
+            consumer_buses = list(set(consumer_buses))
+            for b in consumer_buses:
+                if b in net.bus.index:
+                    nm = net.bus.at[b, 'name']
+                    if self.consumer_bus_keyword not in nm:
+                        net.bus.at[b, 'name'] = (nm + ' ' + self.consumer_bus_keyword).strip()
+            # connection buses (others)
+            for b in net.bus.index.tolist():
+                if (lv_bus is not None and b == lv_bus) or (b in consumer_buses):
+                    continue
+                nm = net.bus.at[b, 'name']
+                if self.connection_bus_keyword not in nm:
+                    net.bus.at[b, 'name'] = (nm + ' ' + self.connection_bus_keyword).strip()
+        except Exception:
+            pass
+        return net
 
     def _compute_metrics_standalone(self, net: pp.pandapowerNet) -> Dict[str, Any]:
         """
@@ -114,14 +176,24 @@ class MetricsCalculator:
         """
         import pandapower.topology as top
 
+        # Ensure normalization
+        net = self._prepare_external_net_for_metrics(net)
         # Use the calculator's individual methods
         calc = self._calculator
 
         no_house_connections = calc.get_no_of_buses(net, self.consumer_bus_keyword)
         no_connection_buses = calc.get_no_of_buses(net, self.connection_bus_keyword)
         no_households = calc.get_no_households(net)
-        max_power_mw = calc.get_max_power(net)
-
+        # Total installed power: loads plus sgens (use max_p_mw where present)
+        max_power_mw = 0.0
+        try:
+            max_power_mw += float(getattr(net, 'load').get('max_p_mw', pd.Series()).sum()) if hasattr(net,'load') else 0.0
+        except Exception:
+            pass
+        try:
+            max_power_mw += float(getattr(net, 'sgen').get('max_p_mw', pd.Series()).sum()) if hasattr(net,'sgen') else 0.0
+        except Exception:
+            pass
         from src.config_loader import PEAK_LOAD_HOUSEHOLD
         no_household_equ = max_power_mw * 1000.0 / PEAK_LOAD_HOUSEHOLD
         cable_length_km = calc.get_cable_length(net)
@@ -316,7 +388,7 @@ class MetricsCalculator:
         dict
             Dictionary of computed metrics
         """
-        metrics = self.compute_with_estimation(net)
+        metrics = self.compute_parameters_with_fallback(net)
 
         if output_path:
             if output_format == 'json':
@@ -385,4 +457,3 @@ def analyze_network(
 
     calculator = MetricsCalculator()
     return calculator.analyze_and_export(net, output_path)
-

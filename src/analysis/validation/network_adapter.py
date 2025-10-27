@@ -10,7 +10,6 @@ The adapter normalizes external networks to match the structure expected by
 topology analysis functions, without requiring database access.
 """
 
-import pandas as pd
 import pandapower as pp
 from typing import Optional, Dict, Any
 import logging
@@ -22,11 +21,31 @@ from ..utils import (
     normalize_bus_names,
     validate_network_structure
 )
-from .naming_conventions import (
-    detect_naming_convention,
-    enhance_network_with_SWF_info,
-    identify_bus_types_in_network
-)
+
+
+def detect_naming_convention(net: pp.pandapowerNet) -> str:
+    """Heuristic: if names match numeric with underscores, treat as 'forchheim' (SWF-like)."""
+    for t in ["bus", "line", "load", "sgen"]:
+        df = getattr(net, t, None)
+        if df is None or len(df) == 0:
+            continue
+        col = "chr_name" if "chr_name" in df.columns else ("name" if "name" in df.columns else None)
+        if not col:
+            continue
+        sample = str(df[col].dropna().astype(str).head(1).tolist()[0])
+        if "_" in sample and sample[:7].isdigit():
+            return "forchheim"
+    return "generic"
+
+
+def enhance_network_with_SWF_info(net: pp.pandapowerNet) -> None:
+    """No-op for now; naming metadata added by downstream splitter when needed."""
+    return None
+
+
+def identify_bus_types_in_network(net: pp.pandapowerNet, naming_convention: str) -> None:
+    """Lightweight identification: keep as-is; adapter later assigns zones."""
+    return None
 
 
 class NetworkAdapter:
@@ -277,4 +296,3 @@ def adapt_network(
     # Create adapter and run
     adapter = NetworkAdapter(net, naming_convention=naming_convention, config=config)
     return adapter.adapt()
-

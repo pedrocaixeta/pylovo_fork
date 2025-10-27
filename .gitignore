@@ -166,4 +166,5 @@ cython_debug/
 
 # for macOS users
 *.DS_Store
-/src/analysis/config_validation.yaml
+/src/analysis/validation/config_validation.yaml
+/grid_data/
