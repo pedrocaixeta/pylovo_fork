@@ -14,9 +14,8 @@ Main Components:
 
 from .network_adapter import NetworkAdapter, adapt_network
 from src.analysis.tools.grid_splitter import GridSplitter, split_network
-from .metrics_calculator import MetricsCalculator, analyze_network
+from .metrics_calculator import MetricsCalculator
 from . import naming_conventions
-from . import config
 
 __all__ = [
     'NetworkAdapter',
