@@ -381,10 +381,16 @@ class ParameterCalculator:
 
         path_length_to_leaves = []
         for leaf in leaves:
+            # Skip leaves not in the graph (can happen with filtered/multi-component graphs)
+            if leaf not in networkx_graph:
+                continue
             try:
                 weighted_length = nx.dijkstra_path_length(networkx_graph, root, leaf, weight='weight')
                 path_length_to_leaves.append(weighted_length)
             except nx.NetworkXNoPath:
+                continue
+            except nx.NodeNotFound:
+                # Root or leaf not in graph
                 continue
 
         if not path_length_to_leaves:
@@ -429,12 +435,17 @@ class ParameterCalculator:
         # Shortest path from root to each house-connection bus
         df_vsw["path"] = ""
         for index, row in df_vsw.iterrows():
+            house_conn = df_vsw.at[index, "house_connection"]
+            # Skip if house connection or root not in graph (multi-component case)
+            if house_conn not in networkx_graph or root not in networkx_graph:
+                df_vsw.at[index, "path"] = []
+                continue
             try:
                 df_vsw.at[index, "path"] = nx.shortest_path(networkx_graph, source=root,
-                                                            target=df_vsw.at[index, "house_connection"])
-            except nx.NetworkXNoPath:
+                                                            target=house_conn)
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
                 self.dbc.logger.warning(
-                    f"No path from LV root {root} to house_connection {df_vsw.at[index, 'house_connection']} "
+                    f"No path from LV root {root} to house_connection {house_conn} "
                     f"for PLZ {self.plz}, kcid {self.kcid}, bcid {self.bcid}. Skipping.")
                 df_vsw.at[index, "path"] = []
 
@@ -617,11 +628,16 @@ class ParameterCalculator:
 
         len_path_list = []
         for index, row in df_connection_bus.iterrows():
+            bus = row['bus']
+            # Skip if bus not in graph (multi-component case)
+            if bus not in networkx_graph or root_bus not in networkx_graph:
+                len_path_list.append(0)
+                continue
             try:
-                length = nx.shortest_path_length(networkx_graph, source=row['source'], target=row['bus'])
-            except nx.NetworkXNoPath:
+                length = nx.shortest_path_length(networkx_graph, source=row['source'], target=bus)
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
                 self.dbc.logger.warning(
-                    f"No path from LV root {root_bus} to connection bus {row['bus']} for PLZ {self.plz}, "
+                    f"No path from LV root {root_bus} to connection bus {bus} for PLZ {self.plz}, "
                     f"kcid {self.kcid}, bcid {self.bcid}. Skipping bus in ordering.")
                 length = 0
             len_path_list.append(length)

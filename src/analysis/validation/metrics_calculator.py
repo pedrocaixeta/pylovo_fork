@@ -8,6 +8,7 @@ Renamed from StandaloneParameterCalculator to MetricsCalculator for clarity.
 
 import pandas as pd
 import pandapower as pp
+import networkx as nx
 from typing import Dict, Any, Optional
 import logging
 import json
@@ -163,6 +164,32 @@ class MetricsCalculator:
             pass
         return net
 
+    def _return_zero_metrics(self) -> Dict[str, Any]:
+        """Return a dict of zero/default metrics when analysis fails."""
+        return {
+            "no_connection_buses": 0,
+            "no_branches": 0,
+            "no_house_connections": 0,
+            "no_house_connections_per_branch": 0.0,
+            "no_households": 0,
+            "no_household_equ": 0.0,
+            "no_households_per_branch": 0.0,
+            "max_no_of_households_of_a_branch": 0.0,
+            "house_distance_km": 0.0,
+            "transformer_mva": 0.0,
+            "max_trafo_dis": 0.0,
+            "avg_trafo_dis": 0.0,
+            "cable_length_km": 0.0,
+            "cable_len_per_house": 0.0,
+            "max_power_mw": 0.0,
+            "simultaneous_peak_load_mw": 0.0,
+            "resistance": 0.0,
+            "reactance": 0.0,
+            "ratio": 0.0,
+            "vsw_per_branch": 0.0,
+            "max_vsw_of_a_branch": 0.0
+        }
+
     def _compute_metrics_standalone(self, net: pp.pandapowerNet) -> Dict[str, Any]:
         """
         Compute parameters without database dependencies.
@@ -200,9 +227,50 @@ class MetricsCalculator:
         cable_len_per_house = cable_length_km / no_house_connections if no_house_connections > 0 else 0.0
 
         # CRITICAL FIX: respect_switches=True to get operational radial topology
-        G = top.create_nxgraph(net, respect_switches=True)
+        try:
+            G = top.create_nxgraph(net, respect_switches=True)
+        except Exception as e:
+            self.logger.warning(f"Failed to create graph with respect_switches: {e}, trying without")
+            try:
+                G = top.create_nxgraph(net, respect_switches=False)
+            except Exception as e2:
+                self.logger.error(f"Failed to create graph entirely: {e2}")
+                # Return zeros for all metrics
+                return self._return_zero_metrics()
+
+        # CRITICAL: Handle multi-component graphs (due to in_service=False lines)
+        # Only analyze the largest connected component containing the transformer LV bus
+        if nx.number_connected_components(G) > 1:
+            self.logger.debug(f"Multi-component graph detected ({nx.number_connected_components(G)} components)")
+            # Find transformer LV bus
+            if len(net.trafo) > 0 and 'lv_bus' in net.trafo.columns:
+                lv_bus = int(net.trafo['lv_bus'].iloc[0])
+                if lv_bus in G:
+                    # Get component containing LV bus
+                    main_component = nx.node_connected_component(G, lv_bus)
+                    G = G.subgraph(main_component).copy()
+                    self.logger.debug(f"Using component with LV bus {lv_bus}: {len(main_component)} nodes")
+                else:
+                    # Fallback to largest component
+                    largest_cc = max(nx.connected_components(G), key=len)
+                    G = G.subgraph(largest_cc).copy()
+                    self.logger.debug(f"LV bus not in graph, using largest component: {len(largest_cc)} nodes")
+            else:
+                # No transformer info, use largest component
+                largest_cc = max(nx.connected_components(G), key=len)
+                G = G.subgraph(largest_cc).copy()
+                self.logger.debug(f"No transformer found, using largest component: {len(largest_cc)} nodes")
+
         no_branches = calc.get_no_branches(G, net)
-        avg_trafo_dis, max_trafo_dis = calc.get_distances_in_graph(net, G)
+
+        try:
+            avg_trafo_dis, max_trafo_dis = calc.get_distances_in_graph(net, G)
+        except (nx.NetworkXNoPath, nx.NodeNotFound) as e:
+            self.logger.debug(f"Failed to calculate distances (disconnected component): {e}")
+            avg_trafo_dis, max_trafo_dis = 0.0, 0.0
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate distances in graph: {e}")
+            avg_trafo_dis, max_trafo_dis = 0.0, 0.0
 
         # Zero-division protection for branch metrics
         if no_branches > 0:

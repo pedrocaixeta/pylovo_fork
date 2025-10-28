@@ -142,8 +142,12 @@ def _build_global_operational_graph(net: pp.pandapowerNet) -> nx.Graph:
         bus_chr[int(b)] = parse_chr_name(row.get(b_col)) if b_col else None
 
     # Add all line edges in service
+    # CRITICAL: respect line.in_service to match what metrics calculator sees
     l_col = _best_name_col(net.line)
     for idx, row in net.line.iterrows():
+        # Skip out-of-service lines (critical for avoiding disconnected components)
+        if not bool(row.get('in_service', True)):
+            continue
         # Respect naming-based open ties on the line itself (if available)
         if l_col and pd.notna(row.get(l_col)):
             cnl = parse_chr_name(row.get(l_col))
@@ -322,14 +326,22 @@ def split_into_operational_lv_subgrids(
     """Split the provided pandapower net into operationally radial LV subgrids per transformer.
 
     Writes each subgrid as a pandapower JSON to output_dir. Returns a dict of {subgrid_id: net}.
+
+    FIXED APPROACH:
+    - Build operational graph with all LV buses and lines
+    - For each transformer, do BFS from its LV bus to find all reachable buses
+    - Stop BFS at other transformer LV buses to ensure one transformer per subgrid
+    - Radialize the resulting subgraph
+    - Only include buses that have lines connecting them in the final radial tree
     """
     logger = logging.getLogger(__name__)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Global operational graph (lines + switch-open removals)
     G = _build_global_operational_graph(net)
+    logger.info(f"Built operational graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
-    # Pre-parse bus chr for later grouping/assignment
+    # Pre-parse bus chr for later naming
     bus_chr: Dict[int, Optional[ChrName]] = {}
     b_col = _best_name_col(net.bus)
     if b_col:
@@ -349,94 +361,115 @@ def split_into_operational_lv_subgrids(
         except Exception:
             continue
 
+    logger.info(f"Found {len(trafo_lv_buses)} LV transformers")
     outputs: Dict[str, pp.pandapowerNet] = {}
 
-    # Group trafos by netznummer of their LV bus
-    trafos_by_netz: Dict[str, Dict[int, int]] = {}
+    # Process each transformer independently
+    trafo_lv_bus_set = set(trafo_lv_buses.values())
+
     for t_idx, lvb in trafo_lv_buses.items():
-        cn = bus_chr.get(lvb)
-        if not (cn and cn.netznummer):
+        if lvb not in G:
+            logger.warning(f"Trafo {t_idx} LV bus {lvb} not in graph, skipping")
             continue
-        trafos_by_netz.setdefault(cn.netznummer, {})[t_idx] = lvb
 
-    # For each Netznummer group, assign buses to nearest trafo and export radial subgrids
-    for netz, group in trafos_by_netz.items():
-        allowed = _allowed_nodes_for_netz(G, bus_chr, netz)
-        if not allowed:
+        # BFS from this transformer's LV bus, stopping at other transformer LV buses
+        from collections import deque
+        visited = set()
+        queue = deque([lvb])
+        visited.add(lvb)
+
+        while queue:
+            u = queue.popleft()
+            for v in G.neighbors(u):
+                if v in visited:
+                    continue
+                # Stop at other transformer LV buses (boundaries)
+                if v in trafo_lv_bus_set and v != lvb:
+                    continue
+                visited.add(v)
+                queue.append(v)
+
+        buses = sorted(visited)
+        if len(buses) < 2:  # Only LV bus itself
+            logger.warning(f"Trafo {t_idx} has only {len(buses)} bus(es), skipping")
             continue
-        G_sub = G.subgraph(allowed).copy()
-        assignments = _assign_buses_to_trafos(G_sub, group)
-        for t_idx, lvb in group.items():
-            buses = assignments.get(t_idx, [])
-            if not buses:
-                buses = [lvb]
-            # Build induced subgraph and radialize
-            H_full = G_sub.subgraph(buses).copy()
-            H = _radialize(H_full, lvb)
-            # Keep only the root component
-            if lvb in H:
-                root_comp_nodes = list(nx.node_connected_component(H, lvb))
-                H = H.subgraph(root_comp_nodes).copy()
-                buses = sorted(root_comp_nodes)
-            else:
-                buses = [lvb]
-            # Include HV bus for trafo consistency
+
+        # Build induced subgraph and radialize
+        H_full = G.subgraph(buses).copy()
+        H = _radialize(H_full, lvb)
+
+        # Keep only the root component after radialization
+        if lvb in H:
+            root_comp_nodes = list(nx.node_connected_component(H, lvb))
+            H = H.subgraph(root_comp_nodes).copy()
+            # Only include buses that are in the radial tree (connected via edges)
+            buses_in_tree = set(root_comp_nodes)
+        else:
+            buses_in_tree = {lvb}
+
+        # Include HV bus for trafo consistency (even though not in LV tree)
+        hvb = None
+        try:
+            hvb = int(net.trafo.loc[t_idx, "hv_bus"]) if "hv_bus" in net.trafo.columns else None
+        except Exception:
             hvb = None
-            try:
-                hvb = int(net.trafo.loc[t_idx, "hv_bus"]) if "hv_bus" in net.trafo.columns else None
-            except Exception:
-                hvb = None
-            if hvb is not None and hvb in net.bus.index and hvb not in buses:
-                buses.append(hvb)
 
-            # Create subnetwork selecting the trafo element as well
-            try:
-                sub_net = pp.select_subnet(
-                    net,
-                    buses=sorted(set(buses)),
-                    include_results=False,
-                    include_switch_buses=True,
-                )
-            except TypeError:
-                sub_net = pp.select_subnet(net, buses=sorted(set(buses)), include_results=False, include_switch_buses=True)
+        final_buses = sorted(buses_in_tree)
+        if hvb is not None and hvb in net.bus.index and hvb not in final_buses:
+            final_buses.append(hvb)
+            final_buses = sorted(final_buses)
 
-            # Post-process: keep only radial line edges corresponding to H
-            try:
-                allowed = set(tuple(sorted(e)) for e in H.edges())
-                if len(sub_net.line) > 0:
-                    mask = []
-                    for _, lrow in sub_net.line.iterrows():
-                        u = int(lrow["from_bus"]); v = int(lrow["to_bus"])
-                        mask.append(tuple(sorted((u, v))) in allowed)
-                    sub_net.line = sub_net.line.loc[pd.Series(mask, index=sub_net.line.index)]
-                    sub_net.line.reset_index(drop=True, inplace=True)
-                if hasattr(sub_net, "switch") and len(sub_net.switch) > 0:
-                    sub_net.switch.drop(sub_net.switch.index, inplace=True)
-            except Exception:
-                pass
+        # Create subnetwork selecting the trafo element as well
+        try:
+            sub_net = pp.select_subnet(
+                net,
+                buses=final_buses,
+                include_results=False,
+                include_switch_buses=True,
+            )
+        except TypeError:
+            sub_net = pp.select_subnet(net, buses=final_buses, include_results=False, include_switch_buses=True)
 
-            # Filename based on loads in this assignment
-            netz_out = _infer_netznummer_from_loads(net, buses)
-            subgrid_id = f"{netz_out}__trafo_{t_idx}" if netz_out != "unk" else f"trafo_{t_idx}"
-            out_file = Path(output_dir) / f"{subgrid_id}.json"
-            # Remove stale files for this trafo id (different prefixes)
-            try:
-                for stale in Path(output_dir).glob(f"*__trafo_{t_idx}.json"):
-                    if stale.name != out_file.name:
-                        stale.unlink(missing_ok=True)
-                # Also remove bare trafo_{id}.json if writing a prefixed one
-                bare = Path(output_dir) / f"trafo_{t_idx}.json"
-                if bare.exists() and bare.name != out_file.name:
-                    bare.unlink(missing_ok=True)
-            except Exception:
-                pass
-            try:
-                pp.to_json(sub_net, str(out_file))
-            except Exception:
-                out_file = Path(output_dir) / f"trafo_{t_idx}.json"
-                pp.to_json(sub_net, str(out_file))
-            outputs[subgrid_id] = sub_net
+        # Post-process: keep only radial line edges corresponding to H
+        try:
+            allowed_edges = set(tuple(sorted(e)) for e in H.edges())
+            if len(sub_net.line) > 0:
+                mask = []
+                for _, lrow in sub_net.line.iterrows():
+                    u = int(lrow["from_bus"]); v = int(lrow["to_bus"])
+                    mask.append(tuple(sorted((u, v))) in allowed_edges)
+                sub_net.line = sub_net.line.loc[pd.Series(mask, index=sub_net.line.index)]
+                sub_net.line.reset_index(drop=True, inplace=True)
+            if hasattr(sub_net, "switch") and len(sub_net.switch) > 0:
+                sub_net.switch.drop(sub_net.switch.index, inplace=True)
+        except Exception as e:
+            logger.warning(f"Error filtering lines for trafo {t_idx}: {e}")
 
+        # Filename based on loads in this assignment
+        netz_out = _infer_netznummer_from_loads(net, final_buses)
+        subgrid_id = f"{netz_out}__trafo_{t_idx}" if netz_out != "unk" else f"trafo_{t_idx}"
+        out_file = Path(output_dir) / f"{subgrid_id}.json"
+        # Remove stale files for this trafo id (different prefixes)
+        try:
+            for stale in Path(output_dir).glob(f"*__trafo_{t_idx}.json"):
+                if stale.name != out_file.name:
+                    stale.unlink(missing_ok=True)
+            # Also remove bare trafo_{id}.json if writing a prefixed one
+            bare = Path(output_dir) / f"trafo_{t_idx}.json"
+            if bare.exists() and bare.name != out_file.name:
+                bare.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            pp.to_json(sub_net, str(out_file))
+            logger.debug(f"Wrote trafo {t_idx}: {len(final_buses)-1} LV buses, {H.number_of_edges()} lines")
+        except Exception as e:
+            logger.error(f"Failed to write trafo {t_idx}: {e}")
+            out_file = Path(output_dir) / f"trafo_{t_idx}.json"
+            pp.to_json(sub_net, str(out_file))
+        outputs[subgrid_id] = sub_net
+
+    logger.info(f"Created {len(outputs)} subgrids")
     return outputs
 
 
@@ -447,3 +480,4 @@ def run_split(
     """Run the splitter against a pandapower JSON and write subgrids only."""
     net = pp.from_json(json_path)
     split_into_operational_lv_subgrids(net, output_dir=output_dir)
+
