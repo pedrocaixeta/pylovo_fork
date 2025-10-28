@@ -8,7 +8,6 @@ import pandapower as pp
 from pathlib import Path
 import yaml
 import logging
-from typing import Optional
 
 # ============================================================================
 # Configuration Management

@@ -9,6 +9,9 @@ import pandas as pd
 import pandapower as pp
 import networkx as nx
 import logging
+from pyproj import Transformer
+from shapely.geometry import Point, LineString
+import geopandas as gpd
 
 # --------------------------------------------------------------------------------------
 # Naming parser (underscore-separated variant only)
@@ -319,6 +322,40 @@ def _assign_buses_to_trafos(
     return assignment
 
 
+def _transform_geodata(net: pp.pandapowerNet, src_crs: str = "epsg:3035", target_crs: str = "epsg:4326"):
+    """Transform bus and line geodata from a source CRS to a target CRS (default WGS84)."""
+    # EPSG:3035 axis order is (Y, X) -> Northing, Easting
+    # EPSG:4326 axis order is (lat, lon)
+    # The transformer expects inputs in the order of the source CRS axes.
+    transformer = Transformer.from_crs(src_crs, target_crs)
+
+    # Transform bus geodata
+    if not net.bus_geodata.empty:
+        # We pass (y, x) to match the (Northing, Easting) axis order of EPSG:3035
+        lat, lon = transformer.transform(net.bus_geodata.y.values, net.bus_geodata.x.values)
+        net.bus_geodata.x = lon
+        net.bus_geodata.y = lat
+        logging.info(f"Transformed {len(net.bus_geodata)} bus coordinates from {src_crs} to {target_crs}.")
+
+    # Transform line geodata
+    if not net.line_geodata.empty:
+        new_coords = []
+        for line in net.line_geodata.coords:
+            if not line or len(line) == 0:
+                new_coords.append([])
+                continue
+            # Unzip to (y_coords, x_coords)
+            ys, xs = zip(*line)
+            # We pass (y, x) to match the (Northing, Easting) axis order
+            lat, lon = transformer.transform(ys, xs)
+            # Zip back to (lon, lat) pairs for plotting
+            new_coords.append(list(zip(lon, lat)))
+        net.line_geodata.coords = new_coords
+        logging.info(f"Transformed {len(net.line_geodata)} line coordinates from {src_crs} to {target_crs}.")
+
+    return net
+
+
 def split_into_operational_lv_subgrids(
     net: pp.pandapowerNet,
     output_dir: str | Path = "grid_data/subgrids/SWF_V7",
@@ -434,12 +471,22 @@ def split_into_operational_lv_subgrids(
         try:
             allowed_edges = set(tuple(sorted(e)) for e in H.edges())
             if len(sub_net.line) > 0:
-                mask = []
-                for _, lrow in sub_net.line.iterrows():
+                lines_to_keep = []
+                for idx, lrow in sub_net.line.iterrows():
                     u = int(lrow["from_bus"]); v = int(lrow["to_bus"])
-                    mask.append(tuple(sorted((u, v))) in allowed_edges)
-                sub_net.line = sub_net.line.loc[pd.Series(mask, index=sub_net.line.index)]
+                    if tuple(sorted((u, v))) in allowed_edges:
+                        lines_to_keep.append(idx)
+
+                # Filter both line and line_geodata before resetting index
+                sub_net.line = sub_net.line.loc[lines_to_keep]
+                if not sub_net.line_geodata.empty:
+                    sub_net.line_geodata = sub_net.line_geodata.loc[sub_net.line_geodata.index.isin(sub_net.line.index)]
+
+                # Now reset both indices to be in sync
                 sub_net.line.reset_index(drop=True, inplace=True)
+                if not sub_net.line_geodata.empty:
+                    sub_net.line_geodata.reset_index(drop=True, inplace=True)
+
             if hasattr(sub_net, "switch") and len(sub_net.switch) > 0:
                 sub_net.switch.drop(sub_net.switch.index, inplace=True)
         except Exception as e:
@@ -476,8 +523,20 @@ def split_into_operational_lv_subgrids(
 def run_split(
     json_path: str = "grid_data/SWF_V7.json",
     output_dir: str = "grid_data/subgrids/SWF_V7",
+    transform_crs: bool = True,
 ) -> None:
     """Run the splitter against a pandapower JSON and write subgrids only."""
     net = pp.from_json(json_path)
+
+    if transform_crs:
+        logging.info("Transforming geodata to WGS84 for map plotting...")
+        net = _transform_geodata(net)
+
     split_into_operational_lv_subgrids(net, output_dir=output_dir)
 
+
+if __name__ == "__main__":
+    # This allows running the splitter directly, e.g., for regeneration
+    # The main entry point for the validation workflow is typically managed by a master script.
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    run_split()
