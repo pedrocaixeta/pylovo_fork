@@ -15,6 +15,12 @@ Usage:
 import sys
 from pathlib import Path
 import argparse
+import pandas as pd
+import pandapower as pp
+import plotly.graph_objects as go
+import numpy as np
+
+from src.analysis.utils import *
 
 # Add project root to path
 if '__file__' in globals():
@@ -23,15 +29,12 @@ else:
     project_root = Path.cwd()
 sys.path.insert(0, str(project_root))
 
-import pandas as pd
-import pandapower as pp
-import plotly.graph_objects as go
-import numpy as np
+data_dir, net_name, _projection = load_validation_config()
 
 # Paths
-SUBGRIDS_DIR = project_root / "grid_data" / "subgrids" / "SWF_V7"
+SUBGRIDS_DIR = project_root / data_dir
 METRICS_CSV = SUBGRIDS_DIR.parent / "SWF_V7_metrics.csv"
-OUTPUT_FILE = project_root / "grid_data" / "subgrids" / "all_grids_map.html"
+OUTPUT_FILE = SUBGRIDS_DIR.parent
 
 
 def get_color_palette(n):
@@ -48,10 +51,6 @@ def get_color_palette(n):
 def load_all_grids(grids_df):
     """Load all subgrids and extract geodata."""
     all_grids = []
-
-    print(f"\n{'='*80}")
-    print("LOADING SUBGRIDS")
-    print(f"{'='*80}")
 
     for idx, (_, row) in enumerate(grids_df.iterrows(), 1):
         grid_file = row['file']
@@ -84,10 +83,6 @@ def load_all_grids(grids_df):
         except Exception as e:
             print(f"✗ Error: {e}")
             continue
-
-    print(f"\n{'='*80}")
-    print(f"Loaded {len(all_grids)} grids with geodata")
-    print(f"{'='*80}")
 
     return all_grids
 
