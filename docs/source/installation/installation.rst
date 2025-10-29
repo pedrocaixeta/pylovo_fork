@@ -115,12 +115,12 @@ well: add the InfDB configuration to your ``.env`` file below the pylovo configu
     TARGET_SCHEMA = "pylovo" # optional, default is "public"
 
     # InfDB Database (Input Data)
-    INFDB_DBNAME="citydb"               # replace
-    INFDB_USER="citydb_user"            # replace
+    INFDB_DBNAME="infdb"               # replace
+    INFDB_USER="infdb_user"            # replace
     INFDB_HOST="00.000.00.000"          # replace
     INFDB_PORT=5432                     # replace
-    INFDB_PASSWORD="citydb_password"    # replace
-    INFDB_SOURCE_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
+    INFDB_PASSWORD="infdb"    # replace
+    INFDB_SOURCE_SCHEMA="basedata"  # InfDB processor puts relevant tables into "pylovo_input" schema
 
 .. note::
     If you want to keept it simple, you can also add the pylovo database as schema to the InfDB database by setting the same connection parameters and a
