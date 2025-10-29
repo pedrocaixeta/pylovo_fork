@@ -2,8 +2,8 @@
 """
 Export pandapower network geodata to CSV for QGIS visualization.
 
-This tool exports bus and line geodata from pandapower networks to CSV files
-with WKT geometry that can be imported into QGIS.
+Exports bus and line geodata from pandapower networks to CSV files with WKT
+geometry, using GRID_DATA_PATH/NET_NAME from .env via load_validation_config.
 """
 from pathlib import Path
 import sys
@@ -22,9 +22,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.analysis.utils import load_validation_config
 
+
 def export_geodata_as_csv():
     data_dir, net_name, projection = load_validation_config()
-    file_path = f"{data_dir}/{net_name}"
+    file_path = data_dir / net_name
 
     out_lines = data_dir / "lines_multiple_grids.csv"
     out_buses = data_dir / "bus_multiple_grids.csv"
@@ -64,6 +65,7 @@ def export_geodata_as_csv():
         gdf_line.to_csv(out_lines, index=False)
     if not gdf_bus.empty:
         gdf_bus.to_csv(out_buses, index=False)
+
 
 def _iter_nets_from_json(json_path: Path):
     """Load single or multiple pandapower nets from a JSON file."""
@@ -121,7 +123,6 @@ def _get_bus_line_geo(net, net_index: int, projection: str):
         gdf_bus = gpd.GeoDataFrame(columns=["net", "consumer_bus", "geometry"], crs="EPSG:4326")
 
     return gdf_line, gdf_bus
-
 
 
 if __name__ == "__main__":

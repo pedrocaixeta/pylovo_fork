@@ -3,15 +3,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import pandapower as pp
 import networkx as nx
 import logging
 from pyproj import Transformer
-from shapely.geometry import Point, LineString
-import geopandas as gpd
 
 from src.analysis.utils import *
 
@@ -377,7 +375,7 @@ def _transform_geodata(net: pp.pandapowerNet, src_crs: str = "epsg:25832", targe
 
 def split_into_operational_lv_subgrids(
     net: pp.pandapowerNet,
-    output_dir: str | Path = "grid_data/subgrids/SWF_V7",
+    output_dir: str | Path | None = None,
 ) -> Dict[str, pp.pandapowerNet]:
     """Split the provided pandapower net into operationally radial LV subgrids per transformer.
 
@@ -391,6 +389,11 @@ def split_into_operational_lv_subgrids(
     - Only include buses that have lines connecting them in the final radial tree
     """
     logger = logging.getLogger(__name__)
+
+    if output_dir is None:
+        data_dir, _net_name, _proj = load_validation_config()
+        output_dir = data_dir / "subgrids"
+
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Global operational graph (lines + switch-open removals)

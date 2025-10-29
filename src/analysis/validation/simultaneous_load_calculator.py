@@ -487,8 +487,6 @@ def calculate_simultaneous_peak_load(
 
     Examples
     --------
-    >>> sim_load = calculate_simultaneous_peak_load(net)
-    >>> sim_load, breakdown = calculate_simultaneous_peak_load(net, return_breakdown=True)
     """
     calc = SimultaneousLoadCalculator()
     sim_load = calc.calculate_total_simultaneous_load(net, method=method)

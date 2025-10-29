@@ -6,50 +6,76 @@ Used by both core (synthetic) and validation (DSO) workflows.
 import pandas as pd
 import pandapower as pp
 from pathlib import Path
-import yaml
+import os
 import logging
+from dotenv import load_dotenv, find_dotenv
 
 # ============================================================================
-# Configuration Management
+# Configuration Management (.env-based)
 # ============================================================================
 
-# Configuration file path
-SCRIPT_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = SCRIPT_DIR / "config_validation.yaml"
+# Project root (repository root)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# Load .env once (from repo root if present)
+load_dotenv(find_dotenv(), override=True)
+
+
+def _resolve_data_dir(p: str | os.PathLike) -> Path:
+    """Resolve GRID_DATA_PATH to an absolute Path.
+
+    Rules:
+    - If path starts with "/src/", treat it as project-relative (join with PROJECT_ROOT)
+    - If path is absolute (e.g., "/home/user/..."), use as-is
+    - Otherwise, treat as project-relative
+    Also normalizes and checks existence.
+    """
+    if p is None:
+        raise FileNotFoundError("Environment variable GRID_DATA_PATH is not set. Please define it in your .env.")
+
+    s = str(p).strip()
+    if not s:
+        raise FileNotFoundError("Environment variable GRID_DATA_PATH is empty. Please set a valid directory path.")
+
+    # Normalize project-relative prefix like "/src/..."
+    if s.startswith("/src/"):
+        path = PROJECT_ROOT / s.lstrip("/")
+    else:
+        path = Path(s)
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+
+    path = path.resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Configured GRID_DATA_PATH does not exist: '{path}'")
+    if not path.is_dir():
+        raise NotADirectoryError(f"GRID_DATA_PATH must be a directory, got: '{path}'")
+    return path
 
 
 def load_validation_config() -> tuple[Path, str, str]:
-    """Load validation configuration from config_validation.yaml.
+    """Load validation configuration from environment variables.
+
+    Reads the following environment variables (from .env):
+      - GRID_DATA_PATH: Directory containing the grid dataset (e.g., src/analysis/grid_data/SWF_V7)
+      - NET_NAME: Base filename of the network (e.g., SWF_V7)
+      - PROJECTION (optional): EPSG code of the source CRS (default: epsg:25832)
 
     Returns:
         tuple[Path, str, str]: (data_dir, net_name, projection)
 
     Raises:
-        FileNotFoundError: if the config file or data_dir is missing.
+        FileNotFoundError / ValueError with actionable messages when misconfigured.
     """
-    if not CONFIG_PATH.exists():
-        raise FileNotFoundError(
-            f"Missing {CONFIG_PATH}. Copy config_validation.yaml.template to config_validation.yaml "
-            "and set data_dir (and optionally net_name, projection)."
-        )
+    data_dir_env = os.getenv("GRID_DATA_PATH")
+    net_name = (os.getenv("NET_NAME") or "").strip()
+    projection = (os.getenv("PROJECTION") or "epsg:25832").strip()
 
-    # Read YAML config (empty file -> empty dict)
-    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    data_dir = _resolve_data_dir(data_dir_env)
 
-    data_dir_raw = cfg.get("data_dir", "")
-    if not data_dir_raw:
-        raise FileNotFoundError(
-            f"'data_dir' is empty in {CONFIG_PATH}. Please set an absolute path to your validation folder."
-        )
-
-    data_dir = Path(data_dir_raw).expanduser().resolve()
-    if not data_dir.exists():
-        raise FileNotFoundError(
-            f"Configured data_dir does not exist: '{data_dir}'. Please set a valid path in {CONFIG_PATH}."
-        )
-
-    net_name = (cfg.get("net_name") or "").strip()
-    projection = (cfg.get("projection") or "epsg:3035").strip()
+    if not net_name:
+        # If not provided, infer from directory name (e.g., .../SWF_V7 -> SWF_V7)
+        net_name = data_dir.name
 
     return data_dir, net_name, projection
 
@@ -58,11 +84,15 @@ def read_net_json() -> tuple[pp.pandapowerNet, str]:
     """Load pandapower network from configured JSON file.
 
     Returns:
-        tuple: (net, file_path)
+        tuple: (net, file_path_base) where file_path_base = <data_dir>/<net_name>
     """
     data_dir, net_name, _projection = load_validation_config()
-    file_path = f"{data_dir}/{net_name}"
+    file_path = str(data_dir / net_name)
     json_path = f"{file_path}.json"
+    if not Path(json_path).exists():
+        raise FileNotFoundError(
+            f"Network JSON not found: {json_path}. Ensure NET_NAME ('{net_name}') matches the file in {data_dir}."
+        )
     net = pp.from_json(json_path)
     return net, file_path
 
