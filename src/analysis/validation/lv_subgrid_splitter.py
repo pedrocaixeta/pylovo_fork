@@ -13,6 +13,8 @@ from pyproj import Transformer
 from shapely.geometry import Point, LineString
 import geopandas as gpd
 
+from src.analysis.utils import *
+
 # --------------------------------------------------------------------------------------
 # Naming parser (underscore-separated variant only)
 # --------------------------------------------------------------------------------------
@@ -322,17 +324,34 @@ def _assign_buses_to_trafos(
     return assignment
 
 
-def _transform_geodata(net: pp.pandapowerNet, src_crs: str = "epsg:3035", target_crs: str = "epsg:4326"):
-    """Transform bus and line geodata from a source CRS to a target CRS (default WGS84)."""
-    # EPSG:3035 axis order is (Y, X) -> Northing, Easting
-    # EPSG:4326 axis order is (lat, lon)
-    # The transformer expects inputs in the order of the source CRS axes.
-    transformer = Transformer.from_crs(src_crs, target_crs)
+def _transform_geodata(net: pp.pandapowerNet, src_crs: str = "epsg:25832", target_crs: str = "epsg:4326"):
+    """Transform bus and line geodata from a source CRS to a target CRS (default WGS84).
+
+    This function transforms coordinates from a projected CRS (e.g., UTM) to WGS84 (lat/lon)
+    for use with map-based plotting functions like simple_plotly(net, on_map=True).
+
+    Common source CRS for Germany:
+    - EPSG:25832: ETRS89 / UTM zone 32N (most common for western/central Germany)
+    - EPSG:25833: ETRS89 / UTM zone 33N (eastern Germany)
+    - EPSG:3035: ETRS89-extended / LAEA Europe (pan-European)
+
+    Args:
+        net: pandapower network with geodata in projected coordinates
+        src_crs: Source CRS as EPSG code (default: "epsg:25832" for UTM 32N)
+        target_crs: Target CRS as EPSG code (default: "epsg:4326" for WGS84)
+
+    Returns:
+        net: pandapower network with geodata transformed to target CRS
+    """
+    # Use always_xy=True to ensure consistent (x, y) = (Easting, Northing) input order
+    # regardless of the formal axis order of the source CRS
+    transformer = Transformer.from_crs(src_crs, target_crs, always_xy=True)
 
     # Transform bus geodata
     if not net.bus_geodata.empty:
-        # We pass (y, x) to match the (Northing, Easting) axis order of EPSG:3035
-        lat, lon = transformer.transform(net.bus_geodata.y.values, net.bus_geodata.x.values)
+        # pandapower stores geodata as (x, y) = (Easting, Northing) for projected CRS
+        # Transform to (lon, lat) for WGS84
+        lon, lat = transformer.transform(net.bus_geodata.x.values, net.bus_geodata.y.values)
         net.bus_geodata.x = lon
         net.bus_geodata.y = lat
         logging.info(f"Transformed {len(net.bus_geodata)} bus coordinates from {src_crs} to {target_crs}.")
@@ -344,11 +363,11 @@ def _transform_geodata(net: pp.pandapowerNet, src_crs: str = "epsg:3035", target
             if not line or len(line) == 0:
                 new_coords.append([])
                 continue
-            # Unzip to (y_coords, x_coords)
-            ys, xs = zip(*line)
-            # We pass (y, x) to match the (Northing, Easting) axis order
-            lat, lon = transformer.transform(ys, xs)
-            # Zip back to (lon, lat) pairs for plotting
+            # Line coords are stored as [(x1, y1), (x2, y2), ...] = [(Easting, Northing), ...]
+            xs, ys = zip(*line)
+            # Transform to (lon, lat) for WGS84
+            lon, lat = transformer.transform(xs, ys)
+            # Store as (lon, lat) pairs for map plotting
             new_coords.append(list(zip(lon, lat)))
         net.line_geodata.coords = new_coords
         logging.info(f"Transformed {len(net.line_geodata)} line coordinates from {src_crs} to {target_crs}.")
@@ -521,18 +540,22 @@ def split_into_operational_lv_subgrids(
 
 
 def run_split(
-    json_path: str = "grid_data/SWF_V7.json",
-    output_dir: str = "grid_data/subgrids/SWF_V7",
-    transform_crs: bool = True,
+    transform_crs: bool = False,
+    src_crs: str = "epsg:25832",
 ) -> None:
-    """Run the splitter against a pandapower JSON and write subgrids only."""
-    net = pp.from_json(json_path)
+    """Run the splitter against a pandapower JSON and write subgrids only.
+    
+    Args:
+        transform_crs: If True, transform coordinates to WGS84 for map plotting
+        src_crs: Source CRS of the input data (default: "epsg:25832" for UTM 32N)
+    """
+    net, file_path = read_net_json()
 
     if transform_crs:
-        logging.info("Transforming geodata to WGS84 for map plotting...")
-        net = _transform_geodata(net)
+        logging.info(f"Transforming geodata from {src_crs} to WGS84 for map plotting...")
+        net = _transform_geodata(net, src_crs=src_crs)
 
-    split_into_operational_lv_subgrids(net, output_dir=output_dir)
+    split_into_operational_lv_subgrids(net, output_dir=Path(file_path) / "subgrids")
 
 
 if __name__ == "__main__":
