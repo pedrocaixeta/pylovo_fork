@@ -90,35 +90,43 @@ def adapt_network(
     validate: bool = True
 ) -> pp.pandapowerNet:
     """
-    Prepare an external network for topology analysis.
-    This function normalizes data types, ensures required columns exist,
-    infers bus zones from load patterns, and optionally validates structure.
-    The network is modified in-place and also returned for convenience.
+    Prepare external DSO network for topology analysis.
+    
+    Performs complete network normalization:
+    1. Convert data types (strings → floats)
+    2. Ensure required columns exist (names, zones, max_p_mw)
+    3. Infer bus zones from load naming patterns
+    4. Apply custom zone mappings
+    5. Validate network structure
+    
+    Modified in-place, also returned for convenience.
+    
     Parameters
     ----------
     net : pp.pandapowerNet
-        The pandapower network to adapt (modified in-place)
+        Network to adapt (modified in-place)
     zone_mapping : dict, optional
-        Mapping from DSO zone names to standard zones
-        Example: {'residential': 'Residential', 'industrial': 'Commercial'}
+        Custom zone name mapping, e.g., {'residential': 'Residential'}
     default_zone : str
-        Default zone for buses without zone information (default: 'Residential')
+        Fallback zone (default: 'Residential')
     validate : bool
-        Whether to validate network structure (default: True)
+        Run structure validation (default: True)
+    
     Returns
     -------
     pp.pandapowerNet
-        The same network object, now adapted
+        The adapted network (same object)
+    
     Examples
     --------
     >>> import pandapower as pp
-    >>> from src.analysis.validation.network_adapter import adapt_network
-    >>> net = pp.from_json('dso_network.json')
-    >>> adapted_net = adapt_network(net)
-    >>> 
+    >>> from src.analysis.validation.network_adapter_swf import adapt_network
     >>> from src.analysis.validation.parameter_calculation_swf import ParameterCalculatorSWF
+    >>> 
+    >>> net = pp.from_json('dso_network.json')
+    >>> net = adapt_network(net)
     >>> calc = ParameterCalculatorSWF()
-    >>> metrics = calc.compute_metrics(adapted_net)
+    >>> metrics = calc.compute_metrics(net)
     """
     logger = logging.getLogger(__name__)
     # 1. Normalize data types (strings to floats, etc.)

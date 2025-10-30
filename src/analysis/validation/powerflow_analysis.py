@@ -237,7 +237,11 @@ def _ext_grid_buses(net: pp.pandapowerNet) -> set:
 
 
 def run_powerflow(net: pp.pandapowerNet) -> bool:
-    """Run a power flow with robust default options and return convergence status."""
+    """
+    Run power flow with robust defaults (Newton-Raphson, Q limits enforced).
+    
+    Returns True if converged, False otherwise.
+    """
     try:
         pp.runpp(net, algorithm="nr", calculate_voltage_angles=True, enforce_q_lims=True)
         return getattr(net, 'converged', True)
@@ -303,19 +307,29 @@ def assign_gaussian_loads(
     seed: Optional[int] = None,
 ) -> pp.pandapowerNet:
     """
-    Assigns loads to all buses in the network using a Gaussian (normal) distribution.
+    Assign Gaussian-distributed loads to all buses (excluding swing buses).
 
-    Parameters:
-        net (pandapowerNet): The pandapower network where loads are to be added.
-        avg_load (float): Average apparent power (MVA) for the loads.
-        std_dev (float): Standard deviation of the apparent power values.
-        cos_phi (float): Power factor of the load.
-        mode (str): "ind" for inductive or "cap" for capacitive behavior.
-        min_sn_mva (float): Minimum apparent power to allow (values are clipped at this).
-        seed (int, optional): Random seed for reproducibility.
+    Parameters
+    ----------
+    net : pp.pandapowerNet
+        Network to modify
+    avg_load : float
+        Mean apparent power in MVA
+    std_dev : float
+        Standard deviation in MVA
+    cos_phi : float
+        Power factor
+    mode : str
+        'ind' for inductive, 'cap' for capacitive
+    min_sn_mva : float
+        Minimum load (clipping threshold)
+    seed : int, optional
+        Random seed for reproducibility
 
-    Returns:
-        pandapowerNet: The updated pandapower network with the added loads.
+    Returns
+    -------
+    pp.pandapowerNet
+        Network with loads assigned (same object)
     """
     rng = np.random.default_rng(seed)
 

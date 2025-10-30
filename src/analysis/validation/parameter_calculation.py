@@ -1,25 +1,22 @@
 """
-Topology analysis helpers for low-voltage (LV) distribution grids built with pandapower.
+Topology and load-aggregation metrics for LV distribution grids (validation workflow).
 
-This module computes descriptive parameters of radial LV grids that are used for
-analysis, validation, and clustering. It relies on:
-- pandapower for grid modeling
-- networkx for graph/topology metrics with edge weights (e.g., cable lengths)
-- geopandas and haversine distances for spatial proximity metrics between houses
+Purpose
+- Compute descriptive parameters for radial low-voltage (LV) grids modeled in pandapower.
+- Support PLZ-wide aggregation and per-grid metrics used in validation and clustering.
 
-Key concepts and assumptions:
-- The LV grid is treated as a radial network rooted at the LV transformer bus ("LVbus").
-- Loads (house connections) are represented as pandapower loads grouped per bus.
-- "Branches" refer to the main feeders from the LV bus; they are approximated as the
-  number of incident edges of the root bus minus the direct connection to the transformer.
-- Simultaneity factors (SIM_FACTOR) are used to aggregate loads per category
-  (Residential/Public/Commercial) when estimating coincident peak load along a feeder.
+Key ideas
+- Treat the LV transformer LV bus ("LVbus") as the root of a radial tree.
+- Respect operational topology by building graphs with respect_switches=True.
+- Aggregate consumer loads using simultaneity factors per category (Residential/Public/Commercial).
+- Provide impedance-weighted proxies that correlate with voltage drop ("vsw"-like metrics).
 
-Outputs include counts (buses, loads), distances (avg/max path length from transformer),
-lengths (cable length), transformer sizing, and simple impedance-weighted proxies that
-correlate with voltage drop ("resistance"/"vsw" aggregates).
+Outputs include counts (buses, loads), distances to trafo (avg/max), cable lengths,
+transformer sizing, simultaneity-based peak loads, and resistance/reactance proxies.
 
-Note: Some heuristics assume unique upstream line per bus and a radial topology.
+Notes
+- Several methods assume radial structure and a unique upstream line per bus.
+- Geographic vs projected coordinates are auto-detected for proximity metrics.
 """
 
 import math
@@ -39,11 +36,11 @@ from src import utils
 
 
 class ParameterCalculator:
-    """Class to calculate and persist grid parameters.
+    """Calculate and persist LV grid parameters at PLZ and per-grid levels.
 
-    The calculator orchestrates two scopes:
+    Scope
     1) PLZ level: aggregate statistics across all local grids inside a PLZ
-       (basic counts, cable length per type, transformer-distance relationships).
+       (counts, cable length per type, trafo-size vs distance/load lookup tables).
     2) Grid level: detailed parameters per local grid (kcid, bcid) for clustering.
 
     Attributes
@@ -51,10 +48,10 @@ class ParameterCalculator:
     - bcid: Building cluster ID (negative bcid implies an OSM-only transformer)
     - kcid: K-means cluster ID of the grid
     - version_id: Analysis version taken from configuration
-    - dbc: Database client used to read/write pandapower nets and parameters
-    - lvbus_keyword: substring that identifies the LV root bus in bus names (default: "LVbus")
-    - consumer_bus_keyword: substring that identifies consumer buses (default: "Consumer Nodebus")
-    - connection_bus_keyword: substring that identifies internal connection buses (default: "Connection Nodebus")
+    - dbc: Database client used for I/O of pandapower nets and parameters
+    - lvbus_keyword: substring to identify the LV root bus (default: "LVbus")
+    - consumer_bus_keyword: substring to identify consumer buses (default: "Consumer Nodebus")
+    - connection_bus_keyword: substring to identify internal connection buses (default: "Connection Nodebus")
     """
 
     def __init__(self, plz: int, bcid: int, kcid: int,
@@ -77,7 +74,7 @@ class ParameterCalculator:
         Side effects
         - Reads all nets of the PLZ from the database.
         - Writes aggregated per-PLZ results and sets analysis flags.
-        - Logs progress and skips already analyzed PLZs.
+        - Skips PLZs already analyzed.
         """
         grid_generated = self.dbc.is_grid_generated(self.plz)
         if not grid_generated:
@@ -100,13 +97,12 @@ class ParameterCalculator:
         except Exception as e:
             self.dbc.logger.error(f"Error during analysis for PLZ {self.plz}: {e}")
             self.dbc.logger.info(f"Skipped PLZ {self.plz} due to analysis error.")
-            self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
+            self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)
 
     def calc_parameters_per_grid(self):
-        """Compute and store per-grid parameters for all grids of an already analyzed PLZ.
+        """Compute and store per-grid parameters for all grids of an analyzed PLZ.
 
-        Ensures PLZ-level metrics were computed first (for lookups such as
-        simultaneous peak load by transformer size and distance).
+        Ensures PLZ-level metrics exist first (used for per-PLZ lookups).
         """
         grid_analysed = self.dbc.is_grid_analyzed(self.plz)
         if not grid_analysed:
@@ -149,25 +145,23 @@ class ParameterCalculator:
     def compute_parameters(self, net: pp.pandapowerNet) -> dict:
         """Compute a consistent set of topology and load metrics for one grid.
 
-        Metrics returned (units):
-        - no_connection_buses (count): buses of type "Connection Nodebus"
-        - no_branches (count): main feeders leaving the LV bus
-        - no_house_connections (count): buses of type "Consumer Nodebus"
-        - no_house_connections_per_branch (count/branch)
-        - no_households (count): number of load elements
-        - no_household_equ (HE): equivalent number of households from max power and PEAK_LOAD_HOUSEHOLD
+        Returns a dict with keys (units):
+        - no_connection_buses: count of buses of type "Connection Nodebus"
+        - no_branches: degree(root) - 1 ≈ main feeders from LV bus
+        - no_house_connections: count of "Consumer Nodebus" buses
+        - no_house_connections_per_branch: count/branch
+        - no_households: number of load elements
+        - no_household_equ (HE): max power / PEAK_LOAD_HOUSEHOLD
         - no_households_per_branch (HE/branch)
-        - max_no_of_households_of_a_branch (HE): max per-branch HE aggregated along the paths
-        - house_distance_km (km): spatial median of mean distance to 4 nearest consumer buses
-        - transformer_mva (MVA): transformer rating
-        - max_trafo_dis (km), avg_trafo_dis (km): weighted path length from LV bus to consumer buses
-        - cable_length_km (km), cable_len_per_house (km/house connection)
-        - max_power_mw (MW): sum of max_p_mw of all loads
-        - simultaneous_peak_load_mw (MW): from PLZ lookup by trafo size and max path distance
-        - resistance (Ohm*HE, proxy): aggregated resistance-weighted load proxy along all consumer paths
-        - reactance (Ohm*HE, proxy) and ratio (R/X)
-        - vsw_per_branch (proxy/branch): resistance proxy per branch
-        - max_vsw_of_a_branch (proxy): worst branch resistance proxy
+        - max_no_of_households_of_a_branch (HE): max per-branch HE
+        - house_distance_km: spatial median of mean distance to 4 nearest consumer buses
+        - transformer_mva: transformer rating (MVA)
+        - max_trafo_dis, avg_trafo_dis (km): weighted paths from LV bus to consumer buses
+        - cable_length_km, cable_len_per_house (km per house connection)
+        - max_power_mw (MW): sum of max_p_mw over all loads
+        - simultaneous_peak_load_mw (MW): PLZ lookup by trafo size and max path distance
+        - resistance/reactance (Ω·HE proxies), ratio (R/X)
+        - vsw_per_branch (proxy per branch), max_vsw_of_a_branch (proxy)
         """
         no_house_connections = self.get_no_of_buses(net, self.consumer_bus_keyword)
         no_connection_buses = self.get_no_of_buses(net, self.connection_bus_keyword)
@@ -178,13 +172,12 @@ class ParameterCalculator:
         cable_length_km = self.get_cable_length(net)
         cable_len_per_house = cable_length_km / no_house_connections if no_house_connections > 0 else 0.0
 
-        # CRITICAL FIX: respect_switches=True to analyze operational (radial) topology
-        # This is essential for DSO networks that use open switches for radial operation
+        # Build operational topology (critical for DSO radial operation)
         G = pp.topology.create_nxgraph(net, respect_switches=True)
         no_branches = self.get_no_branches(G, net)
         avg_trafo_dis, max_trafo_dis = self.get_distances_in_graph(net, G)
 
-        # Zero-division protection for branch metrics
+        # Branch-normalized counts
         if no_branches > 0:
             no_house_connections_per_branch = no_house_connections / no_branches
             no_households_per_branch = max_power_mw * 1000.0 / (PEAK_LOAD_HOUSEHOLD * no_branches)
@@ -227,17 +220,10 @@ class ParameterCalculator:
         return pd.DataFrame([params], columns=CLUSTERING_PARAMETERS)
 
     def get_simultaneous_peak_load(self, transformer_mva: float, max_trafo_dis: float) -> float:
-        """Lookup coincident peak load for a transformer size and max distance.
+        """Lookup coincident peak load for a transformer size and max path distance.
 
-        The lookup uses precomputed per-PLZ dictionaries persisted in the database,
-        keyed by transformer size (kVA as string) and discretized max distance (m).
-
-        Parameters
-        - transformer_mva: transformer rating in MVA
-        - max_trafo_dis: maximum weighted path distance from LV bus to consumer bus in km
-
-        Returns
-        - simultaneous peak load in MW (0.0 if no exact match)
+        Uses per-PLZ dictionaries stored in the DB keyed by transformer size (kVA, as str)
+        and discretized max distance (m). Returns MW (0.0 if not found).
         """
         data_list, _, _ = self.dbc.read_per_trafo_dict(self.plz)
         transformer_type_str = str(int(transformer_mva * 1000))
@@ -249,7 +235,7 @@ class ParameterCalculator:
         return 0.0
 
     def has_osm_trafo(self) -> bool:
-        """Return True if the grid's transformer originates from OSM data (bcid < 0)."""
+        """True if the grid's transformer originates from OSM data (bcid < 0)."""
         return self.bcid < 0
 
     def get_max_power(self, pandapower_net: pp.pandapowerNet) -> float:
@@ -274,15 +260,12 @@ class ParameterCalculator:
         return df_line["length_km"].sum()
 
     def calc_avg_house_distance(self, pandapower_net: pp.pandapowerNet) -> float:
-        """Compute a spatial neighbor metric for consumer buses.
+        """Spatial neighbor metric for consumer buses: median of per-bus mean distance to 4 nearest.
 
-        For each consumer bus, compute the mean distance to its 4 nearest other
-        consumer buses. Return the median of these per-bus averages for robustness.
-        Returns 0.0 if fewer than 2 consumer buses.
-
-        Automatically detects coordinate system:
-        - Geographic (WGS84): uses haversine distance
-        - Projected (e.g., EPSG:3035): uses Euclidean distance in meters
+        Auto-detects coordinate system:
+        - Geographic (WGS84): haversine distance [km]
+        - Projected (e.g., EPSG:3035): Euclidean distance [km] assuming meters as CRS unit
+        Returns 0.0 if fewer than 2 consumer buses or no geodata.
         """
         bus_geo = pandapower_net.bus_geodata.copy()
 
@@ -298,7 +281,7 @@ class ParameterCalculator:
         if len(bus_geo) < 2:
             return 0.0
 
-        # Detect coordinate system based on coordinate ranges
+        # Detect coordinate system based on numeric ranges
         x_vals = bus_geo["geometry"].x
         y_vals = bus_geo["geometry"].y
         is_geographic = (x_vals.min() >= -180 and x_vals.max() <= 180 and
@@ -307,22 +290,18 @@ class ParameterCalculator:
         list_pt = []
         for pt in bus_geo["geometry"]:
             if is_geographic:
-                # Geographic coordinates: convert to radians for haversine
                 new_pt = [radians(pt.x), radians(pt.y)]
             else:
-                # Projected coordinates: use as-is (in meters)
                 new_pt = [pt.x, pt.y]
             list_pt.append(new_pt)
 
         if is_geographic:
-            # Use haversine distance for geographic coordinates
             dis_mat = haversine_distances(list_pt, list_pt)
-            dis_mat = dis_mat * 6371.0  # Convert to km (Earth radius)
+            dis_mat = dis_mat * 6371.0  # Earth radius [km]
         else:
-            # Use Euclidean distance for projected coordinates
             from scipy.spatial.distance import cdist
             dis_mat = cdist(list_pt, list_pt, metric='euclidean')
-            dis_mat = dis_mat / 1000.0  # Convert meters to km
+            dis_mat = dis_mat / 1000.0  # meters → km
 
         df_distances = pd.DataFrame(dis_mat)
         list_avg_dis4pts = []
@@ -339,10 +318,9 @@ class ParameterCalculator:
         return median_dis
 
     def get_root(self, pandapower_net: pp.pandapowerNet):
-        """Return the LV root bus index (first bus whose name contains the configured LV keyword).
+        """Return LV root bus index (first bus whose name contains the LV keyword).
 
-        Raises
-        - ValueError if no LV bus is found.
+        Raises ValueError if no such bus exists.
         """
         root = pandapower_net.bus
         root["LV_bus"] = root["name"].str.contains(self.lvbus_keyword)
@@ -354,22 +332,16 @@ class ParameterCalculator:
         return root
 
     def get_no_branches(self, networkx_graph: nx.Graph, pandapower_net: pp.pandapowerNet) -> int:
-        """Approximate the number of main feeders from the LV bus.
-
-        Computed as the degree of the LV root bus minus one (to ignore the HV/LV transformer link).
-        Returns at least 0.
-        """
+        """Approximate number of main feeders from the LV bus: degree(root) - 1 (≥ 0)."""
         root = self.get_root(pandapower_net)
-        # DegreeView supports indexing to get a concrete int degree for a node
         root_degree = networkx_graph.degree[root]
         return int(max(root_degree - 1, 0))
 
     def get_distances_in_graph(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> tuple[float, float]:
-        """Calculate average and maximum weighted distances from the transformer to consumer buses.
+        """Average and maximum weighted distances (km) from transformer to consumer buses.
 
-        Uses Dijkstra shortest paths on the pandapower topology graph with 'weight'
-        edge attribute (typically km). Returns (avg_km, max_km). If no consumers
-        are present or no paths exist, returns (0.0, 0.0).
+        Uses Dijkstra on the topology graph 'weight' attribute. Returns (avg_km, max_km).
+        If no consumers or no valid paths, returns (0.0, 0.0).
         """
         root = self.get_root(pandapower_net)
         leaves = pandapower_net.bus.copy()
@@ -381,7 +353,6 @@ class ParameterCalculator:
 
         path_length_to_leaves = []
         for leaf in leaves:
-            # Skip leaves not in the graph (can happen with filtered/multi-component graphs)
             if leaf not in networkx_graph:
                 continue
             try:
@@ -390,7 +361,6 @@ class ParameterCalculator:
             except nx.NetworkXNoPath:
                 continue
             except nx.NodeNotFound:
-                # Root or leaf not in graph
                 continue
 
         if not path_length_to_leaves:
@@ -398,7 +368,6 @@ class ParameterCalculator:
 
         max_path_length = max(path_length_to_leaves)
         avg_path_length = sum(path_length_to_leaves) / len(path_length_to_leaves)
-
         return avg_path_length, max_path_length
 
     def get_trafo_power(self, pandapower_net: pp.pandapowerNet) -> float:
@@ -410,21 +379,21 @@ class ParameterCalculator:
 
     def calc_resistance(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> tuple[
         float, float, float, float, float]:
-        """Aggregate impedance-weighted proxies along consumer paths.
+        """Impedance-weighted proxies aggregated along consumer paths.
 
-        For each consumer bus, determine its shortest path to the LV root. For each
-        line segment along that path, compute an impedance-weighted contribution
-        proportional to cable parameters and an estimate of simultaneous load on the
-        segment. Sum across all consumers to obtain:
-        - max_no_of_households_of_a_branch: max HE per branch (branch derived from the first
-          edge leaving the root that belongs to the consumer's path)
-        - resistance: sum over all consumer-path section resistances (Ohm*HE proxy)
-        - reactance: analogous with x_ohm_per_km (Ohm*HE proxy)
-        - ratio: R/X ratio (0 if X is 0)
-        - max_vsw_of_a_branch: max per-branch resistance proxy (higher suggests worse voltage drop risk)
+        For each consumer bus, take the shortest path to the LV root and accumulate per-line
+        impedance sections weighted by household equivalents (HE) and simultaneity at that
+        section. Returns:
+        - max_no_of_households_of_a_branch (HE): max HE over branches (branch = first edge from root)
+        - resistance (Ω·HE proxy): sum of HE · r · length · sim_factor across all paths
+        - reactance (Ω·HE proxy): sum of HE · x · length across all paths
+        - ratio (R/X): resistance/reactance (0 if reactance is 0)
+        - max_vsw_of_a_branch (proxy): worst branch resistance proxy
+
+        Assumes radial topology and a unique upstream line for a given bus.
         """
         df_load = pandapower_net.load
-        # Household equivalents (HE) per house-connection bus: MW to kW and divide by PEAK_LOAD_HOUSEHOLD
+        # HE per house-connection bus: MW → kW then / PEAK_LOAD_HOUSEHOLD
         df_vsw = df_load.groupby("bus")["max_p_mw"].sum() * 1000.0 / PEAK_LOAD_HOUSEHOLD
         df_vsw = df_vsw.to_frame().reset_index().rename(
             columns={"bus": "house_connection", "max_p_mw": "household_equivalents"})
@@ -436,7 +405,6 @@ class ParameterCalculator:
         df_vsw["path"] = ""
         for index, row in df_vsw.iterrows():
             house_conn = df_vsw.at[index, "house_connection"]
-            # Skip if house connection or root not in graph (multi-component case)
             if house_conn not in networkx_graph or root not in networkx_graph:
                 df_vsw.at[index, "path"] = []
                 continue
@@ -449,7 +417,7 @@ class ParameterCalculator:
                     f"for PLZ {self.plz}, kcid {self.kcid}, bcid {self.bcid}. Skipping.")
                 df_vsw.at[index, "path"] = []
 
-        # Determine branch by the first edge that leaves the root present in the path
+        # Branch = first edge leaving the root present in the path
         df_vsw["branch"] = ""
         for branch in networkx_graph.edges(root):
             for index, row in df_vsw.iterrows():
@@ -462,7 +430,7 @@ class ParameterCalculator:
         else:
             max_no_of_households_of_a_branch = 0.0
 
-        # Accumulate section impedances weighted by HE and simultaneity factor per line
+        # Accumulate impedance sections along paths
         df_vsw["resistance"] = ""
         df_vsw["resistance_sections"] = ""
         df_vsw["reactance"] = ""
@@ -485,7 +453,7 @@ class ParameterCalculator:
                         f"No line segment found for path edge {start_node}->{end_node} in grid (PLZ {self.plz}, "
                         f"kcid {self.kcid}, bcid {self.bcid}). This indicates a malformed or non-radial net.")
                 line = line.head(1)
-                # Cable section parameters (per km); apply simultaneity factor to resistance proxy
+                # section parameters (per km); apply simultaneity to resistance proxy
                 length_km = line["length_km"].iloc[0]
                 r_ohm_per_km = line["r_ohm_per_km"].iloc[0]
                 x_ohm_per_km = line["x_ohm_per_km"].iloc[0]
@@ -507,34 +475,26 @@ class ParameterCalculator:
         return max_no_of_households_of_a_branch, resistance, reactance, ratio, max_vsw_of_a_branch
 
     def calculate_line_with_sim_factor(self, pandapower_net, networkx_graph) -> pd.DataFrame:
-        """Annotate each line segment with simultaneity and load aggregation metadata.
+        """Augment line table with simultaneity/load aggregation metadata.
 
-        Returns a copy of pandapower's line table augmented with:
+        Returns a copy of pandapower's line table with extra columns:
         - sim_factor_cumulated: equivalent simultaneity factor at the upstream end of the line
-        - sim_load: coincident load (MW) aggregated from the downstream subtree
-        - number and installed power per category (commercial/public/residential)
+        - sim_load: coincident load (MW) aggregated from downstream subtree
+        - category counts and installed power: Commercial/Public/Residential
 
-        Algorithm outline
-        1) Level-1 (leaf/consumer buses): For each consumer bus and load zone, compute
-           load counts and sums; derive per-bus simultaneity using SIM_FACTOR and
-           utils.oneSimultaneousLoad(). Write results into the upstream line whose to_bus
-           equals the consumer bus.
-        2) Connection buses (internal aggregation points): process from furthest to
-           nearest to the transformer, summing downstream category counts and loads and
-           recomputing sim_factor_cumulated and sim_load at the upstream line.
+        Algorithm
+        1) For each consumer bus and load zone, compute counts/sums; derive per-bus simultaneity
+           using SIM_FACTOR and utils.oneSimultaneousLoad(); write to the unique upstream line.
+        2) For connection buses, process from furthest to nearest to the transformer aggregating
+           downstream categories; recompute sim_factor_cumulated and sim_load at the upstream line.
 
-        Assumptions
-        - Radial topology with a unique upstream line for a given bus.
-        - The actual LV root bus index is derived and used for path-length sorting.
+        Assumptions: radial topology, unique upstream line for a bus, and a valid LV root.
         """
         df_sim_factor_definitions = pd.DataFrame.from_dict(SIM_FACTOR, orient='index')
         df_sim_factor_definitions.reset_index(inplace=True)
         df_sim_factor_definitions.columns = ['description', 'sim_factor']
 
-        # The idea is to add to each line new attributes needed to calculate the
-        # simultaneity factor for each line (cable segment). The simultaneity factor
-        # is needed to calculate the vsw-like resistance proxies.
-
+        # prepare columns used by downstream aggregation
         net_line_with_sim_factor = pandapower_net.line
         net_line_with_sim_factor['sim_factor_cumulated'] = 0.0
         net_line_with_sim_factor['sim_load'] = 0.0
@@ -548,11 +508,9 @@ class ParameterCalculator:
                                       inplace=True)
         net_line_with_sim_factor = net_line_with_sim_factor.drop_duplicates()
 
-        # First, calculate the simultaneity factor for the consumer buses
-
+        # 1) Level-1 (consumer buses) simultaneity
         level1 = pd.merge(left=pandapower_net.load, left_on='bus', right=pandapower_net.bus,
                           right_on=pandapower_net.bus.index)
-        # Map residential building subtypes to a single "Residential" category
         level1.replace(['MFH', 'SFH', 'AB', 'TH'], 'Residential', inplace=True)
 
         load_value = level1.groupby(['bus', 'zone'])['max_p_mw'].sum()
@@ -576,10 +534,9 @@ class ParameterCalculator:
 
         load_count_cat = load_count_cat.assign(sim_load_level1=lambda x: x['max_p_mw'] * x['sim_factor_level1'])
 
-        # Enter these values into the upstream line that ends at the consumer bus (to_bus)
+        # annotate the unique upstream line incident to the consumer bus
         for index, row in load_count_cat.iterrows():
             bus = row['bus']
-            # find the unique incident line regardless of orientation
             idx_to = net_line_with_sim_factor.index[net_line_with_sim_factor['to_bus'] == bus].tolist()
             idx_fr = net_line_with_sim_factor.index[net_line_with_sim_factor['from_bus'] == bus].tolist()
             idx = (idx_to + idx_fr)
@@ -613,23 +570,20 @@ class ParameterCalculator:
                 net_line_with_sim_factor.at[target_index, 'no_residential'] = row['count']
                 net_line_with_sim_factor.at[target_index, 'load_residential_mw'] = row['max_p_mw']
 
-        # Work on the connection nodebuses and their aggregated simultaneity factors
-
+        # 2) Connection buses: aggregate downstream to upstream (furthest first)
         connection_bus = pandapower_net.bus
         connection_bus['connection_bus'] = connection_bus['name'].str.contains(self.connection_bus_keyword)
         connection_bus = connection_bus[connection_bus['connection_bus']]
         connection_bus = connection_bus.index
         connection_bus = list(connection_bus)
 
-        # Sort connection buses by graph distance to the transformer (furthest first)
         df_connection_bus = pd.DataFrame(connection_bus, columns=['bus'])
         root_bus = self.get_root(pandapower_net)
-        df_connection_bus['source'] = root_bus  # use real LV root bus index
+        df_connection_bus['source'] = root_bus
 
         len_path_list = []
         for index, row in df_connection_bus.iterrows():
             bus = row['bus']
-            # Skip if bus not in graph (multi-component case)
             if bus not in networkx_graph or root_bus not in networkx_graph:
                 len_path_list.append(0)
                 continue
@@ -644,16 +598,14 @@ class ParameterCalculator:
         df_connection_bus['len_to_trafo_in_graph'] = len_path_list
         df_connection_bus = df_connection_bus.sort_values(by=['len_to_trafo_in_graph'], ascending=False)
 
-        # Propagate aggregated counts and simultaneity upstream (towards the transformer)
+        # propagate aggregated counts and simultaneity upstream
         for index, row in df_connection_bus.iterrows():
             furthest_connection_bus = row['bus']
             connected_downstream = net_line_with_sim_factor[
                 net_line_with_sim_factor['from_bus'] == furthest_connection_bus]
-            # Upstream: towards the trafo
             connected_upstream = net_line_with_sim_factor[net_line_with_sim_factor['to_bus'] == furthest_connection_bus]
             upstream_index = connected_upstream.index
             if len(upstream_index) == 0:
-                # try from_bus orientation
                 connected_upstream = net_line_with_sim_factor[net_line_with_sim_factor['from_bus'] == furthest_connection_bus]
                 upstream_index = connected_upstream.index
                 if len(upstream_index) == 0:
@@ -673,7 +625,7 @@ class ParameterCalculator:
             net_line_with_sim_factor.at[upstream_index[0], 'load_residential_mw'] = connected_downstream[
                 'load_residential_mw'].sum()
 
-            # Recompute coincident loads per category using category simultaneity factors
+            # recompute coincident loads per category
             load_commercial = utils.oneSimultaneousLoad(
                 installed_power=net_line_with_sim_factor.at[upstream_index[0], 'load_commercial_mw'],
                 load_count=net_line_with_sim_factor.at[upstream_index[0], 'no_commercial'],
@@ -696,7 +648,7 @@ class ParameterCalculator:
                                            net_line_with_sim_factor.at[upstream_index[0], 'load_residential_mw']
             if peak_load_all_consumer_types == 0:
                 net_line_with_sim_factor.at[
-                    upstream_index[0], 'sim_factor_cumulated'] = 0  # print('Connection nodebus error')
+                    upstream_index[0], 'sim_factor_cumulated'] = 0
             else:
                 net_line_with_sim_factor.at[upstream_index[0], 'sim_factor_cumulated'] = (
                             net_line_with_sim_factor.at[upstream_index[0], 'sim_load'] / peak_load_all_consumer_types)
@@ -707,8 +659,7 @@ class ParameterCalculator:
         """Aggregate basic counts per transformer size across all grids of a PLZ.
 
         For each local grid, count loads and unique load buses, compute cable length, and
-        group them by transformer size (kVA). Persists json-encoded dictionaries for later
-        lookup and reporting.
+        group by transformer size (kVA). Persist JSON-encoded dictionaries for lookups.
         """
         cluster_list = self.dbc.get_list_from_plz(plz)
         count = len(cluster_list)
@@ -803,12 +754,12 @@ class ParameterCalculator:
         self.dbc.insert_cable_length(plz, cable_length_string)
 
     def analyse_trafo_parameters_per_plz(self, plz: int):
-        """Collect per-transformer simultaneous peak loads and distances across the PLZ.
+        """Collect per-transformer sim peak loads and distances for the PLZ.
 
-        For each local grid, compute:
+        For each grid, compute:
         - sim_peak_load (kW) using category simultaneity factors
         - average and maximum LV-bus-to-load-bus distances (m) using topology weights
-        Group results by transformer size (kVA) and store lists per size for later lookup.
+        Group by transformer size (kVA) and store lists per size for later lookup.
         """
         cluster_list = self.dbc.get_list_from_plz(plz)
         count = len(cluster_list)
@@ -833,13 +784,13 @@ class ParameterCalculator:
 
                 load_bus = pd.unique(net.load["bus"]).tolist()
 
-                # CRITICAL FIX: respect_switches=True for operational topology
+                # operational topology
                 top.create_nxgraph(net, respect_switches=True)
                 trafo_distance_to_buses = (
                     top.calc_distance_to_bus(net, net.trafo["lv_bus"].tolist()[0], weight="weight",
                                              respect_switches=True, ).loc[load_bus].tolist())
 
-                # calculate total sim_peak_load
+                # category partitions
                 residential_bus_index = net.bus[~net.bus["zone"].isin(["Commercial", "Public"])].index.tolist()
                 commercial_bus_index = net.bus[net.bus["zone"] == "Commercial"].index.tolist()
                 public_bus_index = net.bus[net.bus["zone"] == "Public"].index.tolist()
@@ -862,7 +813,7 @@ class ParameterCalculator:
                         sim_peak_load += utils.oneSimultaneousLoad(installed_power=sum_load, load_count=house_num,
                                                                    sim_factor=SIM_FACTOR[building_type], )
 
-                # Distances returned by pandapower are in km; convert to meters for stored statistics
+                # pandapower returns km; store statistics in meters
                 avg_distance = (sum(trafo_distance_to_buses) / len(trafo_distance_to_buses)) * 1e3
                 max_distance = max(trafo_distance_to_buses) * 1e3
 

@@ -70,25 +70,27 @@ class ParameterCalculatorSWF:
 
     def compute_metrics(self, net: pp.pandapowerNet) -> Dict[str, Any]:
         """
-        Compute topology metrics for a pandapower network.
-
-        This method reuses the existing compute_parameters logic but returns
-        only the computed metrics without database interaction.
-
+        Compute complete topology metrics for a pandapower network.
+        
+        Calculates 21 clustering parameters including topology counts,
+        load characteristics, spatial metrics, and electrical properties.
+        
         Parameters
         ----------
         net : pp.pandapowerNet
-            The pandapower network to analyze
-
+            Network to analyze
+        
         Returns
         -------
         dict
-            Dictionary of computed metrics with keys matching CLUSTERING_PARAMETERS
-
+            Metrics dictionary with keys matching CLUSTERING_PARAMETERS
+        
         Notes
         -----
-        The simultaneous_peak_load_mw metric will be 0.0 since it requires
-        database lookup. All other metrics are computed from the network structure.
+        - Uses respect_switches=True for operational topology analysis
+        - Handles multi-component graphs gracefully
+        - Returns simultaneous_peak_load_mw=0.0 (requires database lookup)
+        - For estimated simultaneous load, use compute_parameters_with_fallback()
         """
         # Always use the standalone path for external nets to avoid DB and heavy lookups
         return self._compute_metrics_standalone(net)
@@ -199,14 +201,16 @@ class ParameterCalculatorSWF:
 
     def _compute_metrics_standalone(self, net: pp.pandapowerNet) -> Dict[str, Any]:
         """
-        Compute parameters without database dependencies.
-
-        This method manually calls the individual calculation methods to avoid
-        the database lookup for simultaneous peak load.
-
-        CRITICAL: Uses respect_switches=True to analyze operational (radial) topology
-        instead of physical (potentially meshed) topology. This is essential for
-        DSO networks that use open switches to create radial operation.
+        Compute topology metrics without database dependencies.
+        
+        Core implementation that:
+        - Prepares network (ensures required columns)
+        - Creates operational topology graph (respect_switches=True)
+        - Handles multi-component graphs
+        - Computes all metrics using delegate methods
+        - Returns zero for simultaneous_peak_load_mw
+        
+        Returns zero metrics dict if graph creation fails.
         """
         import pandapower.topology as top
 

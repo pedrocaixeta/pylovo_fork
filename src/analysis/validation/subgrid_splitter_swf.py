@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-LV subgrid splitter with proper transformer zone separation.
-This module properly partitions LV networks into transformer zones using 
-graph-based distance assignment (Voronoi-like partitioning).
-Key features:
-1. Assign each bus to exactly ONE transformer (nearest by graph distance)
-2. Strict Netzebene 7 filtering (only true LV buses, excludes MV)
-3. Validate that splits sum to original network
-4. Handle meshed networks gracefully
+Low-voltage (LV) subgrid splitter with transformer-zone assignment (validation workflow).
+
+Purpose
+- Partition a DSO-provided LV network into disjoint subgrids, one per LV transformer.
+- Respect operational topology (switch states, open ties) and keep only LV buses.
+- Assign each LV bus to exactly one transformer using shortest-path distances.
+- Optionally save each subgrid as a separate pandapower JSON and report split stats.
+
+Highlights
+- LV-only operational graph (respects line/service and switch states, removes open ties).
+- Voronoi-like assignment by graph distance to transformer LV buses (no overlaps).
+- Safe handling of meshed sections via BFS tree pruning to enforce radiality per subgrid.
+- Lightweight validation comparing original and split networks (counts, tolerances).
 """
 from __future__ import annotations
 import logging
@@ -20,10 +25,11 @@ import pandapower as pp
 import networkx as nx
 
 
-# ================================================================================
-# Helper functions for chr_name parsing and graph building
-# ================================================================================
+# ==============================================================================
+# chr_name parsing and graph helpers
+# ==============================================================================
 
+# underscore-encoded naming: lvl+netz1+netz2 _ ss1+ss2 _ str1+str2 _ hk1+hk2 _ otype+onum
 CHR_UNDERSCORE_REGEX = re.compile(
     r"^(?P<hdr>\d{7})_(?P<ss>\d{6})_(?P<str>\d{6})_(?P<hk>\d{6})_(?P<tail>\d{5})$"
 )
@@ -31,28 +37,21 @@ CHR_UNDERSCORE_REGEX = re.compile(
 
 @dataclass(frozen=True)
 class ChrName:
-    """Parsed representation of a chr_name (underscore variant).
+    """Parsed view of underscore-separated chr_name.
 
-    Structure: lvl+netz1+netz2 (7) _ ss (6) _ str (6) _ hk (6) _ tail (otype2+onum3)
+    Format: lvl netz1 netz2 _ ss1 ss2 _ str1 str2 _ hk1 hk2 _ otype onum
+    Example: 7007007_001001_000000_001001_08007
 
     Attributes
     ----------
-    raw : str
-        Original chr_name string
-    lvl : int
-        Netzebene (1=HöS … 7=NS)
-    netz1, netz2 : str
-        Netznummer halves (3 digits each); if equal → netznummer
-    ss1, ss2 : str
-        Substation/busbar number halves (3 digits each)
-    str1, str2 : str
-        Strangnummer halves (3 digits each)
-    hk1, hk2 : str
-        Hauptknoten IDs (3 digits each)
-    otype : str
-        Object type code (2 digits)
-    onum : str
-        Object number (3 digits)
+    raw: Original string value
+    lvl: Netzebene (7 = LV)
+    netz1, netz2: Netznummer halves (3 digits each)
+    ss1, ss2: Substation/busbar halves
+    str1, str2: Strangnummer halves
+    hk1, hk2: Hauptknoten halves
+    otype: Object type code (2 digits)
+    onum: Object number (3 digits)
     """
     raw: str
     lvl: int
@@ -69,30 +68,27 @@ class ChrName:
 
     @property
     def is_lv(self) -> bool:
-        """True if element is in LV (Netzebene 7)."""
+        """True if Netzebene is 7 (low voltage)."""
         return self.lvl == 7
 
     @property
     def netznummer(self) -> Optional[str]:
-        """Return unified netznummer when both halves match, else None."""
+        """Unified netznummer if both halves match; otherwise None."""
         return self.netz1 if self.netz1 == self.netz2 else None
 
     @property
     def is_open_tie_candidate(self) -> bool:
-        """True if tokens for netz/ss/str differ between the two halves.
+        """Heuristic: chr_name encodes two different sides → likely an open tie.
 
-        Per convention, open switches encode both sides (values appear twice).
-        We treat any mismatch across halves as a normally-open tie marker.
+        Any mismatch across the two halves (netz/ss/str) is treated as a normally-open tie.
         """
         return (self.netz1 != self.netz2) or (self.ss1 != self.ss2) or (self.str1 != self.str2)
 
 
 def parse_chr_name(value: Any) -> Optional[ChrName]:
-    """Parse underscore-separated chr_name into structured fields.
+    """Parse underscore-separated chr_name; return None if it doesn't match.
 
-    Supported input example: 7007007_001001_000000_001001_08007
-
-    Returns None if parsing fails.
+    Supported input: e.g. "7007007_001001_000000_001001_08007".
     """
     if value is None:
         return None
@@ -121,7 +117,7 @@ def parse_chr_name(value: Any) -> Optional[ChrName]:
 
 
 def _best_name_col(df: pd.DataFrame) -> Optional[str]:
-    """Return the best column to read naming from for a given table."""
+    """Pick the most informative naming column (chr_name preferred over name)."""
     if df is None or len(df) == 0:
         return None
     if "chr_name" in df.columns:
@@ -132,7 +128,7 @@ def _best_name_col(df: pd.DataFrame) -> Optional[str]:
 
 
 def _precompute_bus_metadata(net: pp.pandapowerNet) -> Dict[int, Optional[ChrName]]:
-    """Precompute bus chr_name metadata for all buses."""
+    """Pre-parse chr_name metadata for all buses; keyed by bus index."""
     b_col = _best_name_col(net.bus)
     bus_chr: Dict[int, Optional[ChrName]] = {}
     for b, row in net.bus.iterrows():
@@ -142,25 +138,25 @@ def _precompute_bus_metadata(net: pp.pandapowerNet) -> Dict[int, Optional[ChrNam
 
 def _is_lv_line(line_row: pd.Series, bus_chr: Dict[int, Optional[ChrName]],
                 name_col: Optional[str]) -> bool:
-    """Check if line connects two LV buses and is operational."""
-    # Check service status
+    """True if the line is in service, not an encoded open tie, and connects two LV buses."""
+    # service status
     if not bool(line_row.get('in_service', True)):
         return False
 
-    # Check naming-based open ties
+    # encoded open ties (via chr_name)
     if name_col and pd.notna(line_row.get(name_col)):
         cnl = parse_chr_name(line_row.get(name_col))
         if cnl and cnl.is_open_tie_candidate:
             return False
 
-    # Check both endpoints are LV (Netzebene 7)
+    # both endpoints must be LV (Netzebene 7)
     u, v = int(line_row["from_bus"]), int(line_row["to_bus"])
     cu, cv = bus_chr.get(u), bus_chr.get(v)
     return bool(cu and cu.is_lv and cv and cv.is_lv)
 
 
 def _should_remove_edge(switch_row: pd.Series, name_col: Optional[str]) -> bool:
-    """Check if switch should remove an edge from the graph."""
+    """Return True if a switch opens an edge (open/inactive or encoded open tie)."""
     closed = bool(switch_row.get("closed", True))
     in_service = bool(switch_row.get("in_service", True))
 
@@ -173,7 +169,7 @@ def _should_remove_edge(switch_row: pd.Series, name_col: Optional[str]) -> bool:
 
 
 def _process_switches(net: pp.pandapowerNet, G: nx.Graph) -> None:
-    """Remove edges from graph based on open switches."""
+    """Remove edges from the graph according to switch states (line and bus-bus)."""
     if not hasattr(net, "switch") or len(net.switch) == 0:
         return
 
@@ -186,7 +182,7 @@ def _process_switches(net: pp.pandapowerNet, G: nx.Graph) -> None:
             et = srow.get("et", "")
             element = srow.get("element")
 
-            if et == "l":  # Line switch
+            if et == "l":  # line switch
                 line_idx = int(element)
                 if line_idx in net.line.index:
                     lrow = net.line.loc[line_idx]
@@ -194,7 +190,7 @@ def _process_switches(net: pp.pandapowerNet, G: nx.Graph) -> None:
                     if G.has_edge(u, v):
                         G.remove_edge(u, v)
 
-            elif et == "b":  # Bus-bus switch
+            elif et == "b":  # bus-bus switch
                 u = int(srow.get("bus")) if pd.notna(srow.get("bus")) else None
                 v = int(element) if pd.notna(element) else None
                 if u is not None and v is not None and G.has_edge(u, v):
@@ -205,39 +201,40 @@ def _process_switches(net: pp.pandapowerNet, G: nx.Graph) -> None:
 
 def _build_global_operational_graph(net: pp.pandapowerNet) -> nx.Graph:
     """
-    Build operational graph of LV buses with in-service lines.
+    Build the operational LV graph (nodes=buses, edges=lines) for Netzebene 7.
 
-    Only includes Netzebene 7 (LV) buses, respects switch states and line service status.
+    Includes only LV buses; respects line in_service flags, switch states, and
+    encoded open ties. Result is used for distance-based trafo zone assignment.
     """
     G = nx.Graph()
 
-    # Precompute bus metadata
+    # bus metadata for LV filtering and open-tie detection
     bus_chr = _precompute_bus_metadata(net)
 
-    # Add LV-only line edges
+    # add LV-only line edges
     l_col = _best_name_col(net.line)
     for idx, row in net.line.iterrows():
         if _is_lv_line(row, bus_chr, l_col):
             u, v = int(row["from_bus"]), int(row["to_bus"])
             G.add_edge(u, v, line=int(idx))
 
-    # Remove open switches
+    # remove open/inactive switches
     _process_switches(net, G)
 
     return G
 
 
 def _component_nodes(G: nx.Graph, root: int) -> List[int]:
-    """Return the nodes in the connected component containing the root."""
+    """Nodes in the connected component that contains the given root (or empty list)."""
     if root not in G:
         return []
     return list(nx.node_connected_component(G, root))
 
 
 def _isolate_one_trafo(G_sub: nx.Graph, root_lvb: int, other_trafos: List[int]) -> nx.Graph:
-    """If a component contains multiple LV trafo buses, cut along shortest paths to isolate root.
+    """Cut a component along shortest paths to isolate the given transformer LV bus.
 
-    This is a local repair to ensure exactly one transformer per derived subgrid.
+    Used as a local repair when multiple transformers land in one component.
     """
     H = G_sub.copy()
     others = [b for b in other_trafos if b != root_lvb and b in H]
@@ -255,7 +252,7 @@ def _isolate_one_trafo(G_sub: nx.Graph, root_lvb: int, other_trafos: List[int]) 
 
 
 def _radialize(H: nx.Graph, root: int) -> nx.Graph:
-    """Remove non-tree edges to enforce radiality by keeping a BFS tree from root."""
+    """Keep only a BFS tree from root (drop meshing) to enforce radiality."""
     if root not in H:
         return H
     T = nx.bfs_tree(H, root)
@@ -267,7 +264,7 @@ def _radialize(H: nx.Graph, root: int) -> nx.Graph:
 
 
 def _infer_netznummer_from_loads(net: pp.pandapowerNet, buses: List[int]) -> str:
-    """Infer the netznummer for naming from connected loads."""
+    """Infer netznummer label from loads connected to the given buses (mode of matches)."""
     col = _best_name_col(net.load)
     if not col or len(net.load) == 0:
         return "unk"
@@ -285,13 +282,11 @@ def _infer_netznummer_from_loads(net: pp.pandapowerNet, buses: List[int]) -> str
 
 
 def _allowed_nodes_for_netz(G: nx.Graph, bus_chr: Dict[int, Optional[ChrName]], target_netz: str) -> set[int]:
-    """Return the set of LV nodes to consider for a given netznummer.
+    """Flood-fill nodes for a target netznummer without crossing into other netznummers.
 
-    Start from seed buses with chr_name.netznummer == target_netz and expand
-    over LV edges in G, including buses without chr_name. Stop expansion at
-    buses whose chr_name indicates a different netznummer.
+    Seeds are LV buses with chr_name.netznummer == target_netz; propagation stops at
+    LV buses whose netznummer differs. Buses without chr_name are included.
     """
-    # seeds: LV buses with matching netznummer
     seeds = [b for b, cn in bus_chr.items() if (b in G) and cn and cn.is_lv and cn.netznummer == target_netz]
     if not seeds:
         return set()
@@ -306,8 +301,7 @@ def _allowed_nodes_for_netz(G: nx.Graph, bus_chr: Dict[int, Optional[ChrName]], 
                 continue
             cn = bus_chr.get(v)
             if cn and cn.is_lv and cn.netznummer and cn.netznummer != target_netz:
-                # hard boundary at other netznummer
-                continue
+                continue  # hard boundary at other netznummer
             allowed.add(v)
             dq.append(v)
     return allowed
@@ -317,16 +311,18 @@ def _assign_buses_to_trafos(
     G_sub: nx.Graph,
     trafos_in_netz: Dict[int, int],  # trafo_idx -> lv_bus (should be in G_sub)
 ) -> Dict[int, List[int]]:
-    """Assign every node in G_sub to the nearest trafo LV bus among trafos_in_netz.
+    """Assign nodes of a subgraph to the nearest LV bus among a set of trafos.
 
-    Returns mapping: trafo_idx -> list of assigned buses
+    Returns
+    -------
+    dict: trafo_idx -> list of bus indices assigned to that transformer
     """
     roots = {t_idx: lvb for t_idx, lvb in trafos_in_netz.items() if lvb in G_sub}
     assignment: Dict[int, List[int]] = {t_idx: [] for t_idx in roots}
     if not roots:
         return assignment
 
-    # Precompute distances from each root to nodes in this subgraph
+    # multi-source distances
     dist_map: Dict[int, Dict[int, int]] = {}
     for t_idx, lvb in roots.items():
         try:
@@ -350,13 +346,16 @@ def _assign_buses_to_trafos(
     return assignment
 
 
-# ================================================================================
-# Improved splitting with distance-based assignment
-# ================================================================================
+# ==============================================================================
+# Distance-based splitting API
+# ==============================================================================
 
 @dataclass
 class SplitStatistics:
-    """Statistics for subgrid splitting validation."""
+    """Summary statistics for split validation and reporting.
+
+    Note: Some tolerances are applied to handle meshed LV networks and HV bus duplication.
+    """
     original_buses: int
     original_lines: int
     original_loads: int
@@ -375,29 +374,25 @@ class SplitStatistics:
 
     @property
     def buses_match(self) -> bool:
-        """Check if bus counts match (accounting for HV buses in each subgrid)."""
-        # Each subgrid includes one HV bus from its transformer
-        # So expected split total = original_buses + (num_subgrids - 1) HV buses
-        # Actually simpler: LV buses should sum to original LV buses
-        original_lv = self.original_buses - self.original_trafos  # Approximate
+        """Heuristic check: split buses roughly match original counts (LV/HV nuances)."""
+        original_lv = self.original_buses - self.original_trafos  # rough estimate
         return abs(self.split_buses_total - self.original_buses) <= self.num_subgrids * 2
 
     @property
     def lines_match(self) -> bool:
-        """Check if line counts match (within tolerance for meshed networks)."""
-        # In meshed networks, some lines might be excluded if they cross transformer zones
-        # Allow up to 10% difference
+        """Allow up to 10% line-count difference (cross-zone edges may be dropped)."""
         return abs(self.split_lines_total - self.original_lines) / max(self.original_lines, 1) < 0.10
 
     @property
     def loads_match(self) -> bool:
-        """Check if load counts match exactly."""
+        """Loads must match exactly across split nets."""
         return self.split_loads_total == self.original_loads
 
     @property
     def validation_passed(self) -> bool:
-        """Check if all validation criteria passed."""
+        """True if buses, lines (within tolerance), and loads match."""
         return self.buses_match and self.lines_match and self.loads_match
+
 
 
 def assign_buses_to_transformers(
@@ -405,37 +400,31 @@ def assign_buses_to_transformers(
     trafo_lv_buses: Dict[int, int],  # trafo_idx -> lv_bus
 ) -> Dict[int, List[int]]:
     """
-    Assign each bus in the graph to exactly ONE transformer based on shortest path distance.
-
-    This is the key improvement: each bus is assigned to its nearest transformer,
-    ensuring no overlap between subgrids.
+    Assign every bus in the operational graph to exactly one transformer (nearest by hops).
 
     Parameters
     ----------
     G : nx.Graph
-        Operational graph of the network
+        Operational LV graph (switch-respecting, LV-only).
     trafo_lv_buses : dict
-        Mapping from transformer index to LV bus index
+        Mapping of transformer index → LV bus index.
 
     Returns
     -------
     dict
-        Mapping from transformer index to list of assigned bus indices
+        Transformer index → list of assigned bus indices.
     """
     logger = logging.getLogger(__name__)
 
-    # Filter to transformers that are in the graph
     valid_trafos = {t_idx: lvb for t_idx, lvb in trafo_lv_buses.items() if lvb in G}
-
     if not valid_trafos:
         logger.warning("No valid transformers found in graph")
         return {}
 
-    logger.info(f"Assigning buses to {len(valid_trafos)} transformers...")
+    logger.info(f"Assigning buses to {len(valid_trafos)} transformers…")
 
-    # Compute shortest path distances from each transformer to all reachable buses
-    distances: Dict[int, Dict[int, int]] = {}  # trafo_idx -> {bus_idx -> distance}
-
+    # shortest-path lengths from each trafo LV bus
+    distances: Dict[int, Dict[int, int]] = {}
     for t_idx, lvb in valid_trafos.items():
         try:
             distances[t_idx] = nx.single_source_shortest_path_length(G, lvb)
@@ -443,29 +432,23 @@ def assign_buses_to_transformers(
             logger.warning(f"Failed to compute distances for trafo {t_idx}: {e}")
             distances[t_idx] = {lvb: 0}
 
-    # For each bus, find the nearest transformer
     assignment: Dict[int, List[int]] = {t_idx: [] for t_idx in valid_trafos}
     all_buses = set(G.nodes())
 
     for bus in all_buses:
         best_trafo = None
         best_dist = None
-
         for t_idx, dist_map in distances.items():
             if bus not in dist_map:
-                continue  # Bus not reachable from this transformer
-
+                continue
             dist = dist_map[bus]
-
-            # Assign to nearest transformer, tie-break by trafo index
             if best_trafo is None or dist < best_dist or (dist == best_dist and t_idx < best_trafo):
                 best_trafo = t_idx
                 best_dist = dist
-
         if best_trafo is not None:
             assignment[best_trafo].append(bus)
 
-    # Log assignment statistics
+    # stats
     for t_idx, buses in assignment.items():
         logger.debug(f"  Trafo {t_idx}: assigned {len(buses)} buses")
 
@@ -477,7 +460,7 @@ def assign_buses_to_transformers(
 
 
 def _get_hv_bus(net: pp.pandapowerNet, trafo_idx: int) -> Optional[int]:
-    """Get HV bus index for transformer."""
+    """Return HV bus index for the given transformer (None if unavailable)."""
     if trafo_idx not in net.trafo.index:
         return None
     try:
@@ -488,7 +471,10 @@ def _get_hv_bus(net: pp.pandapowerNet, trafo_idx: int) -> Optional[int]:
 
 def _filter_operational_lines(sub_net: pp.pandapowerNet, assigned_buses: List[int],
                               G_operational: nx.Graph) -> None:
-    """Filter subnetwork lines to include only operational lines between assigned buses."""
+    """Keep only operational lines whose endpoints are assigned buses.
+
+    Updates sub_net.line and sub_net.line_geodata in place.
+    """
     if len(sub_net.line) == 0:
         return
 
@@ -497,11 +483,9 @@ def _filter_operational_lines(sub_net: pp.pandapowerNet, assigned_buses: List[in
 
     for idx, lrow in sub_net.line.iterrows():
         u, v = int(lrow["from_bus"]), int(lrow["to_bus"])
-        # Keep if both endpoints assigned and edge in operational graph
         if u in assigned_bus_set and v in assigned_bus_set and G_operational.has_edge(u, v):
             lines_to_keep.append(idx)
 
-    # Update line tables
     sub_net.line = sub_net.line.loc[lines_to_keep]
     if not sub_net.line_geodata.empty:
         sub_net.line_geodata = sub_net.line_geodata.loc[
@@ -514,7 +498,7 @@ def _filter_operational_lines(sub_net: pp.pandapowerNet, assigned_buses: List[in
 
 
 def _radialize_subgrid(sub_net: pp.pandapowerNet, trafo_idx: int) -> None:
-    """Ensure subgrid is radial by keeping only BFS tree from LV bus."""
+    """Prune meshed edges; keep a BFS tree from the LV bus to enforce radiality."""
     logger = logging.getLogger(__name__)
 
     if trafo_idx not in sub_net.trafo.index:
@@ -524,7 +508,6 @@ def _radialize_subgrid(sub_net: pp.pandapowerNet, trafo_idx: int) -> None:
     if lvb not in sub_net.bus.index:
         return
 
-    # Build graph of current lines
     H = nx.Graph()
     H.add_nodes_from(sub_net.bus.index)
     for idx, lrow in sub_net.line.iterrows():
@@ -535,11 +518,9 @@ def _radialize_subgrid(sub_net: pp.pandapowerNet, trafo_idx: int) -> None:
         return
 
     try:
-        # Extract BFS tree from LV bus
         tree = nx.bfs_tree(H, lvb)
         tree_edges = set(tuple(sorted(e)) for e in tree.to_undirected().edges())
 
-        # Keep only tree lines
         lines_to_keep = []
         for idx, lrow in sub_net.line.iterrows():
             u, v = int(lrow["from_bus"]), int(lrow["to_bus"])
@@ -566,32 +547,19 @@ def create_subgrid_from_assignment(
     G_operational: nx.Graph,
 ) -> pp.pandapowerNet:
     """
-    Create a subgrid for a specific transformer with assigned buses.
+    Build a pandapower subnet for one transformer from its assigned buses.
 
-    Parameters
-    ----------
-    net : pp.pandapowerNet
-        Original network
-    trafo_idx : int
-        Transformer index
-    assigned_buses : list
-        List of bus indices assigned to this transformer
-    G_operational : nx.Graph
-        Operational graph for determining which lines to include
-
-    Returns
-    -------
-    pp.pandapowerNet
-        Subgrid network
+    Adds the transformer's HV bus, filters lines to operational ones within the
+    assignment, removes switches (already enforced in the graph), and prunes
+    meshing to a radial tree.
     """
-    # Prepare bus list (assigned + HV bus)
+    # buses to keep (LV assignments + optional HV bus)
     hvb = _get_hv_bus(net, trafo_idx)
     final_buses = sorted(assigned_buses)
     if hvb is not None and hvb in net.bus.index and hvb not in final_buses:
         final_buses.append(hvb)
         final_buses = sorted(final_buses)
 
-    # Create subnet
     sub_net = pp.select_subnet(
         net,
         buses=final_buses,
@@ -599,14 +567,12 @@ def create_subgrid_from_assignment(
         include_switch_buses=True,
     )
 
-    # Filter to operational lines between assigned buses
     _filter_operational_lines(sub_net, assigned_buses, G_operational)
 
-    # Remove switches (already handled in operational graph)
+    # switches already respected in G; drop them from the subnet
     if hasattr(sub_net, "switch") and len(sub_net.switch) > 0:
         sub_net.switch.drop(sub_net.switch.index, inplace=True)
 
-    # Ensure radiality
     _radialize_subgrid(sub_net, trafo_idx)
 
     return sub_net
@@ -617,24 +583,10 @@ def split_into_lv_subgrids_improved(
     output_dir: str | Path | None = None,
 ) -> Tuple[Dict[str, pp.pandapowerNet], SplitStatistics]:
     """
-    Split network into LV subgrids with proper transformer zone assignment.
+    Split a network into LV subgrids, one per transformer, using distance-based assignment.
 
-    This improved version ensures:
-    1. Each bus is assigned to exactly ONE transformer
-    2. No overlapping subgrids
-    3. Validation that splits sum to original network
-
-    Parameters
-    ----------
-    net : pp.pandapowerNet
-        Original network to split
-    output_dir : str | Path, optional
-        Directory to save subgrid JSON files
-
-    Returns
-    -------
-    tuple
-        (subgrids_dict, statistics)
+    Guarantees each bus belongs to exactly one subgrid and applies simple consistency
+    checks. Optionally writes each subgrid to <output_dir> as JSON.
     """
     logger = logging.getLogger(__name__)
 
@@ -646,17 +598,16 @@ def split_into_lv_subgrids_improved(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build operational graph
-    logger.info("Building operational graph...")
+    # Build operational LV graph
+    logger.info("Building operational graph…")
     G = _build_global_operational_graph(net)
     logger.info(f"  Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
-    # Identify LV transformers
+    # Identify LV transformers by LV-bus nominal voltage
     trafo_lv_buses: Dict[int, int] = {}
     for t_idx, row in net.trafo.iterrows():
         try:
             lvb = int(row["lv_bus"])
-            # Only LV transformers (lv bus nominal voltage <= 1 kV)
             if float(net.bus.at[lvb, "vn_kv"]) <= 1.0:
                 trafo_lv_buses[int(t_idx)] = lvb
         except Exception:
@@ -664,32 +615,31 @@ def split_into_lv_subgrids_improved(
 
     logger.info(f"Found {len(trafo_lv_buses)} LV transformers")
 
-    # Assign buses to transformers (KEY IMPROVEMENT)
-    logger.info("Assigning buses to transformers by nearest distance...")
+    # Assign buses to nearest transformer (key step)
+    logger.info("Assigning buses to transformers by nearest distance…")
     bus_assignment = assign_buses_to_transformers(G, trafo_lv_buses)
 
-    # Remove empty assignments
+    # Drop trivial/empty subgrids (e.g., only LV bus)
     bus_assignment = {t_idx: buses for t_idx, buses in bus_assignment.items() if len(buses) > 1}
 
-    logger.info(f"Creating {len(bus_assignment)} subgrids...")
+    logger.info(f"Creating {len(bus_assignment)} subgrids…")
 
-    # Create subgrids
     subgrids: Dict[str, pp.pandapowerNet] = {}
 
     for t_idx, assigned_buses in bus_assignment.items():
-        logger.debug(f"  Processing trafo {t_idx} with {len(assigned_buses)} buses...")
+        logger.debug(f"  Processing trafo {t_idx} with {len(assigned_buses)} buses…")
 
         sub_net = create_subgrid_from_assignment(
             net, t_idx, assigned_buses, G
         )
 
-        # Generate filename based on netznummer
+        # subgrid ID: prefer netznummer inferred from loads
         netz = _infer_netznummer_from_loads(net, assigned_buses)
         subgrid_id = f"{netz}__trafo_{t_idx}" if netz != "unk" else f"trafo_{t_idx}"
 
         subgrids[subgrid_id] = sub_net
 
-        # Save to file
+        # persist
         out_file = output_dir / f"{subgrid_id}.json"
         try:
             pp.to_json(sub_net, str(out_file))
@@ -697,7 +647,7 @@ def split_into_lv_subgrids_improved(
         except Exception as e:
             logger.error(f"    Failed to save {subgrid_id}: {e}")
 
-    # Compute validation statistics
+    # stats & summary
     stats = compute_split_statistics(net, subgrids)
 
     logger.info(f"✓ Created {len(subgrids)} subgrids")
@@ -709,16 +659,16 @@ def compute_split_statistics(
     original_net: pp.pandapowerNet,
     subgrids: Dict[str, pp.pandapowerNet],
 ) -> SplitStatistics:
-    """Compute validation statistics comparing original to split networks."""
+    """Compare element counts of the original network with the sum over subgrids."""
 
-    # Original network stats
+    # Original
     orig_buses = len(original_net.bus)
     orig_lines = len(original_net.line)
     orig_loads = len(original_net.load) if hasattr(original_net, 'load') else 0
     orig_sgens = len(original_net.sgen) if hasattr(original_net, 'sgen') else 0
     orig_trafos = len(original_net.trafo) if hasattr(original_net, 'trafo') else 0
 
-    # Split network stats
+    # Split totals
     split_buses = 0
     split_lines = 0
     split_loads = 0
@@ -759,7 +709,7 @@ def compute_split_statistics(
 
 
 def run_improved_split() -> None:
-    """Run the improved splitter on the configured network."""
+    """CLI entry point: load configured net, perform split, and log a short report."""
     from src.analysis.validation.utils import read_net_json
 
     logging.basicConfig(
@@ -773,7 +723,6 @@ def run_improved_split() -> None:
     logger.info("=" * 80)
     logger.info("")
 
-    # Load network
     net, file_path = read_net_json()
     logger.info(f"Loaded network from: {file_path}")
     logger.info(f"  Buses: {len(net.bus)}")
@@ -782,7 +731,6 @@ def run_improved_split() -> None:
     logger.info(f"  Transformers: {len(net.trafo) if hasattr(net, 'trafo') else 0}")
     logger.info("")
 
-    # Split
     subgrids, stats = split_into_lv_subgrids_improved(net)
 
     logger.info("")
@@ -793,4 +741,3 @@ def run_improved_split() -> None:
 
 if __name__ == "__main__":
     run_improved_split()
-
