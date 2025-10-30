@@ -1,5 +1,5 @@
 # Must be run after get_parameters_per_plz.py
-from src.analysis.validation.topology_analysis import ParameterCalculator
+from src.analysis.validation.parameter_calculation import ParameterCalculator
 
 plz = 80803
 pc = ParameterCalculator()

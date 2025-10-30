@@ -28,7 +28,7 @@ from pathlib import Path
 # Add src to path if running from runme directory
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.analysis.validation.metrics_calculator import MetricsCalculator
+from src.analysis.validation.parameter_calculation_swf import MetricsCalculator
 
 
 def setup_logging(verbose: bool = False) -> None:
