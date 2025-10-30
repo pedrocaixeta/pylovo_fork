@@ -95,75 +95,82 @@ class MetricsCalculator:
         # Always use the standalone path for external nets to avoid DB and heavy lookups
         return self._compute_metrics_standalone(net)
 
-    def _prepare_external_net_for_metrics(self, net: pp.pandapowerNet) -> pp.pandapowerNet:
-        """Patch external/DSO subgrid to match ParameterCalculator expectations.
-
-        - Ensure load.max_p_mw exists (copy from p_mw if needed)
-        - Ensure sgen.max_p_mw exists (copy from p_mw if present)
-        - Ensure bus.zone exists (default 'Residential')
-        - Mark LV root bus name to include lvbus_keyword (trafo.lv_bus)
-        - Mark consumer buses (with loads or sgens) to include consumer_bus_keyword in names
-        - Mark remaining buses as connection buses by including connection_bus_keyword
-        """
-        # 1) load.max_p_mw
-        if hasattr(net, 'load'):
+    def _ensure_max_power_columns(self, net: pp.pandapowerNet) -> None:
+        """Ensure max_p_mw columns exist for loads and generators."""
+        # Load max power
+        if hasattr(net, 'load') and len(net.load) > 0:
             if 'max_p_mw' not in net.load.columns:
-                if 'p_mw' in net.load.columns:
-                    net.load['max_p_mw'] = net.load['p_mw']
-                else:
-                    net.load['max_p_mw'] = 0.0
-            else:
-                net.load['max_p_mw'] = net.load['max_p_mw'].fillna(0.0)
-        # 1b) sgen.max_p_mw
-        if hasattr(net, 'sgen'):
+                net.load['max_p_mw'] = net.load.get('p_mw', 0.0)
+            net.load['max_p_mw'] = net.load['max_p_mw'].fillna(0.0)
+
+        # Generator max power
+        if hasattr(net, 'sgen') and len(net.sgen) > 0:
             if 'max_p_mw' not in net.sgen.columns:
-                if 'p_mw' in net.sgen.columns:
-                    net.sgen['max_p_mw'] = net.sgen['p_mw']
-                else:
-                    net.sgen['max_p_mw'] = 0.0
-            else:
-                net.sgen['max_p_mw'] = net.sgen['max_p_mw'].fillna(0.0)
-        # 2) bus.zone
+                net.sgen['max_p_mw'] = net.sgen.get('p_mw', 0.0)
+            net.sgen['max_p_mw'] = net.sgen['max_p_mw'].fillna(0.0)
+
+    def _ensure_bus_zones(self, net: pp.pandapowerNet) -> None:
+        """Ensure bus.zone column exists with default values."""
         if hasattr(net, 'bus') and len(net.bus) > 0:
             if 'zone' not in net.bus.columns:
                 net.bus['zone'] = 'Residential'
             else:
                 net.bus['zone'] = net.bus['zone'].fillna('Residential')
-        # 3) Names
+
+    def _get_consumer_buses(self, net: pp.pandapowerNet) -> List[int]:
+        """Get list of all consumer bus indices (with loads or generators)."""
+        consumer_buses = []
+        if hasattr(net, 'load') and len(net.load) > 0:
+            consumer_buses.extend(net.load['bus'].astype(int).tolist())
+        if hasattr(net, 'sgen') and len(net.sgen) > 0:
+            consumer_buses.extend(net.sgen['bus'].astype(int).tolist())
+        return list(set(consumer_buses))
+
+    def _annotate_bus_names(self, net: pp.pandapowerNet) -> None:
+        """Annotate bus names with keywords for LV, consumer, and connection buses."""
+        if 'name' not in net.bus.columns:
+            net.bus['name'] = ''
+        net.bus['name'] = net.bus['name'].astype(str).fillna('')
+
+        # Get LV bus from transformer
+        lv_bus = None
+        if hasattr(net, 'trafo') and len(net.trafo) > 0 and 'lv_bus' in net.trafo.columns:
+            lv_bus = int(net.trafo['lv_bus'].iloc[0])
+            if lv_bus in net.bus.index:
+                name = net.bus.at[lv_bus, 'name']
+                if self.lvbus_keyword not in name:
+                    net.bus.at[lv_bus, 'name'] = f"{name} {self.lvbus_keyword}".strip()
+
+        # Annotate consumer buses
+        consumer_buses = self._get_consumer_buses(net)
+        for bus_id in consumer_buses:
+            if bus_id in net.bus.index:
+                name = net.bus.at[bus_id, 'name']
+                if self.consumer_bus_keyword not in name:
+                    net.bus.at[bus_id, 'name'] = f"{name} {self.consumer_bus_keyword}".strip()
+
+        # Annotate connection buses (all others)
+        for bus_id in net.bus.index:
+            if bus_id == lv_bus or bus_id in consumer_buses:
+                continue
+            name = net.bus.at[bus_id, 'name']
+            if self.connection_bus_keyword not in name:
+                net.bus.at[bus_id, 'name'] = f"{name} {self.connection_bus_keyword}".strip()
+
+    def _prepare_external_net_for_metrics(self, net: pp.pandapowerNet) -> pp.pandapowerNet:
+        """
+        Prepare external/DSO network for metrics calculation.
+
+        Ensures required columns exist and annotates bus names with type keywords.
+        """
+        self._ensure_max_power_columns(net)
+        self._ensure_bus_zones(net)
+
         try:
-            # ensure string names
-            if 'name' not in net.bus.columns:
-                net.bus['name'] = ''
-            net.bus['name'] = net.bus['name'].astype(str).fillna('')
-            # LV bus
-            lv_bus = None
-            if hasattr(net, 'trafo') and len(net.trafo) > 0 and 'lv_bus' in net.trafo.columns:
-                lv_bus = int(net.trafo['lv_bus'].iloc[0])
-                if lv_bus in net.bus.index:
-                    nm = net.bus.at[lv_bus, 'name']
-                    if self.lvbus_keyword not in nm:
-                        net.bus.at[lv_bus, 'name'] = (nm + ' ' + self.lvbus_keyword).strip()
-            # consumer buses
-            consumer_buses = []
-            if hasattr(net, 'load') and len(net.load) > 0 and 'bus' in net.load.columns:
-                consumer_buses.extend(list(set(net.load['bus'].astype(int).tolist())))
-            if hasattr(net, 'sgen') and len(net.sgen) > 0 and 'bus' in net.sgen.columns:
-                consumer_buses.extend(list(set(net.sgen['bus'].astype(int).tolist())))
-            consumer_buses = list(set(consumer_buses))
-            for b in consumer_buses:
-                if b in net.bus.index:
-                    nm = net.bus.at[b, 'name']
-                    if self.consumer_bus_keyword not in nm:
-                        net.bus.at[b, 'name'] = (nm + ' ' + self.consumer_bus_keyword).strip()
-            # connection buses (others)
-            for b in net.bus.index.tolist():
-                if (lv_bus is not None and b == lv_bus) or (b in consumer_buses):
-                    continue
-                nm = net.bus.at[b, 'name']
-                if self.connection_bus_keyword not in nm:
-                    net.bus.at[b, 'name'] = (nm + ' ' + self.connection_bus_keyword).strip()
-        except Exception:
-            pass
+            self._annotate_bus_names(net)
+        except Exception as e:
+            self.logger.warning(f"Failed to annotate bus names: {e}")
+
         return net
 
     def _return_zero_metrics(self) -> Dict[str, Any]:

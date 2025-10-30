@@ -131,80 +131,98 @@ def _best_name_col(df: pd.DataFrame) -> Optional[str]:
     return None
 
 
-def _build_global_operational_graph(net: pp.pandapowerNet) -> nx.Graph:
-    """Build a global operational graph of buses with in-service lines as edges.
-
-    - Start with all buses and in_service lines
-    - Remove edges that are open due to switch states (closed=False or in_service=False)
-    - Also remove edges if a switch's own chr_name indicates an open tie (mismatched netz/ss/str)
-    - Additionally, treat line-level naming that indicates normally-open ties as open
-    - Restrict to LV-only connectivity: edges between buses whose chr_name indicates LV (lvl==7)
-    - Both endpoints of a line must have parseable chr_name with Netzebene 7 (true LV)
-    - No voltage fallback - for this DSO data, lvl==7 is 0.4kV (LV), lvl==5 is 21kV (MV)
-     """
-    G = nx.Graph()
-    # Do NOT add all nodes upfront - only add LV nodes implicitly when LV-LV edges are added
-    # This ensures only Netzebene 7 (true LV) buses are in the graph
-
-    # Precompute bus voltage and naming tokens
-    bus_vn = net.bus["vn_kv"].to_dict()
+def _precompute_bus_metadata(net: pp.pandapowerNet) -> Dict[int, Optional[ChrName]]:
+    """Precompute bus chr_name metadata for all buses."""
     b_col = _best_name_col(net.bus)
     bus_chr: Dict[int, Optional[ChrName]] = {}
     for b, row in net.bus.iterrows():
         bus_chr[int(b)] = parse_chr_name(row.get(b_col)) if b_col else None
+    return bus_chr
 
-    # Add all line edges in service
-    # CRITICAL: respect line.in_service to match what metrics calculator sees
+
+def _is_lv_line(line_row: pd.Series, bus_chr: Dict[int, Optional[ChrName]],
+                name_col: Optional[str]) -> bool:
+    """Check if line connects two LV buses and is operational."""
+    # Check service status
+    if not bool(line_row.get('in_service', True)):
+        return False
+
+    # Check naming-based open ties
+    if name_col and pd.notna(line_row.get(name_col)):
+        cnl = parse_chr_name(line_row.get(name_col))
+        if cnl and cnl.is_open_tie_candidate:
+            return False
+
+    # Check both endpoints are LV (Netzebene 7)
+    u, v = int(line_row["from_bus"]), int(line_row["to_bus"])
+    cu, cv = bus_chr.get(u), bus_chr.get(v)
+    return bool(cu and cu.is_lv and cv and cv.is_lv)
+
+
+def _should_remove_edge(switch_row: pd.Series, name_col: Optional[str]) -> bool:
+    """Check if switch should remove an edge from the graph."""
+    closed = bool(switch_row.get("closed", True))
+    in_service = bool(switch_row.get("in_service", True))
+
+    naming_open = False
+    if name_col:
+        cn = parse_chr_name(switch_row.get(name_col))
+        naming_open = bool(cn and cn.is_open_tie_candidate)
+
+    return not closed or not in_service or naming_open
+
+
+def _process_switches(net: pp.pandapowerNet, G: nx.Graph) -> None:
+    """Remove edges from graph based on open switches."""
+    if not hasattr(net, "switch") or len(net.switch) == 0:
+        return
+
+    s_col = _best_name_col(net.switch)
+    for _, srow in net.switch.iterrows():
+        if not _should_remove_edge(srow, s_col):
+            continue
+
+        try:
+            et = srow.get("et", "")
+            element = srow.get("element")
+
+            if et == "l":  # Line switch
+                line_idx = int(element)
+                if line_idx in net.line.index:
+                    lrow = net.line.loc[line_idx]
+                    u, v = int(lrow["from_bus"]), int(lrow["to_bus"])
+                    if G.has_edge(u, v):
+                        G.remove_edge(u, v)
+
+            elif et == "b":  # Bus-bus switch
+                u = int(srow.get("bus")) if pd.notna(srow.get("bus")) else None
+                v = int(element) if pd.notna(element) else None
+                if u is not None and v is not None and G.has_edge(u, v):
+                    G.remove_edge(u, v)
+        except Exception:
+            continue
+
+
+def _build_global_operational_graph(net: pp.pandapowerNet) -> nx.Graph:
+    """
+    Build operational graph of LV buses with in-service lines.
+
+    Only includes Netzebene 7 (LV) buses, respects switch states and line service status.
+    """
+    G = nx.Graph()
+
+    # Precompute bus metadata
+    bus_chr = _precompute_bus_metadata(net)
+
+    # Add LV-only line edges
     l_col = _best_name_col(net.line)
     for idx, row in net.line.iterrows():
-        # Skip out-of-service lines (critical for avoiding disconnected components)
-        if not bool(row.get('in_service', True)):
-            continue
-        # Respect naming-based open ties on the line itself (if available)
-        if l_col and pd.notna(row.get(l_col)):
-            cnl = parse_chr_name(row.get(l_col))
-            if cnl and cnl.is_open_tie_candidate:
-                continue
-        u = int(row["from_bus"]); v = int(row["to_bus"])
-        # Only LV-LV edges: MUST have chr_name with lvl==7 (true LV)
-        # For this DSO data: lvl==7 is 0.4kV (LV), lvl==5 is 21kV (MV)
-        # Do NOT use voltage fallback - it incorrectly includes MV buses
-        cu, cv = bus_chr.get(u), bus_chr.get(v)
-        # Both buses must have parseable chr_name with Netzebene 7
-        if not (cu and cu.is_lv and cv and cv.is_lv):
-            continue
-        G.add_edge(u, v, line=int(idx))
+        if _is_lv_line(row, bus_chr, l_col):
+            u, v = int(row["from_bus"]), int(row["to_bus"])
+            G.add_edge(u, v, line=int(idx))
 
-    # Process switches to remove open edges
-    if hasattr(net, "switch") and len(net.switch) > 0:
-        s_col = _best_name_col(net.switch)
-        for _, srow in net.switch.iterrows():
-            try:
-                et = srow.get("et", "")
-                element = srow.get("element")
-                closed = bool(srow.get("closed", True))
-                in_service = bool(srow.get("in_service", True))
-                naming_open = False
-                if s_col:
-                    cn = parse_chr_name(srow.get(s_col))
-                    naming_open = bool(cn and cn.is_open_tie_candidate)
-                if et == "l":
-                    line_idx = int(element)
-                    if line_idx in net.line.index:
-                        lrow = net.line.loc[line_idx]
-                        u = int(lrow["from_bus"]); v = int(lrow["to_bus"])
-                        if (not closed) or (not in_service) or naming_open:
-                            if G.has_edge(u, v):
-                                G.remove_edge(u, v)
-                elif et == "b":
-                    u = int(srow.get("bus")) if pd.notna(srow.get("bus")) else None
-                    v = int(element) if pd.notna(element) else None
-                    if u is not None and v is not None:
-                        if (not closed) or (not in_service) or naming_open:
-                            if G.has_edge(u, v):
-                                G.remove_edge(u, v)
-            except Exception:
-                continue
+    # Remove open switches
+    _process_switches(net, G)
 
     return G
 
@@ -458,6 +476,89 @@ def assign_buses_to_transformers(
     return assignment
 
 
+def _get_hv_bus(net: pp.pandapowerNet, trafo_idx: int) -> Optional[int]:
+    """Get HV bus index for transformer."""
+    if trafo_idx not in net.trafo.index:
+        return None
+    try:
+        return int(net.trafo.loc[trafo_idx, "hv_bus"])
+    except Exception:
+        return None
+
+
+def _filter_operational_lines(sub_net: pp.pandapowerNet, assigned_buses: List[int],
+                              G_operational: nx.Graph) -> None:
+    """Filter subnetwork lines to include only operational lines between assigned buses."""
+    if len(sub_net.line) == 0:
+        return
+
+    assigned_bus_set = set(assigned_buses)
+    lines_to_keep = []
+
+    for idx, lrow in sub_net.line.iterrows():
+        u, v = int(lrow["from_bus"]), int(lrow["to_bus"])
+        # Keep if both endpoints assigned and edge in operational graph
+        if u in assigned_bus_set and v in assigned_bus_set and G_operational.has_edge(u, v):
+            lines_to_keep.append(idx)
+
+    # Update line tables
+    sub_net.line = sub_net.line.loc[lines_to_keep]
+    if not sub_net.line_geodata.empty:
+        sub_net.line_geodata = sub_net.line_geodata.loc[
+            sub_net.line_geodata.index.isin(sub_net.line.index)
+        ]
+
+    sub_net.line.reset_index(drop=True, inplace=True)
+    if not sub_net.line_geodata.empty:
+        sub_net.line_geodata.reset_index(drop=True, inplace=True)
+
+
+def _radialize_subgrid(sub_net: pp.pandapowerNet, trafo_idx: int) -> None:
+    """Ensure subgrid is radial by keeping only BFS tree from LV bus."""
+    logger = logging.getLogger(__name__)
+
+    if trafo_idx not in sub_net.trafo.index:
+        return
+
+    lvb = int(sub_net.trafo.loc[trafo_idx, "lv_bus"])
+    if lvb not in sub_net.bus.index:
+        return
+
+    # Build graph of current lines
+    H = nx.Graph()
+    H.add_nodes_from(sub_net.bus.index)
+    for idx, lrow in sub_net.line.iterrows():
+        u, v = int(lrow["from_bus"]), int(lrow["to_bus"])
+        H.add_edge(u, v, line_idx=idx)
+
+    if lvb not in H:
+        return
+
+    try:
+        # Extract BFS tree from LV bus
+        tree = nx.bfs_tree(H, lvb)
+        tree_edges = set(tuple(sorted(e)) for e in tree.to_undirected().edges())
+
+        # Keep only tree lines
+        lines_to_keep = []
+        for idx, lrow in sub_net.line.iterrows():
+            u, v = int(lrow["from_bus"]), int(lrow["to_bus"])
+            if tuple(sorted((u, v))) in tree_edges:
+                lines_to_keep.append(idx)
+
+        sub_net.line = sub_net.line.loc[lines_to_keep]
+        if not sub_net.line_geodata.empty:
+            sub_net.line_geodata = sub_net.line_geodata.loc[
+                sub_net.line_geodata.index.isin(sub_net.line.index)
+            ]
+
+        sub_net.line.reset_index(drop=True, inplace=True)
+        if not sub_net.line_geodata.empty:
+            sub_net.line_geodata.reset_index(drop=True, inplace=True)
+    except Exception as e:
+        logger.warning(f"Failed to radialize subgrid for trafo {trafo_idx}: {e}")
+
+
 def create_subgrid_from_assignment(
     net: pp.pandapowerNet,
     trafo_idx: int,
@@ -483,107 +584,30 @@ def create_subgrid_from_assignment(
     pp.pandapowerNet
         Subgrid network
     """
-    logger = logging.getLogger(__name__)
-
-    # Get transformer HV bus to include in subgrid
-    hvb = None
-    if trafo_idx in net.trafo.index:
-        try:
-            hvb = int(net.trafo.loc[trafo_idx, "hv_bus"])
-        except Exception:
-            pass
-
-    # Final bus list includes assigned LV buses + HV bus
+    # Prepare bus list (assigned + HV bus)
+    hvb = _get_hv_bus(net, trafo_idx)
     final_buses = sorted(assigned_buses)
     if hvb is not None and hvb in net.bus.index and hvb not in final_buses:
         final_buses.append(hvb)
         final_buses = sorted(final_buses)
 
     # Create subnet
-    try:
-        sub_net = pp.select_subnet(
-            net,
-            buses=final_buses,
-            include_results=False,
-            include_switch_buses=True,
-        )
-    except TypeError:
-        sub_net = pp.select_subnet(
-            net,
-            buses=final_buses,
-            include_results=False,
-            include_switch_buses=True,
-        )
+    sub_net = pp.select_subnet(
+        net,
+        buses=final_buses,
+        include_results=False,
+        include_switch_buses=True,
+    )
 
-    # Filter lines to only include those in the operational graph
-    # and between assigned buses (avoid cross-zone lines)
-    if len(sub_net.line) > 0:
-        assigned_bus_set = set(assigned_buses)
-        lines_to_keep = []
+    # Filter to operational lines between assigned buses
+    _filter_operational_lines(sub_net, assigned_buses, G_operational)
 
-        for idx, lrow in sub_net.line.iterrows():
-            u = int(lrow["from_bus"])
-            v = int(lrow["to_bus"])
-
-            # Keep line if:
-            # 1. Both endpoints are in assigned buses
-            # 2. Edge exists in operational graph (respects switches)
-            if u in assigned_bus_set and v in assigned_bus_set:
-                if G_operational.has_edge(u, v):
-                    lines_to_keep.append(idx)
-
-        # Filter line table and geodata
-        sub_net.line = sub_net.line.loc[lines_to_keep]
-        if not sub_net.line_geodata.empty:
-            sub_net.line_geodata = sub_net.line_geodata.loc[
-                sub_net.line_geodata.index.isin(sub_net.line.index)
-            ]
-
-        # Reset indices
-        sub_net.line.reset_index(drop=True, inplace=True)
-        if not sub_net.line_geodata.empty:
-            sub_net.line_geodata.reset_index(drop=True, inplace=True)
-
-    # Remove switches (they're already accounted for in the operational graph)
+    # Remove switches (already handled in operational graph)
     if hasattr(sub_net, "switch") and len(sub_net.switch) > 0:
         sub_net.switch.drop(sub_net.switch.index, inplace=True)
 
-    # Ensure the subgrid is radial by keeping only a spanning tree from LV bus
-    if trafo_idx in sub_net.trafo.index:
-        lvb = int(sub_net.trafo.loc[trafo_idx, "lv_bus"])
-        if lvb in sub_net.bus.index:
-            # Build graph of remaining lines
-            H = nx.Graph()
-            H.add_nodes_from(sub_net.bus.index)
-            for idx, lrow in sub_net.line.iterrows():
-                u = int(lrow["from_bus"])
-                v = int(lrow["to_bus"])
-                H.add_edge(u, v, line_idx=idx)
-
-            # Keep only BFS tree from LV bus
-            if lvb in H:
-                try:
-                    tree = nx.bfs_tree(H, lvb)
-                    tree_edges = set(tuple(sorted(e)) for e in tree.to_undirected().edges())
-
-                    lines_to_keep = []
-                    for idx, lrow in sub_net.line.iterrows():
-                        u = int(lrow["from_bus"])
-                        v = int(lrow["to_bus"])
-                        if tuple(sorted((u, v))) in tree_edges:
-                            lines_to_keep.append(idx)
-
-                    sub_net.line = sub_net.line.loc[lines_to_keep]
-                    if not sub_net.line_geodata.empty:
-                        sub_net.line_geodata = sub_net.line_geodata.loc[
-                            sub_net.line_geodata.index.isin(sub_net.line.index)
-                        ]
-
-                    sub_net.line.reset_index(drop=True, inplace=True)
-                    if not sub_net.line_geodata.empty:
-                        sub_net.line_geodata.reset_index(drop=True, inplace=True)
-                except Exception as e:
-                    logger.warning(f"Failed to radialize subgrid for trafo {trafo_idx}: {e}")
+    # Ensure radiality
+    _radialize_subgrid(sub_net, trafo_idx)
 
     return sub_net
 
@@ -736,7 +760,7 @@ def compute_split_statistics(
 
 def run_improved_split() -> None:
     """Run the improved splitter on the configured network."""
-    from src.analysis.validation.utils import load_validation_config, read_net_json
+    from src.analysis.validation.utils import read_net_json
 
     logging.basicConfig(
         level=logging.INFO,
