@@ -28,7 +28,7 @@ from pathlib import Path
 # Add src to path if running from runme directory
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.analysis.validation.parameter_calculation_swf import MetricsCalculator
+from src.analysis.validation.parameter_calculation_swf import ParameterCalculatorSWF
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -113,7 +113,7 @@ Examples:
         logger.info(f"Output file: {args.output_csv}")
         logger.info(f"File pattern: {args.pattern}")
 
-        calculator = MetricsCalculator()
+        calculator = ParameterCalculatorSWF()
         df = calculator.analyze_batch(
             networks_dir=subgrids_dir,
             output_csv=args.output_csv,

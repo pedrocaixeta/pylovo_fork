@@ -1,9 +1,7 @@
 """
 Database-independent metrics calculator for external networks.
-
 This module provides a standalone version of the ParameterCalculator
 for analyzing external pandapower networks without database dependencies.
-Renamed from StandaloneParameterCalculator to MetricsCalculator for clarity.
 """
 
 import pandas as pd
@@ -22,7 +20,7 @@ from src.config_loader import (
 )
 
 
-class MetricsCalculator:
+class ParameterCalculatorSWF:
     """
     Database-independent metrics calculator for pandapower networks.
 
@@ -531,7 +529,7 @@ class MetricsCalculator:
 
         Examples
         --------
-        >>> calc = MetricsCalculator()
+        >>> calc = ParameterCalculatorSWF()
         >>> df = calc.analyze_batch(
         ...     networks_dir='/data/subgrids',
         ...     output_csv='/data/metrics.csv'
@@ -649,10 +647,10 @@ def analyze_network(
     >>> print(f"Cable length: {results['cable_length_km']:.2f} km")
     """
     if adapt_network:
-        from .network_adapter import adapt_network as adapt_net
+        from .network_adapter_swf import adapt_network as adapt_net
         net = adapt_net(net, zone_mapping=zone_mapping, **adapter_kwargs)
 
-    calculator = MetricsCalculator()
+    calculator = ParameterCalculatorSWF()
     return calculator.analyze_and_export(net, output_path)
 
 
@@ -693,7 +691,7 @@ def analyze_network_batch(
     >>> print(f"Analyzed {len(df)} networks")
     >>> print(f"Average cable length: {df['cable_length_km'].mean():.2f} km")
     """
-    calculator = MetricsCalculator()
+    calculator = ParameterCalculatorSWF()
     return calculator.analyze_batch(
         networks_dir=networks_dir,
         output_csv=output_csv,
