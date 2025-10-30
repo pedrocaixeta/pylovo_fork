@@ -1,9 +1,9 @@
 """
-Topology and load-aggregation metrics for LV distribution grids (validation workflow).
+Topology and load-aggregation metrics for LV distribution grids (validation_swf workflow).
 
 Purpose
 - Compute descriptive parameters for radial low-voltage (LV) grids modeled in pandapower.
-- Support PLZ-wide aggregation and per-grid metrics used in validation and clustering.
+- Support PLZ-wide aggregation and per-grid metrics used in validation_swf and clustering.
 
 Key ideas
 - Treat the LV transformer LV bus ("LVbus") as the root of a radial tree.

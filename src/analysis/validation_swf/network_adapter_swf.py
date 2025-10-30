@@ -10,7 +10,7 @@ for standalone network adaptation before passing to MetricsCalculator.
 import pandapower as pp
 from typing import Optional, Dict
 import logging
-from src.analysis.validation.utils import (
+from src.analysis.validation_swf.utils_swf import (
     ensure_numeric_types,
     normalize_load_columns,
     normalize_bus_names,
@@ -110,7 +110,7 @@ def adapt_network(
     default_zone : str
         Fallback zone (default: 'Residential')
     validate : bool
-        Run structure validation (default: True)
+        Run structure validation_swf (default: True)
     
     Returns
     -------
@@ -120,8 +120,8 @@ def adapt_network(
     Examples
     --------
     >>> import pandapower as pp
-    >>> from src.analysis.validation.network_adapter_swf import adapt_network
-    >>> from src.analysis.validation.parameter_calculation_swf import ParameterCalculatorSWF
+    >>> from src.analysis.validation_swf.network_adapter_swf import adapt_network
+    >>> from src.analysis.validation_swf.parameter_calculation_swf import ParameterCalculatorSWF
     >>> 
     >>> net = pp.from_json('dso_network.json')
     >>> net = adapt_network(net)

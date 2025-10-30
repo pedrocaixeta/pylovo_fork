@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
-Low-voltage (LV) subgrid splitter with transformer-zone assignment (validation workflow).
+Low-voltage (LV) subgrid splitter with transformer-zone assignment (validation_swf workflow).
 
 Purpose
 - Partition a DSO-provided LV network into disjoint subgrids, one per LV transformer.
 - Respect operational topology (switch states, open ties) and keep only LV buses.
 - Assign each LV bus to exactly one transformer using shortest-path distances.
-- Optionally save each subgrid as a separate pandapower JSON and report split stats.
 
 Highlights
 - LV-only operational graph (respects line/service and switch states, removes open ties).
 - Voronoi-like assignment by graph distance to transformer LV buses (no overlaps).
 - Safe handling of meshed sections via BFS tree pruning to enforce radiality per subgrid.
-- Lightweight validation comparing original and split networks (counts, tolerances).
+- Lightweight validation_swf comparing original and split networks (counts, tolerances).
 """
 from __future__ import annotations
 import logging
@@ -350,50 +349,6 @@ def _assign_buses_to_trafos(
 # Distance-based splitting API
 # ==============================================================================
 
-@dataclass
-class SplitStatistics:
-    """Summary statistics for split validation and reporting.
-
-    Note: Some tolerances are applied to handle meshed LV networks and HV bus duplication.
-    """
-    original_buses: int
-    original_lines: int
-    original_loads: int
-    original_sgens: int
-    original_trafos: int
-
-    split_buses_total: int
-    split_lines_total: int
-    split_loads_total: int
-    split_sgens_total: int
-    split_trafos_total: int
-
-    num_subgrids: int
-    buses_per_subgrid: Dict[str, int]
-    lines_per_subgrid: Dict[str, int]
-
-    @property
-    def buses_match(self) -> bool:
-        """Heuristic check: split buses roughly match original counts (LV/HV nuances)."""
-        original_lv = self.original_buses - self.original_trafos  # rough estimate
-        return abs(self.split_buses_total - self.original_buses) <= self.num_subgrids * 2
-
-    @property
-    def lines_match(self) -> bool:
-        """Allow up to 10% line-count difference (cross-zone edges may be dropped)."""
-        return abs(self.split_lines_total - self.original_lines) / max(self.original_lines, 1) < 0.10
-
-    @property
-    def loads_match(self) -> bool:
-        """Loads must match exactly across split nets."""
-        return self.split_loads_total == self.original_loads
-
-    @property
-    def validation_passed(self) -> bool:
-        """True if buses, lines (within tolerance), and loads match."""
-        return self.buses_match and self.lines_match and self.loads_match
-
-
 
 def assign_buses_to_transformers(
     G: nx.Graph,
@@ -578,10 +533,10 @@ def create_subgrid_from_assignment(
     return sub_net
 
 
-def split_into_lv_subgrids_improved(
+def split_into_lv_subgrids(
     net: pp.pandapowerNet,
     output_dir: str | Path | None = None,
-) -> Tuple[Dict[str, pp.pandapowerNet], SplitStatistics]:
+) -> Tuple[Dict[str, pp.pandapowerNet]]:
     """
     Split a network into LV subgrids, one per transformer, using distance-based assignment.
 
@@ -591,7 +546,7 @@ def split_into_lv_subgrids_improved(
     logger = logging.getLogger(__name__)
 
     if output_dir is None:
-        from src.analysis.validation.utils import load_validation_config
+        from src.analysis.validation_swf.utils_swf import load_validation_config
         data_dir, _net_name, _proj = load_validation_config()
         output_dir = data_dir / "subgrids"
 
@@ -647,70 +602,13 @@ def split_into_lv_subgrids_improved(
         except Exception as e:
             logger.error(f"    Failed to save {subgrid_id}: {e}")
 
-    # stats & summary
-    stats = compute_split_statistics(net, subgrids)
-
     logger.info(f"✓ Created {len(subgrids)} subgrids")
 
-    return subgrids, stats
+    return subgrids
 
-
-def compute_split_statistics(
-    original_net: pp.pandapowerNet,
-    subgrids: Dict[str, pp.pandapowerNet],
-) -> SplitStatistics:
-    """Compare element counts of the original network with the sum over subgrids."""
-
-    # Original
-    orig_buses = len(original_net.bus)
-    orig_lines = len(original_net.line)
-    orig_loads = len(original_net.load) if hasattr(original_net, 'load') else 0
-    orig_sgens = len(original_net.sgen) if hasattr(original_net, 'sgen') else 0
-    orig_trafos = len(original_net.trafo) if hasattr(original_net, 'trafo') else 0
-
-    # Split totals
-    split_buses = 0
-    split_lines = 0
-    split_loads = 0
-    split_sgens = 0
-    split_trafos = 0
-
-    buses_per_subgrid = {}
-    lines_per_subgrid = {}
-
-    for name, sub_net in subgrids.items():
-        n_buses = len(sub_net.bus)
-        n_lines = len(sub_net.line)
-
-        split_buses += n_buses
-        split_lines += n_lines
-        split_loads += len(sub_net.load) if hasattr(sub_net, 'load') else 0
-        split_sgens += len(sub_net.sgen) if hasattr(sub_net, 'sgen') else 0
-        split_trafos += len(sub_net.trafo) if hasattr(sub_net, 'trafo') else 0
-
-        buses_per_subgrid[name] = n_buses
-        lines_per_subgrid[name] = n_lines
-
-    return SplitStatistics(
-        original_buses=orig_buses,
-        original_lines=orig_lines,
-        original_loads=orig_loads,
-        original_sgens=orig_sgens,
-        original_trafos=orig_trafos,
-        split_buses_total=split_buses,
-        split_lines_total=split_lines,
-        split_loads_total=split_loads,
-        split_sgens_total=split_sgens,
-        split_trafos_total=split_trafos,
-        num_subgrids=len(subgrids),
-        buses_per_subgrid=buses_per_subgrid,
-        lines_per_subgrid=lines_per_subgrid,
-    )
-
-
-def run_improved_split() -> None:
+def run_split() -> None:
     """CLI entry point: load configured net, perform split, and log a short report."""
-    from src.analysis.validation.utils import read_net_json
+    from src.analysis.validation_swf.utils_swf import read_net_json
 
     logging.basicConfig(
         level=logging.INFO,
@@ -718,10 +616,6 @@ def run_improved_split() -> None:
     )
 
     logger = logging.getLogger(__name__)
-    logger.info("=" * 80)
-    logger.info("IMPROVED LV SUBGRID SPLITTER")
-    logger.info("=" * 80)
-    logger.info("")
 
     net, file_path = read_net_json()
     logger.info(f"Loaded network from: {file_path}")
@@ -731,13 +625,9 @@ def run_improved_split() -> None:
     logger.info(f"  Transformers: {len(net.trafo) if hasattr(net, 'trafo') else 0}")
     logger.info("")
 
-    subgrids, stats = split_into_lv_subgrids_improved(net)
+    subgrids = split_into_lv_subgrids(net)
 
-    logger.info("")
-    logger.info("=" * 80)
-    logger.info("SPLITTING COMPLETE")
-    logger.info("=" * 80)
 
 
 if __name__ == "__main__":
-    run_improved_split()
+    run_split()

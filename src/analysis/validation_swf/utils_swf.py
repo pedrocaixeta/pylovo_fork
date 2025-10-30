@@ -1,6 +1,6 @@
 """
 Shared utility functions for grid analysis.
-Used by both core (synthetic) and validation (DSO) workflows.
+Used by both core (synthetic) and validation_swf (DSO) workflows.
 """
 
 import os
@@ -56,7 +56,7 @@ def _resolve_data_dir(p: str | os.PathLike) -> Path:
 
 
 def load_validation_config() -> tuple[Path, str, str]:
-    """Load validation configuration from environment variables.
+    """Load validation_swf configuration from environment variables.
 
     Reads the following environment variables (from .env):
       - GRID_DATA_PATH: Directory containing the grid dataset (e.g., src/analysis/grid_data/SWF_V7)
@@ -155,14 +155,14 @@ def create_logger(name: str, log_file: str, level=logging.INFO) -> logging.Logge
 
 
 # ============================================================================
-# Load Calculations (from src/utils.py)
+# Load Calculations (from src/utils_swf.py)
 # ============================================================================
 
 def oneSimultaneousLoad(installed_power: float, load_count: int, sim_factor: float) -> float:
     """Calculate simultaneous load using simultaneity factor.
 
     Based on Kerber 2011, Equation 3.2, Page 23.
-    Used in both topology analysis and validation workflows.
+    Used in both topology analysis and validation_swf workflows.
 
     Args:
         installed_power: Total installed power (kW or MW)

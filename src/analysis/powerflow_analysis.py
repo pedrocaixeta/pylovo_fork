@@ -9,7 +9,7 @@ import copy
 
 from src.utils import oneSimultaneousLoad, create_logger
 
-# Configure logging using the utility function from utils.py
+# Configure logging using the utility function from utils_swf.py
 log_dir = Path(__file__).resolve().parent.parent / 'log'
 log_dir.mkdir(exist_ok=True)
 log_file = log_dir / 'grid_validation.log'
@@ -52,7 +52,7 @@ def process_and_collect_voltage_data(grids_df: pd.DataFrame, peak_load_residenti
             continue
 
         load_count = len(net.load)
-        # Use oneSimultaneousLoad from utils.py to avoid double hard-coding
+        # Use oneSimultaneousLoad from utils_swf.py to avoid double hard-coding
         sim_load = oneSimultaneousLoad(peak_load_residential, load_count, sim_factor=0.07)
         preprocess_pylovo_network(net, avg_load=sim_load, min_vm_pu=DEFAULT_MIN_VM_PU, max_vm_pu=DEFAULT_MAX_VM_PU)
 
@@ -87,7 +87,7 @@ def preprocess_pylovo_network(
     Preprocess a pandapower network for power flow analysis by setting up loads,
     voltage constraints, and (optionally) cost functions.
 
-    This function prepares a PyLovo-generated network for validation by:
+    This function prepares a PyLovo-generated network for validation_swf by:
     - Removing existing loads
     - Assigning new Gaussian-distributed loads
     - Setting voltage constraints
@@ -576,7 +576,7 @@ def generate_validation_report(
     bcid: Optional[str] = None
 ) -> Dict[str, Union[Dict, pd.DataFrame]]:
     """
-    Generate a comprehensive validation report for a network.
+    Generate a comprehensive validation_swf report for a network.
 
     Parameters
     ----------

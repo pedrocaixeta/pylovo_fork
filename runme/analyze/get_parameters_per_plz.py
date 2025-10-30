@@ -1,4 +1,4 @@
-from src.analysis.validation.parameter_calculation import ParameterCalculator
+from src.analysis.parameter_calculation import ParameterCalculator
 
 plz = 80803
 pc = ParameterCalculator()

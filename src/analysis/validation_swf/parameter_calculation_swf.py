@@ -50,7 +50,7 @@ class ParameterCalculatorSWF:
 
         # Import the actual ParameterCalculator to reuse its methods
         # We'll use it as a delegate for computation methods
-        from .parameter_calculation import ParameterCalculator
+        from src.analysis.parameter_calculation import ParameterCalculator
 
         # Create a minimal instance just for method access (won't use database methods)
         # Pass dummy values for plz, bcid, kcid since we won't use database

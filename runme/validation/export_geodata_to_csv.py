@@ -20,7 +20,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.analysis.validation.utils import load_validation_config
+from src.analysis.validation_swf.utils_swf import load_validation_config
 
 
 def export_geodata_as_csv():
