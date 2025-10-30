@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any
 import logging
 import copy
 
-from ..utils import (
+from src.analysis.validation.utils import (
     ensure_numeric_types,
     normalize_load_columns,
     normalize_bus_names,

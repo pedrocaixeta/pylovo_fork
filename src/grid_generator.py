@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed  # lightweight 
 
 import src.database.database_client as dbc
 from src.infdb.infdb_client import InfdbClient
-from src.analysis.core.topology_analysis import ParameterCalculator
+from src.analysis.validation.topology_analysis import ParameterCalculator
 from src import utils
 from src.config_loader import *
 

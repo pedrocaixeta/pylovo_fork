@@ -3,11 +3,13 @@ Shared utility functions for grid analysis.
 Used by both core (synthetic) and validation (DSO) workflows.
 """
 
-import pandas as pd
-import pandapower as pp
-from pathlib import Path
 import os
 import logging
+from pathlib import Path
+from typing import List
+
+import pandas as pd
+import pandapower as pp
 from dotenv import load_dotenv, find_dotenv
 
 # ============================================================================
@@ -15,7 +17,7 @@ from dotenv import load_dotenv, find_dotenv
 # ============================================================================
 
 # Project root (repository root)
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # Load .env once (from repo root if present)
 load_dotenv(find_dotenv(), override=True)
@@ -80,21 +82,51 @@ def load_validation_config() -> tuple[Path, str, str]:
     return data_dir, net_name, projection
 
 
-def read_net_json() -> tuple[pp.pandapowerNet, str]:
-    """Load pandapower network from configured JSON file.
+def read_net_json(
+    subgrid_file: str | Path | None = None,
+    allow_multi: bool = False,
+) -> tuple[pp.pandapowerNet | List[pp.pandapowerNet], str]:
+    """Load pandapower network from configured JSON file, or a specific subgrid.
 
-    Returns:
-        tuple: (net, file_path_base) where file_path_base = <data_dir>/<net_name>
+    Parameters
+    ----------
+    subgrid_file : str | Path | None
+        Name of a subgrid JSON inside <DATA_DIR>/subgrids. If provided, loads that file.
+        Examples: "041__trafo_105.json" or "041__trafo_105" (".json" suffix optional).
+        If None (default), loads the main <NET_NAME>.json in <DATA_DIR>.
+    allow_multi : bool
+        If True and the main JSON is a multi-net container (list/dict), returns a list of nets.
+        If False (default), attempts to load a single pandapower net as before.
+
+    Returns
+    -------
+    (net_or_list, file_base)
+        net_or_list: A single pandapowerNet or a list of pandapowerNets when allow_multi=True.
+        file_base:   The base path (without .json extension) of the loaded file as string.
     """
-    data_dir, net_name, _projection = load_validation_config()
-    file_path = str(data_dir / net_name)
-    json_path = f"{file_path}.json"
-    if not Path(json_path).exists():
+    data_dir, net_name, _ = load_validation_config()
+
+    # Subgrid-specific load
+    if subgrid_file is not None:
+        name = str(subgrid_file)
+        if not name.endswith(".json"):
+            name += ".json"
+        json_path = (data_dir / "subgrids" / name).resolve()
+        if not json_path.exists():
+            raise FileNotFoundError(f"Subgrid JSON not found: {json_path}")
+        net = pp.from_json(str(json_path))
+        return net, str(json_path.with_suffix(""))
+
+    # Default: load main NET_NAME.json
+    main_base = data_dir / net_name
+    main_json = main_base.with_suffix(".json")
+    if not main_json.exists():
         raise FileNotFoundError(
-            f"Network JSON not found: {json_path}. Ensure NET_NAME ('{net_name}') matches the file in {data_dir}."
+            f"Network JSON not found: {main_json}. Ensure NET_NAME ('{net_name}') matches the file in {data_dir}."
         )
-    net = pp.from_json(json_path)
-    return net, file_path
+
+    net = pp.from_json(str(main_json))
+    return net, str(main_base)
 
 
 # ============================================================================
@@ -102,26 +134,15 @@ def read_net_json() -> tuple[pp.pandapowerNet, str]:
 # ============================================================================
 
 def create_logger(name: str, log_file: str, level=logging.INFO) -> logging.Logger:
-    """Create a configured logger instance.
-
-    Args:
-        name: Logger name
-        log_file: Path to log file
-        level: Logging level (default: logging.INFO)
-
-    Returns:
-        logging.Logger: Configured logger instance
-    """
+    """Create a configured logger instance."""
     logger = logging.getLogger(name=name)
-    logger.handlers.clear()  # Clear existing handlers to prevent duplication
+    logger.handlers.clear()
 
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    # to print log messages to a file
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
 
-    # to print log messages to console
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
 
@@ -137,8 +158,7 @@ def create_logger(name: str, log_file: str, level=logging.INFO) -> logging.Logge
 # Load Calculations (from src/utils.py)
 # ============================================================================
 
-def oneSimultaneousLoad(installed_power: float, load_count: int,
-                        sim_factor: float) -> float:
+def oneSimultaneousLoad(installed_power: float, load_count: int, sim_factor: float) -> float:
     """Calculate simultaneous load using simultaneity factor.
 
     Based on Kerber 2011, Equation 3.2, Page 23.
@@ -243,9 +263,8 @@ def normalize_bus_names(net: pp.pandapowerNet) -> None:
     """
     if 'name' not in net.bus.columns or net.bus['name'].isna().any():
         net.bus['name'] = net.bus.apply(
-            lambda row: row.get('name') if pd.notna(row.get('name'))
-                       else row.get('chr_name', f"Bus_{row.name}"),
-            axis=1
+            lambda row: row.get('name') if pd.notna(row.get('name')) else row.get('chr_name', f"Bus_{row.name}"),
+            axis=1,
         )
 
 

@@ -17,4 +17,6 @@ __all__ = [
     'NetworkAdapter',
     'adapt_network',
     'MetricsCalculator',
+    'topology_analysis',
+    'powerflow_analysis'
 ]

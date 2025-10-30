@@ -50,7 +50,7 @@ class MetricsCalculator:
 
         # Import the actual ParameterCalculator to reuse its methods
         # We'll use it as a delegate for computation methods
-        from ..core.topology_analysis import ParameterCalculator
+        from .topology_analysis import ParameterCalculator
 
         # Create a minimal instance just for method access (won't use database methods)
         # Pass dummy values for plz, bcid, kcid since we won't use database
@@ -292,7 +292,15 @@ class MetricsCalculator:
              max_vsw_of_a_branch) = calc.calc_resistance(net, G)
             vsw_per_branch = resistance / no_branches if no_branches > 0 else 0.0
         except (ValueError, KeyError, IndexError) as e:
-            self.logger.warning(f"calc_resistance failed (non-radial topology?): {e}")
+            # Enhanced logging to diagnose resistance calculation failures
+            net_id = getattr(net, 'name', 'unknown')
+            self.logger.error(f"calc_resistance failed for network '{net_id}': {type(e).__name__}: {e}")
+            self.logger.error(f"  Network stats: branches={no_branches}, loads={len(net.load)}, "
+                            f"graph_nodes={len(G.nodes())}, graph_edges={len(G.edges())}")
+            self.logger.error(f"  Consumer buses: {no_house_connections}, Connection buses: {no_connection_buses}")
+            if hasattr(net, 'trafo') and len(net.trafo) > 0:
+                lv_bus = net.trafo['lv_bus'].iloc[0]
+                self.logger.error(f"  LV root bus: {lv_bus}, in graph: {lv_bus in G}")
             # Use fallback values
             max_no_of_households_of_a_branch = 0.0
             resistance = 0.0

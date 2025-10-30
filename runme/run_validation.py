@@ -32,7 +32,7 @@ from src.analysis.validation import (
     MetricsCalculator,
     config as val_config
 )
-from src.analysis.utils import (
+from src.analysis.validation.utils import (
     format_metrics_summary,
     format_multi_grid_summary
 )
