@@ -334,7 +334,7 @@ def hierarchy_pos(G, root=None, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5)
 
 def hierarchy_pos2(G, root, levels=None, width=1., height=1.):
     """
-    Calculate hierarchical layout with improved spacing for large networks.
+    Calculate hierarchical layout with spacing for large networks.
 
     If there is a cycle that is reachable from root, then this will see infinite recursion.
 
@@ -417,7 +417,7 @@ def draw_tree_network(G, width=1.):
     plt.show()
 
 
-def draw_tree_network_with_improved_spacing_from_grid_id(plz: int, kcid: int, bcid: int):
+def draw_tree_network_with_spacing_from_grid_id(plz: int, kcid: int, bcid: int):
     """
     Draw a tree graph with improved spacing for large networks from grid ID.
 
@@ -432,10 +432,10 @@ def draw_tree_network_with_improved_spacing_from_grid_id(plz: int, kcid: int, bc
     """
     net = read_net_with_grid_generator(plz=plz, kcid=kcid, bcid=bcid)
     G = create_nxgraph(net)
-    draw_tree_network_improved_spacing(G)
+    draw_tree_network_spacing(G)
 
 
-def draw_tree_network_improved_spacing(G):
+def draw_tree_network_spacing(G):
     """
     Draw a tree graph with improved spacing for large networks.
 
