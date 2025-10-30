@@ -9,9 +9,11 @@ Renamed from StandaloneParameterCalculator to MetricsCalculator for clarity.
 import pandas as pd
 import pandapower as pp
 import networkx as nx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Callable, Union
 import logging
 import json
+import re
+from pathlib import Path
 
 # Import only the compute logic, not database dependencies
 from src.config_loader import (
@@ -286,6 +288,14 @@ class MetricsCalculator:
         # Skip database lookup - will estimate later if needed
         simultaneous_peak_load_mw = 0.0
 
+        # Initialize resistance-related variables with defaults
+        max_no_of_households_of_a_branch = 0.0
+        resistance = 0.0
+        reactance = 0.0
+        ratio = 0.0
+        vsw_per_branch = 0.0
+        max_vsw_of_a_branch = 0.0
+
         # Try to calculate resistance - may fail for non-radial networks
         try:
             (max_no_of_households_of_a_branch, resistance, reactance, ratio,
@@ -301,14 +311,6 @@ class MetricsCalculator:
             if hasattr(net, 'trafo') and len(net.trafo) > 0:
                 lv_bus = net.trafo['lv_bus'].iloc[0]
                 self.logger.error(f"  LV root bus: {lv_bus}, in graph: {lv_bus in G}")
-            # Use fallback values
-            max_no_of_households_of_a_branch = 0.0
-            resistance = 0.0
-            reactance = 0.0
-            ratio = 0.0
-            max_vsw_of_a_branch = 0.0
-            vsw_per_branch = 0.0
-
         return {
             "no_connection_buses": int(no_connection_buses),
             "no_branches": int(no_branches),
@@ -487,6 +489,118 @@ class MetricsCalculator:
 
         return metrics
 
+    def analyze_batch(
+        self,
+        networks_dir: Union[str, Path],
+        output_csv: Union[str, Path],
+        filename_parser: Optional[Callable[[str], Dict[str, Any]]] = None,
+        pattern: str = "*.json",
+        estimate_simultaneous_load: bool = True,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> pd.DataFrame:
+        """
+        Analyze multiple networks from a directory and export to CSV.
+
+        Parameters
+        ----------
+        networks_dir : str | Path
+            Directory containing network JSON files
+        output_csv : str | Path
+            Path to output CSV file
+        filename_parser : callable, optional
+            Function to extract metadata from filename. Should return dict.
+            If None, uses default parser for trafo_{id}.json pattern.
+        pattern : str
+            Glob pattern for matching files (default: "*.json")
+        estimate_simultaneous_load : bool
+            Whether to estimate simultaneous peak load
+        progress_callback : callable, optional
+            Function called with (current, total, filename) for progress tracking
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with metrics for all analyzed networks
+
+        Examples
+        --------
+        >>> calc = MetricsCalculator()
+        >>> df = calc.analyze_batch(
+        ...     networks_dir='/data/subgrids',
+        ...     output_csv='/data/metrics.csv'
+        ... )
+        >>> print(f"Analyzed {len(df)} networks")
+        """
+        networks_dir = Path(networks_dir)
+        output_csv = Path(output_csv)
+
+        if not networks_dir.exists():
+            raise FileNotFoundError(f"Directory not found: {networks_dir}")
+
+        # Use default parser if none provided
+        if filename_parser is None:
+            filename_parser = self._default_filename_parser
+
+        rows: List[Dict[str, Any]] = []
+        files = sorted(networks_dir.glob(pattern))
+        total_files = len(files)
+
+        if total_files == 0:
+            self.logger.warning(f"No files matching '{pattern}' found in {networks_dir}")
+            return pd.DataFrame()
+
+        self.logger.info(f"Processing {total_files} networks from {networks_dir}")
+
+        for idx, filepath in enumerate(files, 1):
+            if progress_callback:
+                progress_callback(idx, total_files, filepath.name)
+
+            try:
+                net = pp.from_json(str(filepath))
+                params = self.compute_parameters_with_fallback(
+                    net,
+                    estimate_simultaneous_load=estimate_simultaneous_load
+                )
+                meta = filename_parser(filepath.name)
+                rows.append({"file": filepath.name, **meta, **params})
+
+            except Exception as e:
+                self.logger.error(f"Failed to process {filepath.name}: {e}")
+                meta = filename_parser(filepath.name)
+                rows.append({"file": filepath.name, **meta, "error": str(e)})
+
+        df = pd.DataFrame(rows)
+        df.to_csv(output_csv, index=False)
+        self.logger.info(f"Exported metrics for {len(df)} networks to {output_csv}")
+
+        return df
+
+    @staticmethod
+    def _default_filename_parser(filename: str) -> Dict[str, Any]:
+        """
+        Default parser for network filenames.
+
+        Expected patterns:
+        - {netz}__trafo_{id}.json
+        - trafo_{id}.json
+
+        Parameters
+        ----------
+        filename : str
+            Network filename
+
+        Returns
+        -------
+        dict
+            Dictionary with 'netznummer' and 'trafo_id' keys
+        """
+        pattern = re.compile(r"^(?:(?P<netz>\w{3})__)?trafo_(?P<tid>\d+)\.json$")
+        match = pattern.match(filename)
+        return {
+            "netznummer": match.group("netz") if match else None,
+            "trafo_id": match.group("tid") if match else None,
+        }
+
 
 def analyze_network(
     net: pp.pandapowerNet,
@@ -533,3 +647,51 @@ def analyze_network(
 
     calculator = MetricsCalculator()
     return calculator.analyze_and_export(net, output_path)
+
+
+def analyze_network_batch(
+    networks_dir: Union[str, Path],
+    output_csv: Union[str, Path],
+    filename_parser: Optional[Callable[[str], Dict[str, Any]]] = None,
+    pattern: str = "*.json",
+    estimate_simultaneous_load: bool = True
+) -> pd.DataFrame:
+    """
+    Convenience function to analyze multiple networks from a directory.
+
+    Parameters
+    ----------
+    networks_dir : str | Path
+        Directory containing network JSON files
+    output_csv : str | Path
+        Path to output CSV file
+    filename_parser : callable, optional
+        Function to extract metadata from filename
+    pattern : str
+        Glob pattern for matching files (default: "*.json")
+    estimate_simultaneous_load : bool
+        Whether to estimate simultaneous peak load
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with metrics for all analyzed networks
+
+    Examples
+    --------
+    >>> df = analyze_network_batch(
+    ...     networks_dir='/data/subgrids',
+    ...     output_csv='/data/metrics.csv'
+    ... )
+    >>> print(f"Analyzed {len(df)} networks")
+    >>> print(f"Average cable length: {df['cable_length_km'].mean():.2f} km")
+    """
+    calculator = MetricsCalculator()
+    return calculator.analyze_batch(
+        networks_dir=networks_dir,
+        output_csv=output_csv,
+        filename_parser=filename_parser,
+        pattern=pattern,
+        estimate_simultaneous_load=estimate_simultaneous_load
+    )
+
