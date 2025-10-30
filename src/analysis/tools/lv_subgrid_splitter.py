@@ -381,61 +381,6 @@ class SplitStatistics:
         """Check if all validation criteria passed."""
         return self.buses_match and self.lines_match and self.loads_match
 
-    def format_report(self) -> str:
-        """Generate formatted validation report."""
-        lines = [
-            "=" * 80,
-            "SUBGRID SPLITTING VALIDATION REPORT",
-            "=" * 80,
-            "",
-            "Original Network:",
-            f"  Buses:        {self.original_buses:6d}",
-            f"  Lines:        {self.original_lines:6d}",
-            f"  Loads:        {self.original_loads:6d}",
-            f"  Sgens:        {self.original_sgens:6d}",
-            f"  Transformers: {self.original_trafos:6d}",
-            "",
-            f"Split into {self.num_subgrids} Subgrids:",
-            f"  Buses (sum):  {self.split_buses_total:6d}  {'✓ OK' if self.buses_match else '✗ MISMATCH'}",
-            f"  Lines (sum):  {self.split_lines_total:6d}  {'✓ OK' if self.lines_match else '✗ MISMATCH'}",
-            f"  Loads (sum):  {self.split_loads_total:6d}  {'✓ OK' if self.loads_match else '✗ MISMATCH'}",
-            f"  Sgens (sum):  {self.split_sgens_total:6d}",
-            f"  Trafos (sum): {self.split_trafos_total:6d}",
-            "",
-            "Validation: " + ("✓ PASSED" if self.validation_passed else "✗ FAILED"),
-            "",
-        ]
-
-        if not self.buses_match:
-            diff = self.split_buses_total - self.original_buses
-            lines.extend([
-                f"⚠️  Bus count mismatch: {diff:+d} buses",
-                f"   This may be expected if HV buses are duplicated across subgrids",
-                "",
-            ])
-
-        if not self.lines_match:
-            diff = self.split_lines_total - self.original_lines
-            pct = 100 * diff / max(self.original_lines, 1)
-            lines.extend([
-                f"⚠️  Line count mismatch: {diff:+d} lines ({pct:+.1f}%)",
-                f"   This may occur in meshed networks where lines cross transformer zones",
-                "",
-            ])
-
-        # Top 10 largest subgrids
-        lines.append("Largest Subgrids by Bus Count:")
-        lines.append("-" * 80)
-        sorted_subgrids = sorted(self.buses_per_subgrid.items(), key=lambda x: x[1], reverse=True)
-        for i, (name, count) in enumerate(sorted_subgrids[:10], 1):
-            line_count = self.lines_per_subgrid.get(name, 0)
-            lines.append(f"  {i:2d}. {name:30s}: {count:4d} buses, {line_count:4d} lines")
-
-        lines.append("")
-        lines.append("=" * 80)
-
-        return "\n".join(lines)
-
 
 def assign_buses_to_transformers(
     G: nx.Graph,
@@ -732,7 +677,6 @@ def split_into_lv_subgrids_improved(
     stats = compute_split_statistics(net, subgrids)
 
     logger.info(f"✓ Created {len(subgrids)} subgrids")
-    logger.info(stats.format_report())
 
     return subgrids, stats
 
@@ -816,19 +760,6 @@ def run_improved_split() -> None:
 
     # Split
     subgrids, stats = split_into_lv_subgrids_improved(net)
-
-    # Save validation report
-    data_dir, _, _ = load_validation_config()
-    report_file = data_dir / "subgrid_split_validation.txt"
-    with open(report_file, 'w') as f:
-        f.write(stats.format_report())
-    logger.info(f"Validation report saved to: {report_file}")
-
-    if stats.validation_passed:
-        logger.info("✓ VALIDATION PASSED: Splits sum to original network")
-    else:
-        logger.warning("✗ VALIDATION FAILED: Discrepancies detected")
-        logger.warning("  Review the validation report for details")
 
     logger.info("")
     logger.info("=" * 80)
