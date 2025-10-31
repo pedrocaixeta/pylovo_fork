@@ -1,9 +1,24 @@
-import numpy as np
 import osm2geojson
 import requests
-
+import shutil
+from pathlib import Path
 import logging
 
+
+def reset_log_directory():
+    # Delete and recreate the log directory (preserving .gitkeep)
+    log_dir = Path("log")
+    if log_dir.exists():
+        # Remove all files except .gitkeep
+        for item in log_dir.iterdir():
+            if item.name != ".gitkeep":
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+        # Ensure the directory exists
+        log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
 
 def create_logger(name, log_file, log_level):
     log_file = log_file
