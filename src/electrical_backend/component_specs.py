@@ -1,18 +1,5 @@
 """
 Component specification classes for German 3-phase LV grids.
-
-MINIMAL VERSION - Simplified for pylovo German distribution grids:
-- All grids are 3-phase balanced (no n_phases field)
-- Standard voltages: 20kV (MV), 0.4kV (LV)
-- No equipment schema dependencies
-- Only essential attributes needed for pandapower
-
-Design principles:
-- ComponentSpecs are pure data - no logic, no equipment objects
-- Transformers: only need kVA rating (not full equipment data)
-- Cables: only need cable_name (looked up in database)
-- Buses: only need voltage and coordinates
-- Loads: only need kW, kvar
 """
 
 from dataclasses import dataclass

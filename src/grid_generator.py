@@ -60,16 +60,16 @@ class GridGenerator:
         self.plz = plz
         print('-------------------- start', self.plz, '---------------------------')
         self.dbc.create_temp_tables(plz)  # create PLZ-suffixed temp tables
-        self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
+        # self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
 
         try:
             self.generate_grid()
             self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
-            self.dbc.commit_changes()
+            # self.dbc.commit_changes()
             if analyze_grids:
                 pc = ParameterCalculator()
                 pc.calc_parameters_per_plz(plz=self.plz)
-                self.dbc.commit_changes()  # commit the changes to the database
+                # self.dbc.commit_changes()  # commit the changes to the database
         except ResultExistsError:
             self.dbc.logger.info(f"Grid for the postcode area {plz} has already been generated.")
         except Exception as e:

@@ -1,12 +1,7 @@
 """
-Pandapower backend implementation for German LV grids.
+Pandapower backend implementation for Pylovo
 
-MINIMAL VERSION - Simplified for pylovo German grids:
-- 3-phase balanced grids only
-- Standard German voltages (20kV MV, 0.4kV LV)
-- Integration with existing pandapower infrastructure
 """
-
 import logging
 from typing import Any, Dict, Optional
 
@@ -23,7 +18,6 @@ class PandapowerBackendError(Exception):
 
 class PandapowerBackend(IElectricalBackend):
     """
-    Pandapower implementation for German LV distribution grids.
 
     Manages pandapower network lifecycle and component creation.
     Designed to be a drop-in replacement for direct pp.create_*() calls.
