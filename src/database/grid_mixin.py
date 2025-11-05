@@ -43,6 +43,17 @@ class GridMixin(BaseMixin, ABC):
         self.logger.debug(f"Created {len(cables)} standard cable types from equipment_data table")
         return None
 
+    def fetch_cables(self) -> list:
+        query = """SELECT name,
+                       r_mohm_per_km / 1000.0 as r_ohm_per_km,
+                       x_mohm_per_km / 1000.0 as x_ohm_per_km,
+                       max_i_a / 1000.0       as max_i_ka
+                FROM equipment_data
+                WHERE typ = 'Cable' \
+                """
+        self.cur.execute(query)
+        return self.cur.fetchall()
+
     def get_vertices_from_bcid(self, plz: int, kcid: int, bcid: int) -> tuple[dict, int]:
         ont = self.get_ont_info_from_bc(plz, kcid, bcid)["ont_vertice_id"]
 

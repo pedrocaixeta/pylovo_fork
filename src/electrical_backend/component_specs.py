@@ -95,6 +95,7 @@ class LoadSpec(ComponentSpec):
     def __post_init__(self):
         self.component_type = "load"
 
+@dataclass
 class ExtGridSpec(ComponentSpec):
     """External grid specification."""
 
