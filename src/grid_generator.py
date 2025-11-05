@@ -718,6 +718,60 @@ class GridGenerator:
 
         return Pd, load_units, load_type
 
+
+    def find_furthest_node_path_list(self, connection_node_list: list, vertices_dict: dict, ont_vertice: int) -> list:
+        connection_node_dict = {n: vertices_dict[n] for n in connection_node_list}
+        furthest_node = max(connection_node_dict, key=connection_node_dict.get)
+        # all the connection nodes in the path from transformer to furthest node are considered as potential branch loads
+        furthest_node_path_list = self.dbc.get_path_to_bus(furthest_node, ont_vertice)
+        furthest_node_path = [p for p in furthest_node_path_list if p in connection_node_list]
+
+        return furthest_node_path
+
+
+    def determine_maximum_load_branch(self, furthest_node_path_list: list, buildings_df: pd.DataFrame,
+            consumer_df: pd.DataFrame) -> tuple[list, float]:
+        """
+        Determine the longest feasible branch (in order from transformer to furthest node)
+        limited by maximum allowable current.
+        
+        This method implements the primary constraint for cable dimensioning: current capacity.
+        It builds branches by adding nodes one by one until the current limit is reached.
+        
+        Args:
+            furthest_node_path_list: List of nodes from transformer to furthest node
+            buildings_df: DataFrame with building load information
+            consumer_df: DataFrame with consumer category information
+            
+        Returns:
+            tuple: (branch_node_list, Imax) - List of nodes in the branch and maximum current
+        """
+        branch_node_list = []
+        for node in furthest_node_path_list:
+            branch_node_list.append(node)
+            # Calculate simultaneous peak load for all nodes in current branch
+            sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, branch_node_list)  # sim_peak load in kW
+
+            # Calculate maximum current using worst-case voltage (VN * V_BAND_LOW)
+            # This ensures cables are sized for the lowest expected voltage (95% of nominal)
+            Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))  # current in kA
+
+            # Check if current exceeds the capacity of the largest available cable
+            # MAX_CABLE_CURRENT_KA is derived from the largest cable in equipment data
+            if Imax >= MAX_CABLE_CURRENT_KA and len(branch_node_list) > 1:
+                # Remove the last node if it would exceed current capacity
+                branch_node_list.remove(node)
+                break
+            elif Imax >= MAX_CABLE_CURRENT_KA and len(branch_node_list) == 1:
+                # Even a single node exceeds capacity - keep it but break the loop
+                break
+
+        # Calculate final current for the selected branch
+        sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, branch_node_list)
+        Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
+
+        return branch_node_list, Imax
+
     def install_cables(self):
         """
         Installs electrical cables using the electrical backend pattern.
@@ -818,7 +872,6 @@ class GridGenerator:
                             f"start_node={connection_node_list[0]}, cable={cable}, parallels={count}, length_km={length:.4f})"
                         )
                     break
-
                 furthest_node_path_list = self.find_furthest_node_path_list(
                     connection_node_list, vertices_dict, ont_vertice
                 )
