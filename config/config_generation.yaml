@@ -14,13 +14,12 @@ PARALLEL: False # Toggles whether the grid generation uses multiple workers in p
 N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generation
 ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
 SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
-LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
+LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configuratio ns
 RESULT_DIR: results # Directory for storing analysis results and outputs
 
 # Electrical backend configuration
-# Options: 'pandapower' (original), 'pandapower_decoupled' (new pattern), 'altdss', 'powerfactory'
-ELECTRICAL_BACKEND: pandapower_decoupled
-# ELECTRICAL_BACKEND: pandapower_decoupled  # Uncomment to use new decoupled backend
+# Options: 'pandapower'
+ELECTRICAL_BACKEND: pandapower
 
 # =============================================================================
 # GRID GENERATION CONFIGURATION
