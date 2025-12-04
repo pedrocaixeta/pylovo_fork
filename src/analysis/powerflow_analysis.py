@@ -9,7 +9,6 @@ import copy
 
 from src.utils import oneSimultaneousLoad, create_logger
 
-# Configure logging using the utility function from utils_swf.py
 log_dir = Path(__file__).resolve().parent.parent / 'log'
 log_dir.mkdir(exist_ok=True)
 log_file = log_dir / 'grid_validation.log'
