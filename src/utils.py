@@ -77,15 +77,13 @@ def simultaneousPeakLoad(buildings_df, consumer_cat_df, vertice_ids):
 
 def oneSimultaneousLoad(installed_power, load_count, sim_factor):
     # calculation of the simultaneaous load of multiple consumers of the same kind (public, commercial or residential)
-    try:
-        # Safe guards: zero/negative loads or counts yield 0
-        if installed_power is None or load_count is None:
-            return 0
-        if float(installed_power) <= 0 or float(load_count) <= 0:
-            return 0
+    # Safe guards: zero/negative loads or counts yield 0
+    if installed_power is None or load_count is None:
+        return 0
+    if float(installed_power) <= 0 or float(load_count) <= 0:
+        return 0
+    else:
         sim_load = installed_power * (sim_factor + (1 - sim_factor) * (float(load_count) ** (-3 / 4)))
-    except Exception:
-        sim_load = 0
 
     return sim_load
 
