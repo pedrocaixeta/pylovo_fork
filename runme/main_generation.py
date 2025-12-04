@@ -131,23 +131,8 @@ def create_grid_multiple_ags(ags_list: list):
 
 def main():
     """Main function to execute grid creation based on configuration."""
-    print("=" * 60)
     print("Pylovo Grid Creation Script")
     print("=" * 60)
-    print(f"Regional scale: {REGIONAL_SCALE}")
-    print(f"Execution mode: {EXECUTION_MODE}")
-    if EXECUTION_MODE == "single_plz":
-        print(f"Single PLZ: {PLZ}")
-    elif EXECUTION_MODE == "multiple_plz":
-        print(f"Multiple PLZ: {PLZ}")
-    elif EXECUTION_MODE == "single_ags":
-        print(f"Single AGS: {AGS}")
-    elif EXECUTION_MODE == "multiple_ags":
-        print(f"Multiple AGS: {AGS}")
-    print(f"Use INFDB: {USE_INFDB}")
-    print(f"Analyze grids: {ANALYZE_GRIDS}")
-    print("=" * 60)
-    
     # Start timing the script
     start_time = time.time()
     

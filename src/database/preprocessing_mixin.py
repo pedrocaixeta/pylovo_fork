@@ -236,7 +236,7 @@ class PreprocessingMixin(BaseMixin, ABC):
             insert_query = """
                 INSERT INTO buildings_tem
                 (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, ST_Transform(%s::geometry, 3035), ST_Transform(%s::geometry, 3035), %s, %s, %s, %s)
             """
             self.cur.executemany(insert_query, processed_data)
 
@@ -290,7 +290,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         insert_query = """
             INSERT INTO testing_buildings
             (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, ST_Transform(%s::geometry, 3035), %s, %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, processed_data)
         
@@ -646,7 +646,7 @@ class PreprocessingMixin(BaseMixin, ABC):
             insert_query = """
                 INSERT INTO ways_tem
                 (clazz, source, target, cost, reverse_cost, geom, way_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, ST_Transform(%s::geometry, 3035), %s)
             """
             self.cur.executemany(insert_query, ways_data)
             self.cur.execute("SELECT COUNT(*) FROM ways_tem")
