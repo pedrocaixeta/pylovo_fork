@@ -1,28 +1,32 @@
-"""Electrical backend module for pylovo."""
+"""Electrical backend package public API for pylovo."""
 
 from typing import Optional
-from .backend_interface import IElectricalBackend
-from .component_specs import BusSpec, ComponentSpec, LineSpec, LoadSpec, TransformerSpec
-from .pandapower_backend import PandapowerBackend, PandapowerBackendError
+
+from .template_backend import IElectricalBackend
+from .component_specs import (
+    BusSpec,
+    ComponentSpec,
+    LineSpec,
+    LoadSpec,
+    TransformerSpec,
+)
+from .factory import create_backend
+from .registry import available_backends, register_backend
 
 
-def create_backend(backend_name: str = "pandapower", logger: Optional[object] = None) -> IElectricalBackend:
-    """Factory function to create electrical backend instances.
-
-    Args:
-        backend_name: Name of the backend (e.g., "pandapower", "altdss")
-        logger: Optional logger instance
-
-    Returns:
-        Backend instance implementing IElectricalBackend
-
-    Raises:
-        ValueError: If backend_name is not recognized
+def __getattr__(name: str):
     """
-    if backend_name in ("pandapower"):
-        return PandapowerBackend(logger=logger)
+    Lazy access for optional heavy symbols to keep import time low while
+    preserving the public API.
+    """
+    if name in {"PandapowerBackend", "PandapowerBackendError"}:
+        from .pandapower_backend import PandapowerBackend, PandapowerBackendError
 
-    raise ValueError(f"Unknown backend: {backend_name}. Available: pandapower, pandapower_decoupled")
+        return {
+            "PandapowerBackend": PandapowerBackend,
+            "PandapowerBackendError": PandapowerBackendError,
+        }[name]
+    raise AttributeError(f"module 'electrical_backend' has no attribute {name!r}")
 
 
 __all__ = [
@@ -32,7 +36,9 @@ __all__ = [
     "TransformerSpec",
     "LineSpec",
     "LoadSpec",
+    "create_backend",
+    "register_backend",
+    "available_backends",
     "PandapowerBackend",
     "PandapowerBackendError",
-    "create_backend",
 ]

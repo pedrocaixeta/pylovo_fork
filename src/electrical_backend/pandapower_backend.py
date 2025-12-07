@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 import pandapower as pp
 
-from .backend_interface import IElectricalBackend
+from .template_backend import IElectricalBackend
 from .component_specs import BusSpec, ComponentSpec, LineSpec, LoadSpec, TransformerSpec, ExtGridSpec
 from src.config_loader import V_BAND_HIGH, V_BAND_LOW
 
@@ -98,7 +98,7 @@ class PandapowerBackend(IElectricalBackend):
         if spec.zone is not None:
             zone = spec.zone
         else:
-            # TODO: What is the default here? 
+            # TODO: What is the default here?  -->
             zone = "n"
         bus_idx = pp.create_bus(
             self.net,

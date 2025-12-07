@@ -17,7 +17,7 @@ from src import utils
 from src.config_loader import *
 
 # Import electrical backend components
-from src.electrical_backend.backend_interface import IElectricalBackend
+from src.electrical_backend.template_backend import IElectricalBackend
 from src.electrical_backend import create_backend
 from src.cable_installer import CableInstaller
 
