@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from src.electrical_backend.backend_interface import IElectricalBackend
+from src.electrical_backend.template_backend import IElectricalBackend
 from src.electrical_backend.component_specs import BusSpec, TransformerSpec, LineSpec, LoadSpec, ExtGridSpec
 from src.config_loader import VN, V_BAND_LOW, VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM
 from src.config_loader import VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM, SMALL_LOAD_THRESHOLD_KW
@@ -26,23 +26,34 @@ class CableInstaller:
 
     def create_lvmv_bus(self, plz: int, kcid: int, bcid: int) -> None:
         """Create LV and MV buses."""
-        geodata = self.dbc.get_ont_geom_from_bcid(plz, kcid, bcid)
+        lv_geodata = self.dbc.get_ont_geom_from_bcid(plz, kcid, bcid)
         lv_bus_spec = BusSpec(
             name="LVbus 1",
             voltage_kv=VN * 1e-3,
-            coordinates=geodata
+            coordinates=lv_geodata
         )
-        
-        mv_data = (float(geodata[0]), float(geodata[1]) + 1.5 * 1e-4)
+        mv_geodata = (float(lv_geodata[0]), float(lv_geodata[1]) + 1.5 * 1e-4)
         mv_bus_spec = BusSpec(
             name="MVbus 1",
             voltage_kv=20.0,
-            coordinates=mv_data
+            coordinates=mv_geodata
         )
         self.backend.create_component(lv_bus_spec)
         self.backend.create_component(mv_bus_spec)
 
         self.backend.create_component(ExtGridSpec(name="External grid", bus="MVbus 1", vm_pu=1))
+
+        # Add busbar line between MV and LV buses 
+        busbar_line_spec = LineSpec(
+            name="MV-LV Busbar",
+            bus1="MVbus 1",
+            bus2="LVbus 1",
+            cable_name="NAYY 4x150 SE",
+            length_km=0.001,
+            parallel=1,
+            coordinates=[mv_geodata, lv_geodata]
+        )
+        self.backend.create_component(busbar_line_spec)
 
     def create_transformer(self, plz: int, kcid: int, bcid: int) -> None:
         """Create transformer."""
@@ -110,7 +121,7 @@ class CableInstaller:
             )
             bus_idx = self.backend.create_component(bus_spec)
             self.backend.net.bus.at[bus_idx, "zone"] = ltype
-
+            # TODO: kw & kvar should be calculated based on the simultaneous load from the transformer / N consumers
             for j in range(1, load_units[consumer] + 1):
                 load_spec = LoadSpec(
                     name=f"Load {consumer} household {j}",
@@ -307,7 +318,6 @@ class CableInstaller:
             length_km=cost_km,
             parallel=count,
             coordinates=line_geodata,
-            to_vertex_id=branch_start_node
         )
         self.backend.create_component(line_spec)
 
