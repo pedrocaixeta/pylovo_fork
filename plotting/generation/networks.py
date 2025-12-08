@@ -256,6 +256,7 @@ def plot_grid_on_map(plz: int, kcid: int, bcid: int) -> None:
     """
     net = read_net_with_grid_generator(plz=plz, kcid=kcid, bcid=bcid)
     fig = simple_plotly(net, on_map=True, map_style="open-street-map")
+    return fig
 
 
 def hierarchy_pos(G, root=None, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5):
@@ -414,7 +415,7 @@ def draw_tree_network(G, width=1.):
     color_map = get_colormap_for_treegraph(networkx_graph=G)
     plt.figure(figsize=(20, 10))
     ax = nx.draw_networkx(G, node_color=color_map, pos=pos, with_labels=True)
-    plt.show()
+    return ax
 
 
 def draw_tree_network_with_spacing_from_grid_id(plz: int, kcid: int, bcid: int):
@@ -476,7 +477,7 @@ def draw_radial_network(G):
     plt.figure(figsize=(20, 10))
     new_pos = {u: (r * math.cos(theta), r * math.sin(theta)) for u, (theta, r) in pos.items()}
     color_map = get_colormap_for_treegraph(networkx_graph=G)
-    ax = nx.draw(G, pos=new_pos, node_size=50)
+    # ax = nx.draw(G, pos=new_pos, node_size=50)
     ax = nx.draw_networkx_nodes(G, pos=new_pos, node_color=color_map, node_size=200)
     plt.show()
 
