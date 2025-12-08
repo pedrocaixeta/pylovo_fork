@@ -4,7 +4,7 @@ This module contains functions for visualizing clustering results and quality me
 including CH/DB indices, cluster distributions, and 3D visualizations.
 """
 from math import pi
-from typing import Optional, Tuple
+from typing import Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
