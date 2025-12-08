@@ -54,28 +54,30 @@ class ParameterCalculator:
     - connection_bus_keyword: substring to identify internal connection buses (default: "Connection Nodebus")
     """
 
-    def __init__(self, plz: int, bcid: int, kcid: int,
+    def __init__(self,
                  keyword_lvbus: str = "LVbus",
                  keyword_consumer_bus: str = "Consumer Nodebus",
                  keyword_connection_bus: str = "Connection Nodebus"):
         self.dbc = dbc.DatabaseClient()
         self.version_id = VERSION_ID
-        self.plz = plz
-        self.bcid = bcid
-        self.kcid = kcid
         # Configurable keywords for bus identification across different datasets
         self.lvbus_keyword = keyword_lvbus
         self.consumer_bus_keyword = keyword_consumer_bus
         self.connection_bus_keyword = keyword_connection_bus
 
-    def calc_parameters_per_plz(self):
+    def calc_parameters_per_plz(self, plz: int = None):
         """Compute and store PLZ-wide parameters.
+
+        Parameters
+        - plz: Postcode area ID
 
         Side effects
         - Reads all nets of the PLZ from the database.
         - Writes aggregated per-PLZ results and sets analysis flags.
         - Skips PLZs already analyzed.
         """
+
+        self.plz = plz
         grid_generated = self.dbc.is_grid_generated(self.plz)
         if not grid_generated:
             self.dbc.logger.info(f"Grid for the postcode area {self.plz} is not generated, yet. Generate it first.")
@@ -99,11 +101,15 @@ class ParameterCalculator:
             self.dbc.logger.info(f"Skipped PLZ {self.plz} due to analysis error.")
             self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)
 
-    def calc_parameters_per_grid(self):
+    def calc_parameters_per_grid(self, plz: int = None):
         """Compute and store per-grid parameters for all grids of an analyzed PLZ.
+
+        Parameters
+        - plz: Postcode area ID
 
         Ensures PLZ-level metrics exist first (used for per-PLZ lookups).
         """
+        self.plz = plz
         grid_analysed = self.dbc.is_grid_analyzed(self.plz)
         if not grid_analysed:
             self.dbc.logger.info(

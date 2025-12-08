@@ -45,6 +45,7 @@ def prepare_data_for_clustering(additional_filtering: bool = False) -> None:
     # timing of the script
     start_time = time.time()
 
+    # create single ParameterCalculator instance for all PLZ
     pc = ParameterCalculator()
     # calculate network parameter for all plz
     for plz_index in samples['plz']:
