@@ -44,6 +44,7 @@ CONFIG_GENERATION = load_yaml_config("../config/config_generation.yaml")
 CONFIG_ANALYSIS = load_yaml_config("../config/config_analysis.yaml")
 CONFIG_CLASSIFICATION = load_yaml_config("../config/config_classification.yaml")
 CONFIG_CLUSTERING = load_yaml_config("../config/config_clustering.yaml")
+CONFIG_PLOTTING = load_yaml_config("../config/config_plotting.yaml")
 
 # =============================================================================
 # DATABASE CONFIGURATION (from .env file)
@@ -59,15 +60,14 @@ PORT = get_required_env_var("PORT", "Database port number")
 PASSWORD = get_required_env_var("PASSWORD", "Database password")
 TARGET_SCHEMA = get_required_env_var("TARGET_SCHEMA", "Target schema name")
 
-# INFDB (external database) connection (optional)
-# USE_INFDB = os.getenv("USE_INFDB", "True").lower() in ["true", "1", "on"]
+# INFDB (external database) connection (recommended)
 USE_INFDB = CONFIG_DATABASE["USE_INFDB"]
 if USE_INFDB:
-    INFDB_DBNAME = get_required_env_var("INFDB_DBNAME", "InfDB database name")
-    INFDB_USER = get_required_env_var("INFDB_USER", "InfDB username")
-    INFDB_HOST = get_required_env_var("INFDB_HOST", "InfDB host address")
-    INFDB_PORT = get_required_env_var("INFDB_PORT", "InfDB port number")
-    INFDB_PASSWORD = get_required_env_var("INFDB_PASSWORD", "InfDB password")
+    INFDB_DBNAME = DBNAME
+    INFDB_USER = DBUSER
+    INFDB_HOST = HOST
+    INFDB_PORT = PORT
+    INFDB_PASSWORD = PASSWORD
     INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", "pylovo_input")
 else:
     INFDB_DBNAME = None
@@ -227,3 +227,44 @@ THRESHOLD_NO_HOUSEHOLDS = CONFIG_CLUSTERING["THRESHOLD_NO_HOUSEHOLDS"]
 CSV_FILE_LIST = [
     {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},
 ]
+
+# =============================================================================
+# PLOTTING CONFIGURATION (from CONFIG_PLOTTING)
+# =============================================================================
+# Plotly configuration
+ACCESS_TOKEN_PLOTLY = CONFIG_PLOTTING["PLOTLY"]["ACCESS_TOKEN"]
+
+# TUM Color definitions
+TUMBlue = CONFIG_PLOTTING["COLORS"]["TUMBlue"]
+TUMGreen = CONFIG_PLOTTING["COLORS"]["TUMGreen"]
+TUMOrange = CONFIG_PLOTTING["COLORS"]["TUMOrange"]
+TUMIvory = CONFIG_PLOTTING["COLORS"]["TUMIvory"]
+TUMBlue4 = CONFIG_PLOTTING["COLORS"]["TUMBlue4"]
+TUMBlue2 = CONFIG_PLOTTING["COLORS"]["TUMBlue2"]
+TUMGray2 = CONFIG_PLOTTING["COLORS"]["TUMGray2"]
+
+# TUM Color palettes
+TUMPalette = CONFIG_PLOTTING["PALETTES"]["TUMPalette"]
+TUMPalette1 = CONFIG_PLOTTING["PALETTES"]["TUMPalette1"]
+TUMPalette2 = CONFIG_PLOTTING["PALETTES"]["TUMPalette2"]
+TUMPalette3 = CONFIG_PLOTTING["PALETTES"]["TUMPalette3"]
+
+# Network visualization colors
+NODE_COLOR_TRAFO = CONFIG_PLOTTING["NETWORK_COLORS"]["NODE_COLOR_TRAFO"]
+NODE_COLOR_CONSUMER = CONFIG_PLOTTING["NETWORK_COLORS"]["NODE_COLOR_CONSUMER"]
+NODE_COLOR_CONNECTION_BUS = CONFIG_PLOTTING["NETWORK_COLORS"]["NODE_COLOR_CONNECTION_BUS"]
+
+# Plot style defaults
+DEFAULT_FIGURE_SIZE = tuple(CONFIG_PLOTTING["PLOT_DEFAULTS"]["FIGURE_SIZE"])
+DEFAULT_DPI = CONFIG_PLOTTING["PLOT_DEFAULTS"]["DPI"]
+DEFAULT_FONT_SIZE = CONFIG_PLOTTING["PLOT_DEFAULTS"]["FONT_SIZE"]
+DEFAULT_TITLE_FONT_SIZE = CONFIG_PLOTTING["PLOT_DEFAULTS"]["TITLE_FONT_SIZE"]
+DEFAULT_GRID_ALPHA = CONFIG_PLOTTING["PLOT_DEFAULTS"]["GRID_ALPHA"]
+
+# Setup seaborn palette
+try:
+    import seaborn as sns
+    sns.set_palette(sns.color_palette(TUMPalette))
+except ImportError:
+    pass  # seaborn not installed, skip palette setup
+

@@ -94,7 +94,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
         return data_list, data_labels, trafo_dict
 
-    def read_net(self, plz: int, kcid: int, bcid: int) -> pp.pandapowerNet:
+    def read_net_db(self, plz: int, kcid: int, bcid: int) -> pp.pandapowerNet:
         """
         Reads a pandapower network from the database for the specified grid.
 
@@ -302,3 +302,12 @@ class AnalysisMixin(BaseMixin, ABC):
         self.cur.execute(query, {"version_id": VERSION_ID, "plz": plz})
         result = self.cur.fetchone()
         return result is not None
+
+    def get_grids_from_plz(self, plz : int) -> pd.DataFrame:
+        grids_query = """SELECT * FROM grid_result
+                        WHERE plz = %(p)s"""
+        params = {"p": plz}
+        grids_df = pd.read_sql_query(grids_query, con=self.conn, params=params)
+        self.logger.debug(f"{len(grids_df)} grid data fetched.")
+
+        return grids_df

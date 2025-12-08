@@ -14,16 +14,8 @@
 
 src/classification/results
 tutorials/.ipynb_checkpoints/
-validation
 log.txt
 log/*.txt
-
-# Ignore all generated plots and images in classification/examples/
-classification/examples/**/*.pdf
-classification/examples/**/*.png
-
-# Ignore all Jupyter Notebook files in classification/examples/
-classification/examples/**/*.ipynb
 
 ### Default .gitignore file for Python projects
 
