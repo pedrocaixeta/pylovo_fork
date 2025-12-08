@@ -60,15 +60,14 @@ PORT = get_required_env_var("PORT", "Database port number")
 PASSWORD = get_required_env_var("PASSWORD", "Database password")
 TARGET_SCHEMA = get_required_env_var("TARGET_SCHEMA", "Target schema name")
 
-# INFDB (external database) connection (optional)
-# USE_INFDB = os.getenv("USE_INFDB", "True").lower() in ["true", "1", "on"]
+# INFDB (external database) connection (recommended)
 USE_INFDB = CONFIG_DATABASE["USE_INFDB"]
 if USE_INFDB:
-    INFDB_DBNAME = get_required_env_var("INFDB_DBNAME", "InfDB database name")
-    INFDB_USER = get_required_env_var("INFDB_USER", "InfDB username")
-    INFDB_HOST = get_required_env_var("INFDB_HOST", "InfDB host address")
-    INFDB_PORT = get_required_env_var("INFDB_PORT", "InfDB port number")
-    INFDB_PASSWORD = get_required_env_var("INFDB_PASSWORD", "InfDB password")
+    INFDB_DBNAME = DBNAME
+    INFDB_USER = DBUSER
+    INFDB_HOST = HOST
+    INFDB_PORT = PORT
+    INFDB_PASSWORD = PASSWORD
     INFDB_SOURCE_SCHEMA = os.getenv("INFDB_SOURCE_SCHEMA", "pylovo_input")
 else:
     INFDB_DBNAME = None
