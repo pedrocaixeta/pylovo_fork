@@ -21,11 +21,7 @@ from pandapower.plotting.plotly import simple_plotly
 from pandapower.topology import create_nxgraph
 from shapely import linestrings
 
-from src.config_loader import (
-    NODE_COLOR_TRAFO,
-    NODE_COLOR_CONSUMER,
-    NODE_COLOR_CONNECTION_BUS
-)
+from src.config_loader import (NODE_COLOR_TRAFO, NODE_COLOR_CONSUMER, NODE_COLOR_CONNECTION_BUS)
 from src.grid_generator import GridGenerator
 
 
@@ -103,14 +99,8 @@ def get_colormap_for_treegraph(networkx_graph: nx.Graph) -> list:
     return color_map
 
 
-def plot_contextily(
-    plz: int,
-    kcid: int,
-    bcid: int,
-    zoomfactor: int = 19,
-    ax: Optional[plt.Axes] = None,
-    figsize: Tuple[int, int] = (8, 8)
-) -> Figure:
+def plot_contextily(plz: int, kcid: int, bcid: int, zoomfactor: int = 19, ax: Optional[plt.Axes] = None,
+        figsize: Tuple[int, int] = (8, 8)) -> Figure:
     """
     Plot a network with all features (cables, buildings, loads, trafo) on a contextily basemap.
 
@@ -147,50 +137,26 @@ def plot_contextily(
     ax.set_yticks([])
 
     # Buildings
-    buildings_gdf = dbc_client.get_geo_df_join(
-        ["gr.version_id", "plz", "kcid", "bcid", "br.*"],
-        "buildings_result br", "grid_result gr",
-        ("br.grid_result_id", "gr.grid_result_id"),
-        plz=int(plz)
-    )
+    buildings_gdf = dbc_client.get_geo_df_join(["gr.version_id", "plz", "kcid", "bcid", "br.*"], "buildings_result br",
+        "grid_result gr", ("br.grid_result_id", "gr.grid_result_id"), plz=int(plz))
     buildings_8_gdf = buildings_gdf[buildings_gdf.bcid == bcid]
     buildings_8_gdf = buildings_8_gdf[buildings_8_gdf.kcid == kcid]
 
     # Cables / lines
-    net.line_gdf = gpd.GeoDataFrame(
-        net.line.copy(),
-        geometry=net.line_geodata.coords.map(linestrings),
-        crs="EPSG:4326"
-    ).to_crs(buildings_8_gdf.crs.to_string())
+    net.line_gdf = gpd.GeoDataFrame(net.line.copy(), geometry=net.line_geodata.coords.map(linestrings),
+        crs="EPSG:4326").to_crs(buildings_8_gdf.crs.to_string())
 
     ax = net.line_gdf.plot(ax=ax, edgecolor="black", linewidth=1, label="Lines")
-    ax = buildings_8_gdf.plot(
-        ax=ax,
-        column="peak_load_in_kw",
-        cmap="YlOrBr",
-        legend=True,
-        legend_kwds={'label': "Peak load in kW"}
-    )
+    ax = buildings_8_gdf.plot(ax=ax, column="peak_load_in_kw", cmap="YlOrBr", legend=True,
+        legend_kwds={'label': "Peak load in kW"})
 
     # Transformer
-    trafo_gdf = dbc_client.get_geo_df_join(
-        ["geom"],
-        "transformer_positions tp", "grid_result gr",
-        ("tp.grid_result_id", "gr.grid_result_id"),
-        plz=int(plz), bcid=bcid
-    )
-    ax.scatter(
-        trafo_gdf.loc[0].geom.x, trafo_gdf.loc[0].geom.y,
-        marker=(5, 0), s=80, color="blue", label="Transformer"
-    )
+    trafo_gdf = dbc_client.get_geo_df_join(["geom"], "transformer_positions tp", "grid_result gr",
+        ("tp.grid_result_id", "gr.grid_result_id"), plz=int(plz), bcid=bcid)
+    ax.scatter(trafo_gdf.loc[0].geom.x, trafo_gdf.loc[0].geom.y, marker=(5, 0), s=80, color="blue", label="Transformer")
 
     # Basemap
-    cx.add_basemap(
-        ax,
-        crs=buildings_8_gdf.crs.to_string(),
-        zoom=zoomfactor,
-        source=cx.providers.OpenStreetMap.Mapnik
-    )
+    cx.add_basemap(ax, crs=buildings_8_gdf.crs.to_string(), zoom=zoomfactor, source=cx.providers.OpenStreetMap.Mapnik)
     ax.legend()
 
     return fig
@@ -214,13 +180,8 @@ def plot_with_generic_coordinates(plz: int, kcid: int, bcid: int) -> None:
     net = read_net_with_grid_generator(plz, kcid, bcid)
     net.bus_geodata.drop(net.bus_geodata.index, inplace=True)
     net.line_geodata.drop(net.line_geodata.index, inplace=True)
-    generic_net = create_generic_coordinates(
-        net,
-        library='igraph',
-        respect_switches=False,
-        overwrite=True,
-        geodata_table='bus_geodata'
-    )
+    generic_net = create_generic_coordinates(net, library='igraph', respect_switches=False, overwrite=True,
+        geodata_table='bus_geodata')
     simple_plotly(generic_net, aspectratio=(1, 1))
 
 
@@ -325,8 +286,7 @@ def hierarchy_pos(G, root=None, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5)
             nextx = xcenter - width / 2 - dx / 2
             for child in children:
                 nextx += dx
-                pos = _hierarchy_pos(G, child, width=dx, vert_gap=vert_gap,
-                                     vert_loc=vert_loc - vert_gap, xcenter=nextx,
+                pos = _hierarchy_pos(G, child, width=dx, vert_gap=vert_gap, vert_loc=vert_loc - vert_gap, xcenter=nextx,
                                      pos=pos, parent=root)
         return pos
 
@@ -480,4 +440,3 @@ def draw_radial_network(G):
     # ax = nx.draw(G, pos=new_pos, node_size=50)
     ax = nx.draw_networkx_nodes(G, pos=new_pos, node_color=color_map, node_size=200)
     plt.show()
-

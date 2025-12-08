@@ -19,20 +19,20 @@ Notes
 - Geographic vs projected coordinates are auto-detected for proximity metrics.
 """
 
-import math
 import json
+import math
 import statistics
 from math import radians
-import pandas as pd
+
 import geopandas as gpd
 import networkx as nx
 import pandapower as pp
-from sklearn.metrics.pairwise import haversine_distances
 import pandapower.topology as top
+from sklearn.metrics.pairwise import haversine_distances
 
 import src.database.database_client as dbc
-from src.config_loader import *
 from src import utils
+from src.config_loader import *
 
 
 class ParameterCalculator:
@@ -54,10 +54,8 @@ class ParameterCalculator:
     - connection_bus_keyword: substring to identify internal connection buses (default: "Connection Nodebus")
     """
 
-    def __init__(self,
-                 keyword_lvbus: str = "LVbus",
-                 keyword_consumer_bus: str = "Consumer Nodebus",
-                 keyword_connection_bus: str = "Connection Nodebus"):
+    def __init__(self, keyword_lvbus: str = "LVbus", keyword_consumer_bus: str = "Consumer Nodebus",
+            keyword_connection_bus: str = "Connection Nodebus"):
         self.dbc = dbc.DatabaseClient()
         self.version_id = VERSION_ID
         # Configurable keywords for bus identification across different datasets
@@ -194,8 +192,8 @@ class ParameterCalculator:
         transformer_mva = self.get_trafo_power(net)
         house_distance_km = self.calc_avg_house_distance(net)
         simultaneous_peak_load_mw = self.get_simultaneous_peak_load(transformer_mva, max_trafo_dis)
-        (max_no_of_households_of_a_branch, resistance, reactance, ratio,
-         max_vsw_of_a_branch,) = self.calc_resistance(net, G)
+        (max_no_of_households_of_a_branch, resistance, reactance, ratio, max_vsw_of_a_branch,) = self.calc_resistance(
+            net, G)
 
         vsw_per_branch = resistance / no_branches if no_branches > 0 else 0.0
 
@@ -415,12 +413,10 @@ class ParameterCalculator:
                 df_vsw.at[index, "path"] = []
                 continue
             try:
-                df_vsw.at[index, "path"] = nx.shortest_path(networkx_graph, source=root,
-                                                            target=house_conn)
+                df_vsw.at[index, "path"] = nx.shortest_path(networkx_graph, source=root, target=house_conn)
             except (nx.NetworkXNoPath, nx.NodeNotFound):
-                self.dbc.logger.warning(
-                    f"No path from LV root {root} to house_connection {house_conn} "
-                    f"for PLZ {self.plz}, kcid {self.kcid}, bcid {self.bcid}. Skipping.")
+                self.dbc.logger.warning(f"No path from LV root {root} to house_connection {house_conn} "
+                                        f"for PLZ {self.plz}, kcid {self.kcid}, bcid {self.bcid}. Skipping.")
                 df_vsw.at[index, "path"] = []
 
         # Branch = first edge leaving the root present in the path
@@ -536,7 +532,7 @@ class ParameterCalculator:
 
         load_count_cat = load_count_cat.assign(
             sim_factor_level1=lambda x: utils.oneSimultaneousLoad(installed_power=1, load_count=x['count'],
-                                                            sim_factor=x['sim_factor']))
+                                                                  sim_factor=x['sim_factor']))
 
         load_count_cat = load_count_cat.assign(sim_load_level1=lambda x: x['max_p_mw'] * x['sim_factor_level1'])
 
@@ -596,9 +592,8 @@ class ParameterCalculator:
             try:
                 length = nx.shortest_path_length(networkx_graph, source=row['source'], target=bus)
             except (nx.NetworkXNoPath, nx.NodeNotFound):
-                self.dbc.logger.warning(
-                    f"No path from LV root {root_bus} to connection bus {bus} for PLZ {self.plz}, "
-                    f"kcid {self.kcid}, bcid {self.bcid}. Skipping bus in ordering.")
+                self.dbc.logger.warning(f"No path from LV root {root_bus} to connection bus {bus} for PLZ {self.plz}, "
+                                        f"kcid {self.kcid}, bcid {self.bcid}. Skipping bus in ordering.")
                 length = 0
             len_path_list.append(length)
         df_connection_bus['len_to_trafo_in_graph'] = len_path_list
@@ -612,7 +607,8 @@ class ParameterCalculator:
             connected_upstream = net_line_with_sim_factor[net_line_with_sim_factor['to_bus'] == furthest_connection_bus]
             upstream_index = connected_upstream.index
             if len(upstream_index) == 0:
-                connected_upstream = net_line_with_sim_factor[net_line_with_sim_factor['from_bus'] == furthest_connection_bus]
+                connected_upstream = net_line_with_sim_factor[
+                    net_line_with_sim_factor['from_bus'] == furthest_connection_bus]
                 upstream_index = connected_upstream.index
                 if len(upstream_index) == 0:
                     self.dbc.logger.warning(
@@ -653,11 +649,10 @@ class ParameterCalculator:
                                            net_line_with_sim_factor.at[upstream_index[0], 'load_public_mw'] + \
                                            net_line_with_sim_factor.at[upstream_index[0], 'load_residential_mw']
             if peak_load_all_consumer_types == 0:
-                net_line_with_sim_factor.at[
-                    upstream_index[0], 'sim_factor_cumulated'] = 0
+                net_line_with_sim_factor.at[upstream_index[0], 'sim_factor_cumulated'] = 0
             else:
                 net_line_with_sim_factor.at[upstream_index[0], 'sim_factor_cumulated'] = (
-                            net_line_with_sim_factor.at[upstream_index[0], 'sim_load'] / peak_load_all_consumer_types)
+                        net_line_with_sim_factor.at[upstream_index[0], 'sim_load'] / peak_load_all_consumer_types)
 
         return net_line_with_sim_factor
 
@@ -811,10 +806,10 @@ class ParameterCalculator:
 
                 sim_peak_load = 0
                 for building_type, sum_load, house_num in zip(["Residential", "Public", "Commercial"],
-                                                               [residential_sum_load, public_sum_load,
-                                                                commercial_sum_load],
-                                                               [residential_house_num, public_house_num,
-                                                                commercial_house_num], ):
+                                                              [residential_sum_load, public_sum_load,
+                                                               commercial_sum_load],
+                                                              [residential_house_num, public_house_num,
+                                                               commercial_house_num], ):
                     if house_num:
                         sim_peak_load += utils.oneSimultaneousLoad(installed_power=sum_load, load_count=house_num,
                                                                    sim_factor=SIM_FACTOR[building_type], )
