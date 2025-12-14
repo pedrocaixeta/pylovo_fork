@@ -7,22 +7,59 @@ from src.electrical_backend.component_specs import BusSpec, TransformerSpec, Lin
 from src.config_loader import VN, V_BAND_LOW, VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM
 from src.config_loader import VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM, SMALL_LOAD_THRESHOLD_KW
 from src.config_loader import VOLTAGE_DROP_DISTRIBUTION_PERCENT
+from src.utils import oneSimultaneousLoad
 
 
 class CableInstaller:
     """Handles cable installation for electrical grids using backend abstraction."""
 
-    def __init__(self, backend: IElectricalBackend, dbc, logger):
+    def __init__(self, backend: IElectricalBackend, dbc, logger, cables: list):
         """Initialize cable installer.
 
         Args:
             backend: Electrical backend instance (e.g., PandapowerBackend)
             dbc: Database client for accessing grid data
             logger: Logger instance
+            cables: List of cable tuples from database (name, r_ohm_per_km, x_ohm_per_km, max_i_ka)
         """
         self.backend = backend
         self.dbc = dbc
         self.logger = logger
+
+        # Cache cable data from database as DataFrame (single source of truth)
+        self._cable_df = self._build_cable_dataframe(cables)
+
+    @staticmethod
+    def _build_cable_dataframe(cables: list) -> pd.DataFrame:
+        """Build cable DataFrame from database tuples.
+
+        Normalizes cable names to underscore format (e.g., "NAYY_4_120")
+        which is compatible with both pandapower and OpenDSS backends.
+
+        Args:
+            cables: List of tuples (name, r_ohm_per_km, x_ohm_per_km, max_i_ka)
+
+        Returns:
+            DataFrame indexed by normalized cable name with electrical properties
+        """
+        from src.electrical_backend.component_specs import normalize_cable_name
+        cable_data = {}
+        for name, r_ohm, x_ohm, max_i_ka in cables:
+            normalized_name = normalize_cable_name(name)
+
+            try:
+                q_mm2 = int(name.split("_")[-1])
+            except (ValueError, IndexError):
+                q_mm2 = 0
+
+            cable_data[normalized_name] = {
+                'r_ohm_per_km': float(r_ohm),
+                'x_ohm_per_km': float(x_ohm),
+                'max_i_ka': float(max_i_ka),
+                'q_mm2': q_mm2
+            }
+
+        return pd.DataFrame.from_dict(cable_data, orient="index")
 
     def create_lvmv_bus(self, plz: int, kcid: int, bcid: int) -> None:
         """Create LV and MV buses."""
@@ -48,7 +85,7 @@ class CableInstaller:
             name="MV-LV Busbar",
             bus1="MVbus 1",
             bus2="LVbus 1",
-            cable_name="NAYY 4x150 SE",
+            cable_name="NAYY_4_185",
             length_km=0.001,
             parallel=1,
             coordinates=[mv_geodata, lv_geodata]
@@ -84,8 +121,8 @@ class CableInstaller:
             parallel=parallel
         )
 
-        trafo_idx = self.backend.create_component(trafo_spec)
-        self.backend.net.trafo.at[trafo_idx, "sn_mva"] = transformer_rated_power * 1e-3
+        self.backend.create_component(trafo_spec)
+        self.backend.set_transformer_rating(trafo_spec.name, transformer_rated_power * 1e-3)
 
     def create_connection_bus(self, connection_nodes: list):
         """Create connection buses."""
@@ -101,11 +138,17 @@ class CableInstaller:
     def create_consumer_bus_and_load(self, consumer_list: list, load_units: dict,
                                      load_type: dict, building_df: pd.DataFrame,
                                      consumer_categories: pd.DataFrame) -> None:
-        """Create consumer buses and loads."""
+        """Create consumer buses and loads with simultaneity-adjusted power.
+
+        Applies Kerber formula per building to calculate simultaneous load.
+        """
+        DEFAULT_POWER_FACTOR = 0.95  # cos(phi) for residential loads
+
         for consumer in consumer_list:
             node_geodata = self.dbc.get_node_geom(consumer)
             ltype = load_type[consumer]
 
+            # Get peak load per household
             if ltype in ["SFH", "MFH", "AB", "TH"]:
                 peak_load = consumer_categories.loc[
                     consumer_categories["definition"] == ltype, "peak_load"
@@ -113,24 +156,40 @@ class CableInstaller:
             else:
                 peak_load = building_df[building_df["vertice_id"] == consumer]["peak_load_in_kw"].tolist()[0]
 
+            # Get simultaneity factor for this building type
+            sim_factor_row = consumer_categories.loc[
+                consumer_categories["definition"] == ltype, "sim_factor"
+            ]
+            sim_factor = sim_factor_row.values[0] if len(sim_factor_row) > 0 else 0.07
+
+            # Calculate simultaneous load using Kerber formula (per building)
+            num_households = load_units[consumer]
+            total_installed_kw = peak_load * num_households
+            simultaneous_load_kw = oneSimultaneousLoad(total_installed_kw, num_households, sim_factor)
+
+            # Calculate reactive power from power factor
+            phi = np.arccos(DEFAULT_POWER_FACTOR)
+            kvar = simultaneous_load_kw * np.tan(phi)
+
+            # Create bus
             bus_spec = BusSpec(
                 name=f"Consumer Nodebus {consumer}",
                 voltage_kv=VN * 1e-3,
                 coordinates=node_geodata,
                 zone=ltype
             )
-            bus_idx = self.backend.create_component(bus_spec)
-            self.backend.net.bus.at[bus_idx, "zone"] = ltype
-            # TODO: kw & kvar should be calculated based on the simultaneous load from the transformer / N consumers
-            for j in range(1, load_units[consumer] + 1):
-                load_spec = LoadSpec(
-                    name=f"Load {consumer} household {j}",
-                    bus=f"Consumer Nodebus {consumer}",
-                    kw=0,
-                    kvar=0,
-                    max_p_mw=peak_load * 1e-3,
-                )
-                self.backend.create_component(load_spec)
+            self.backend.create_component(bus_spec)
+            self.backend.set_bus_zone(bus_spec.name, ltype)
+
+            # Create one aggregated load per building with simultaneous load
+            load_spec = LoadSpec(
+                name=f"Load {consumer}",
+                bus=f"Consumer Nodebus {consumer}",
+                kw=simultaneous_load_kw,
+                kvar=kvar,
+                max_p_mw=total_installed_kw * 1e-3,
+            )
+            self.backend.create_component(load_spec)
 
     def install_consumer_cables(self, plz: int, bcid: int, kcid: int,
                                 branch_deviation: float, branch_node_list: list,
@@ -138,6 +197,10 @@ class CableInstaller:
                                 connection_available_cables: list[str],
                                 local_length_dict: dict) -> dict:
         """Install consumer connection cables."""
+        # Normalize cable names from config to match internal format
+        from src.electrical_backend.component_specs import normalize_cable_name
+        connection_available_cables = [normalize_cable_name(c) for c in connection_available_cables]
+
         consumer_list = self.dbc.get_vertices_from_connection_points(branch_node_list)
         branch_consumer_list = [n for n in consumer_list if n in vertices_dict.keys()]
 
@@ -152,14 +215,14 @@ class CableInstaller:
             end_node_geodata = self.dbc.get_node_geom(end_vid)
             line_geodata = [start_node_geodata, end_node_geodata]
 
-            cost_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
+            length_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
             count = 1
             sim_load = Pd[end_vid]
             Imax = sim_load * 1e-3 / (VN * V_BAND_LOW * np.sqrt(3))
 
             voltage_available_cables_df = None
+            line_df = self._cable_df
             while True:
-                line_df = pd.DataFrame.from_dict(self.backend.net.std_types["line"], orient="index")
                 current_available_cables_df = line_df[
                     (line_df["max_i_ka"] >= Imax / count) & (line_df.index.isin(connection_available_cables))
                 ]
@@ -180,7 +243,7 @@ class CableInstaller:
 
                 voltage_available_cables_df = current_available_cables_df[
                     current_available_cables_df["cable_impedence"] <=
-                    voltage_drop_limit / (Imax * cost_km / count)
+                    voltage_drop_limit / (Imax * length_km / count)
                 ]
 
                 if len(voltage_available_cables_df) == 0:
@@ -190,14 +253,14 @@ class CableInstaller:
                     break
 
             cable = voltage_available_cables_df.sort_values(by=["q_mm2"]).index.tolist()[0]
-            local_length_dict[cable] += count * cost_km
+            local_length_dict[cable] += count * length_km
 
             line_spec = LineSpec(
                 name=f"Line to {end_vid}",
                 bus1=f"Connection Nodebus {start_vid}",
                 bus2=f"Consumer Nodebus {end_vid}",
                 cable_name=cable,
-                length_km=cost_km,
+                length_km=length_km,
                 parallel=count,
                 coordinates=line_geodata,
             )
@@ -207,9 +270,9 @@ class CableInstaller:
             self.dbc.insert_lines(
                 geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
                 std_type=cable,
-                from_bus=self.backend._get_bus_index(f"Connection Nodebus {start_vid}"),
-                to_bus=self.backend._get_bus_index(f"Consumer Nodebus {end_vid}"),
-                length_km=cost_km
+                from_bus=start_vid,
+                to_bus=end_vid,
+                length_km=length_km
             )
 
         return local_length_dict
@@ -218,9 +281,9 @@ class CableInstaller:
         """Find the smallest cable that meets requirements."""
         count = 1
         cable = None
+        line_df = self._cable_df
 
         while True:
-            line_df = pd.DataFrame.from_dict(self.backend.net.std_types["line"], orient="index")
             current_available_cables = line_df[(line_df["max_i_ka"] >= Imax / count)]
 
             if len(current_available_cables) == 0:
@@ -252,26 +315,29 @@ class CableInstaller:
 
     def create_line_ont_to_lv_bus(self, plz: int, bcid: int, kcid: int,
                                    branch_start_node: int, branch_deviation: float,
-                                   cable: str, count: int):
+                                   cable: str, count: int, ont_vertice: int):
         """Create line from transformer to connection node."""
         end_vid = branch_start_node
         node_geodata = self.dbc.get_node_geom(end_vid)
         node_geodata = (float(node_geodata[0]) + 5 * 1e-6 * branch_deviation,
                         float(node_geodata[1]) + 5 * 1e-6 * branch_deviation)
 
-        lvbus_geodata = (
-            self.backend.net.bus_geodata.loc[self.backend._get_bus_index("LVbus 1"), "x"] + 5 * 1e-6 * branch_deviation,
-            self.backend.net.bus_geodata.loc[self.backend._get_bus_index("LVbus 1"), "y"]
-        )
+        coords = self.backend.get_bus_coordinates("LVbus 1")
+        if coords:
+            lvbus_geodata = (coords[0] + 5 * 1e-6 * branch_deviation, coords[1])
+        else:
+            lv_geodata = self.dbc.get_ont_geom_from_bcid(plz, kcid, bcid)
+            lvbus_geodata = (float(lv_geodata[0]) + 5 * 1e-6 * branch_deviation, float(lv_geodata[1]))
         line_geodata = [lvbus_geodata, node_geodata]
-        cost_km = 0
+        # When branch starts at transformer, use 1 meter minimum to avoid zero-impedance
+        length_km = 0.001
 
         line_spec = LineSpec(
             name=f"Line to {end_vid}",
             bus1="LVbus 1",
             bus2=f"Connection Nodebus {end_vid}",
             cable_name=cable,
-            length_km=cost_km,
+            length_km=length_km,
             parallel=count,
             coordinates=line_geodata,
         )
@@ -281,9 +347,9 @@ class CableInstaller:
         self.dbc.insert_lines(
             geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
             std_type=cable,
-            from_bus=self.backend._get_bus_index("LVbus 1"),
-            to_bus=self.backend._get_bus_index(f"Connection Nodebus {end_vid}"),
-            length_km=cost_km
+            from_bus=ont_vertice,  # Use vertex ID directly (backend-agnostic)
+            to_bus=end_vid,
+            length_km=length_km
         )
 
     def create_line_start_to_lv_bus(self, plz: int, bcid: int, kcid: int,
@@ -300,22 +366,25 @@ class CableInstaller:
                             float(node_geodata[1]) + 5 * 1e-6 * branch_deviation)
             line_geodata.append(node_geodata)
 
-        lvbus_geodata = (
-            self.backend.net.bus_geodata.loc[self.backend._get_bus_index("LVbus 1"), "x"] + 5 * 1e-6 * branch_deviation,
-            self.backend.net.bus_geodata.loc[self.backend._get_bus_index("LVbus 1"), "y"]
-        )
+        coords = self.backend.get_bus_coordinates("LVbus 1")
+        if coords:
+            lvbus_geodata = (coords[0] + 5 * 1e-6 * branch_deviation, coords[1])
+        else:
+            # Fallback to database (for backends without geodata)
+            lv_geodata = self.dbc.get_ont_geom_from_bcid(plz, kcid, bcid)
+            lvbus_geodata = (float(lv_geodata[0]) + 5 * 1e-6 * branch_deviation, float(lv_geodata[1]))
         line_geodata.append(lvbus_geodata)
         line_geodata.reverse()
 
-        cost_km = vertices_dict[branch_start_node] * 1e-3
-        length = count * cost_km
+        length_km = vertices_dict[branch_start_node] * 1e-3
+        length = count * length_km
 
         line_spec = LineSpec(
             name=f"Line to {branch_start_node}",
             bus1="LVbus 1",
             bus2=f"Connection Nodebus {branch_start_node}",
             cable_name=cable,
-            length_km=cost_km,
+            length_km=length_km,
             parallel=count,
             coordinates=line_geodata,
         )
@@ -325,19 +394,21 @@ class CableInstaller:
         self.dbc.insert_lines(
             geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
             std_type=cable,
-            from_bus=self.backend._get_bus_index("LVbus 1"),
-            to_bus=self.backend._get_bus_index(f"Connection Nodebus {branch_start_node}"),
-            length_km=cost_km
+            from_bus=ont_vertice,  # Use vertex ID directly (backend-agnostic)
+            to_bus=branch_start_node,
+            length_km=length_km
         )
 
         return length
 
     def deviate_bus_geodata(self, branch_node_list: list, branch_deviation: float):
-        """Update bus geodata for visualization."""
+        """Update bus geodata for visualization (no-op for backends without geodata)."""
+        offset = 5 * 1e-6 * branch_deviation
         for node in branch_node_list:
-            bus_idx = self.backend._get_bus_index(f"Connection Nodebus {node}")
-            self.backend.net.bus_geodata.at[bus_idx, "x"] += (5 * 1e-6 * branch_deviation)
-            self.backend.net.bus_geodata.at[bus_idx, "y"] += (5 * 1e-6 * branch_deviation)
+            bus_name = f"Connection Nodebus {node}"
+            coords = self.backend.get_bus_coordinates(bus_name)
+            if coords:
+                self.backend.set_bus_coordinates(bus_name, coords[0] + offset, coords[1] + offset)
 
     def create_line_node_to_node(self, plz: int, kcid: int, bcid: int,
                                   branch_node_list: list, branch_deviation: float,
@@ -363,15 +434,15 @@ class CableInstaller:
                                 float(node_geodata[1]) + 5 * 1e-6 * branch_deviation)
                 line_geodata.append(node_geodata)
 
-            cost_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
-            local_length_dict[cable] += count * cost_km
+            length_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
+            local_length_dict[cable] += count * length_km
 
             line_spec = LineSpec(
                 name=f"Line to {end_vid}",
                 bus1=f"Connection Nodebus {start_vid}",
                 bus2=f"Connection Nodebus {end_vid}",
                 cable_name=cable,
-                length_km=cost_km,
+                length_km=length_km,
                 parallel=count,
                 coordinates=line_geodata,
             )
@@ -381,9 +452,9 @@ class CableInstaller:
             self.dbc.insert_lines(
                 geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
                 std_type=cable,
-                from_bus=self.backend._get_bus_index(f"Connection Nodebus {start_vid}"),
-                to_bus=self.backend._get_bus_index(f"Connection Nodebus {end_vid}"),
-                length_km=cost_km
+                from_bus=start_vid,  # Use vertex ID directly (backend-agnostic)
+                to_bus=end_vid,
+                length_km=length_km
             )
 
         return local_length_dict

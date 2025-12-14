@@ -65,7 +65,7 @@ class GridGenerator:
         try:
             self.generate_grid()
             self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
-            # self.dbc.commit_changes()
+            self.dbc.commit_changes()
             if analyze_grids:
                 pc = ParameterCalculator()
                 pc.calc_parameters_per_plz(plz=self.plz)
@@ -809,16 +809,21 @@ class GridGenerator:
             backend = create_backend(ELECTRICAL_BACKEND, logger=self.logger)
             circuit_name = f"PLZ{self.plz}_kcid{kcid}_bcid{bcid}"
             backend.initialize_circuit(name=circuit_name, source_bus="MVbus 1", primary_kv=20.0)
+            # Fetch cables once from database (single source of truth)
+            cables = self.dbc.fetch_cables()
 
             # Register cable types from equipment data
-            backend.register_cable_types(self.dbc.fetch_cables())
+            backend.register_cable_types(cables)
 
-            # Get all available cable types for main distribution
-            all_available_cables = list(backend.net.std_types["line"].keys())
+            # Get available cable
+            all_available_cables = backend.get_cable_types()
+            if not all_available_cables:
+                all_available_cables = [cable[0] for cable in cables]
+
             local_length_dict = {c: 0 for c in all_available_cables}
 
             # Create cable installer
-            installer = CableInstaller(backend, self.dbc, self.logger)
+            installer = CableInstaller(backend, self.dbc, self.logger, cables)
             
             # Create network components
             installer.create_lvmv_bus(self.plz, kcid, bcid)
@@ -826,9 +831,10 @@ class GridGenerator:
             installer.create_connection_bus(connection_nodes)
             installer.create_consumer_bus_and_load(consumer_list, load_units, load_type, buildings_df, CONSUMER_CATEGORIES)
 
+            trafo_power = self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)
             self.logger.info(
-                f"Backend network initialized (buses={len(backend.net.bus)}, loads={len(backend.net.load)}, "
-                f"transformer_rated_power={self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)} kVA)"
+                f"Backend network initialized (buses={backend.get_component_count('buses')}, "
+                f"loads={backend.get_component_count('loads')}, transformer_rated_power={trafo_power} kVA)"
             )
 
             # Install cables branch by branch (same logic as original)
@@ -856,7 +862,7 @@ class GridGenerator:
                     if connection_node_list[0] == ont_vertice:
                         cable, count = installer.find_minimal_available_cable(Imax)
                         installer.create_line_ont_to_lv_bus(
-                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation, cable, count
+                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation, cable, count, ont_vertice
                         )
                     else:
                         cable, count = installer.find_minimal_available_cable(
@@ -905,7 +911,7 @@ class GridGenerator:
                 branch_start_node = branch_node_list[-1]
                 if branch_start_node == ont_vertice:
                     installer.create_line_ont_to_lv_bus(
-                        self.plz, bcid, kcid, branch_start_node, branch_deviation, cable, count
+                        self.plz, bcid, kcid, branch_start_node, branch_deviation, cable, count, ont_vertice
                     )
                     self.logger.debug(
                         f"Branch {branch_index} connected directly to transformer (cable={cable}, parallels={count})."
@@ -935,8 +941,10 @@ class GridGenerator:
                 cable_summary = ", ".join([f"{k}:{v:.3f} km" for k, v in sorted(used_cables.items(), key=lambda x: -x[1])])
             else:
                 cable_summary = "no cables installed"
+
+            lines_count = backend.get_component_count('lines')
             self.logger.info(
-                f"Finished cluster kcid={kcid}, bcid={bcid}: branches={branch_index}, lines={len(backend.net.line)}, "
+                f"Finished cluster kcid={kcid}, bcid={bcid}: branches={branch_index}, lines={lines_count}, "
                 f"total_length={total_length:.3f} km ({cable_summary})"
             )
 
@@ -956,8 +964,18 @@ class GridGenerator:
 
     def save_net(self, backend: IElectricalBackend, kcid, bcid):
         """
-        Save grid to file and database using backend pattern.
+        Validate and save grid to file and database using backend pattern.
         """
+        # Validate grid with power flow before saving
+        try:
+            converged = backend.solve_power_flow()
+            if converged:
+                self.logger.info(f"✓ Power flow converged for kcid={kcid}, bcid={bcid}")
+            else:
+                self.logger.warning(f"⚠ Power flow did NOT converge for kcid={kcid}, bcid={bcid}")
+        except Exception as e:
+            self.logger.warning(f"⚠ Power flow failed for kcid={kcid}, bcid={bcid}: {e}")
+
         if SAVE_GRID_FOLDER:
             savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
             savepath_folder.mkdir(parents=True, exist_ok=True)
