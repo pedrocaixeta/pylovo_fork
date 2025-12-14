@@ -26,6 +26,15 @@ def __getattr__(name: str):
             "PandapowerBackend": PandapowerBackend,
             "PandapowerBackendError": PandapowerBackendError,
         }[name]
+
+    if name in {"OpenDSSBackend", "OpenDSSBackendError"}:
+        from .opendss_backend import OpenDSSBackend, OpenDSSBackendError
+
+        return {
+            "OpenDSSBackend": OpenDSSBackend,
+            "OpenDSSBackendError": OpenDSSBackendError,
+        }[name]
+
     raise AttributeError(f"module 'electrical_backend' has no attribute {name!r}")
 
 
@@ -41,4 +50,6 @@ __all__ = [
     "available_backends",
     "PandapowerBackend",
     "PandapowerBackendError",
+    "OpenDSSBackend",
+    "OpenDSSBackendError",
 ]
