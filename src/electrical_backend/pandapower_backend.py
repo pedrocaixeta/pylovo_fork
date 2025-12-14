@@ -24,10 +24,14 @@ class PandapowerBackend(IElectricalBackend):
     """
 
     def __init__(self, logger: Optional[logging.Logger] = None):
+        """
+        Initialize pandapower backend.
+        Args:
+            logger: Optional logger instance
+        """
         self.logger = logger or logging.getLogger(__name__)
         self.net = None
         self._circuit_name = None
-        # Bus name to index mapping for faster lookups
         self._bus_cache: Dict[str, int] = {}
 
     def initialize_circuit(
@@ -42,7 +46,6 @@ class PandapowerBackend(IElectricalBackend):
             primary_kv: MV voltage level in kV (typically 20kV)
         """
         try:
-            # Create empty pandapower network
             self.net = pp.create_empty_network(name=name)
             self._circuit_name = name
             self._bus_cache = {}
@@ -111,7 +114,7 @@ class PandapowerBackend(IElectricalBackend):
             zone=zone
         )
         self._bus_cache[spec.name] = bus_idx
-        self.logger.debug(f"Created bus: {spec.name} ({spec.voltage_kv}kV)")
+        self.logger.debug(f"Created bus: {spec.name} (vn={spec.voltage_kv}kV)")
         return bus_idx
 
     def _create_transformer(self, spec: TransformerSpec) -> int:
@@ -134,7 +137,7 @@ class PandapowerBackend(IElectricalBackend):
             parallel=spec.parallel
         )
 
-        self.logger.debug(f"Created transformer: {spec.name} ({spec.kva}kVA)")
+        self.logger.debug(f"Created transformer: {spec.name} (kva={spec.kva})")
         return trafo_idx
 
     def _create_line(self, spec: LineSpec) -> int:
@@ -144,7 +147,7 @@ class PandapowerBackend(IElectricalBackend):
         to_bus = self._get_bus_index(spec.bus2)
 
         # Use cable name as standard type (must be registered first)
-        std_type = spec.cable_name if spec.cable_name else "NAYY 4x150 SE"
+        std_type = spec.cable_name if spec.cable_name else "NAYY_4_150"
 
         line_idx = pp.create_line(
             self.net,
@@ -158,7 +161,7 @@ class PandapowerBackend(IElectricalBackend):
         )
 
         self.logger.debug(
-            f"Created line: {spec.name} ({spec.length_km:.3f}km, {std_type})"
+            f"Created line: {spec.name} (length={spec.length_km:.3f}km, type={std_type})"
         )
         return line_idx
 
@@ -179,7 +182,7 @@ class PandapowerBackend(IElectricalBackend):
         )
 
         self.logger.debug(
-            f"Created load: {spec.name} ({spec.kw:.1f}kW, {spec.kvar:.1f}kvar)"
+            f"Created load: {spec.name} (kw={spec.kw:.1f}, kvar={spec.kvar:.1f})"
         )
         return load_idx
 
@@ -222,15 +225,16 @@ class PandapowerBackend(IElectricalBackend):
             cables: List with cable specifications from database
         """
         # Create standard type for each cable in the database
+        from .component_specs import normalize_cable_name
         for cable in cables:
             name, r_ohm_per_km, x_ohm_per_km, max_i_ka = cable
-            pp_name = name.replace('_', ' ')  # Extract name
+            normalized = normalize_cable_name(name)
             q_mm2 = int(name.split("_")[-1])  # Extract cross-section from name
 
             pp.create_std_type(self.net,
                 {"r_ohm_per_km": float(r_ohm_per_km), "x_ohm_per_km": float(x_ohm_per_km), "max_i_ka": float(max_i_ka),
                     "c_nf_per_km": float(0),  # Set to zero for our standard grids
-                    "q_mm2": q_mm2}, name=pp_name, element="line", )
+                    "q_mm2": q_mm2}, name=normalized, element="line", )
 
         self.logger.debug(f"Created {len(cables)} standard cable types from equipment_data table")
         return None
@@ -263,9 +267,12 @@ class PandapowerBackend(IElectricalBackend):
             self.logger.error(f"Power flow failed: {e}")
             return False
 
-    def export_to_format(self,filename: Optional[str] = None) -> str:
+    def export_to_format(self, filename: Optional[str] = None) -> str:
         """
         Export circuit to JSON format.
+
+        Args:
+            filename: If provided, save to this file path. If None, return JSON string only.
 
         Returns:
             JSON string representation of pandapower network
@@ -276,8 +283,17 @@ class PandapowerBackend(IElectricalBackend):
             )
 
         try:
-            json_str = pp.to_json(self.net, filename=filename)
-            self.logger.info("✓ Exported to JSON")
+            if filename:
+                # pp.to_json returns None when filename is provided
+                pp.to_json(self.net, filename=filename)
+                # Read back to return the string as required by interface
+                with open(filename, 'r') as f:
+                    json_str = f.read()
+                self.logger.info(f"✓ Exported to JSON file: {filename}")
+            else:
+                json_str = pp.to_json(self.net)
+                self.logger.info("✓ Exported to JSON")
+
             return json_str
 
         except Exception as e:
@@ -338,3 +354,109 @@ class PandapowerBackend(IElectricalBackend):
             metrics["total_losses_mw"] = total_losses_mw
 
         return metrics
+
+    # =========================================================================
+    # Query Methods - Read data from backend
+    # =========================================================================
+
+    def get_cable_types(self) -> list[str]:
+        """Get all registered cable type names."""
+        if self.net is None:
+            return []
+        return list(self.net.std_types.get("line", {}).keys())
+
+    def get_component_count(self, component_type: str) -> int:
+        """
+        Get component count by type.
+
+        Args:
+            component_type: One of 'buses', 'lines', 'loads', 'transformers'
+
+        Returns:
+            Number of components of the specified type
+        """
+        if self.net is None:
+            return 0
+        type_map = {
+            "buses": "bus",
+            "lines": "line",
+            "loads": "load",
+            "transformers": "trafo",
+        }
+        df_name = type_map.get(component_type, component_type)
+        df = getattr(self.net, df_name, None)
+        return len(df) if df is not None else 0
+
+    def get_bus_coordinates(self, bus_name: str) -> tuple[float, float] | None:
+        """
+        Get bus geographic coordinates.
+
+        Args:
+            bus_name: Name of the bus
+
+        Returns:
+            Tuple of (x, y) coordinates, or None if not available
+        """
+        if self.net is None or self.net.bus_geodata.empty:
+            return None
+        try:
+            bus_idx = self._get_bus_index(bus_name)
+        except ValueError:
+            return None
+        if bus_idx not in self.net.bus_geodata.index:
+            return None
+        row = self.net.bus_geodata.loc[bus_idx]
+        return (float(row["x"]), float(row["y"]))
+
+    # =========================================================================
+    # Update Methods - Modify existing components
+    # =========================================================================
+
+    def set_bus_coordinates(self, bus_name: str, x: float, y: float) -> None:
+        """
+        Set bus geographic coordinates.
+
+        Args:
+            bus_name: Name of the bus
+            x: X coordinate
+            y: Y coordinate
+        """
+        if self.net is None:
+            return
+        try:
+            bus_idx = self._get_bus_index(bus_name)
+        except ValueError:
+            return
+        self.net.bus_geodata.at[bus_idx, "x"] = x
+        self.net.bus_geodata.at[bus_idx, "y"] = y
+
+    def set_bus_zone(self, bus_name: str, zone: str) -> None:
+        """
+        Set bus zone attribute.
+
+        Args:
+            bus_name: Name of the bus
+            zone: Zone identifier string
+        """
+        if self.net is None:
+            return
+        try:
+            bus_idx = self._get_bus_index(bus_name)
+        except ValueError:
+            return
+        self.net.bus.at[bus_idx, "zone"] = zone
+
+    def set_transformer_rating(self, trafo_name: str, rating_mva: float) -> None:
+        """
+        Set transformer rated power.
+
+        Args:
+            trafo_name: Name of the transformer
+            rating_mva: Rated power in MVA
+        """
+        if self.net is None:
+            return
+        trafo_df = self.net.trafo[self.net.trafo["name"] == trafo_name]
+        if not trafo_df.empty:
+            trafo_idx = trafo_df.index[0]
+            self.net.trafo.at[trafo_idx, "sn_mva"] = rating_mva
