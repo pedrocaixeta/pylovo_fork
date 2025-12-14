@@ -33,7 +33,7 @@ Any backend implementation MUST:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class IElectricalBackend(ABC):
@@ -91,12 +91,15 @@ class IElectricalBackend(ABC):
         """
 
     @abstractmethod
-    def export_to_format(self) -> Dict[str, Any]:
+    def export_to_format(self, filename: Optional[str] = None) -> str:
         """
-        Export circuit to configured format.
+        Export circuit to JSON format.
+
+        Args:
+            filename: If provided, save to this file path. If None, return JSON string only.
 
         Returns:
-            Dictionary containing the exported circuit data
+            JSON string representation of the circuit
         """
 
     @abstractmethod
@@ -110,4 +113,94 @@ class IElectricalBackend(ABC):
 
         Returns:
             Dictionary with circuit performance metrics
+        """
+
+    # =========================================================================
+    # Query Methods - Read data from backend
+    # =========================================================================
+
+    @abstractmethod
+    def register_cable_types(self, cables: list) -> None:
+        """
+        Register cable equipment types from database tuples.
+
+        Args:
+            cables: List of tuples (name, r_ohm_per_km, x_ohm_per_km, max_i_ka)
+        """
+
+    @abstractmethod
+    def get_cable_types(self) -> list[str]:
+        """
+        Get list of all registered cable type names.
+
+        Returns:
+            List of cable type names available in the backend
+        """
+
+    @abstractmethod
+    def get_component_count(self, component_type: str) -> int:
+        """
+        Get count of components by type.
+
+        Args:
+            component_type: One of 'buses', 'lines', 'loads', 'transformers'
+
+        Returns:
+            Number of components of the specified type
+        """
+
+    @abstractmethod
+    def get_bus_coordinates(self, bus_name: str) -> tuple[float, float] | None:
+        """
+        Get bus geographic coordinates.
+
+        Args:
+            bus_name: Name of the bus
+
+        Returns:
+            Tuple of (x, y) coordinates, or None if not available
+        """
+
+    # =========================================================================
+    # Update Methods - Modify existing components
+    # =========================================================================
+
+    @abstractmethod
+    def set_bus_coordinates(self, bus_name: str, x: float, y: float) -> None:
+        """
+        Set bus geographic coordinates.
+
+        Args:
+            bus_name: Name of the bus
+            x: X coordinate
+            y: Y coordinate
+
+        Note:
+            No-op for backends without geodata support (e.g., OpenDSS)
+        """
+
+    @abstractmethod
+    def set_bus_zone(self, bus_name: str, zone: str) -> None:
+        """
+        Set bus zone attribute.
+
+        Args:
+            bus_name: Name of the bus
+            zone: Zone identifier string
+
+        Note:
+            No-op for backends without zone support (e.g., OpenDSS)
+        """
+
+    @abstractmethod
+    def set_transformer_rating(self, trafo_name: str, rating_mva: float) -> None:
+        """
+        Set transformer rated power.
+
+        Args:
+            trafo_name: Name of the transformer
+            rating_mva: Rated power in MVA
+
+        Note:
+            No-op for backends that set rating at creation (e.g., OpenDSS)
         """

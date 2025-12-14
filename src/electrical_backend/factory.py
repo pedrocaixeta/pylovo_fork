@@ -26,6 +26,16 @@ def _pandapower_ctor(logger: Optional[object]) -> IElectricalBackend:
 register_backend("pandapower", _pandapower_ctor)
 
 
+def _opendss_ctor(logger: Optional[object]) -> IElectricalBackend:
+    # Lazy import to avoid importing altdss unless needed
+    from .opendss_backend import OpenDSSBackend
+
+    return OpenDSSBackend(logger=logger)
+
+
+register_backend("opendss", _opendss_ctor)
+
+
 def create_backend(
     backend_name: str = "pandapower", logger: Optional[object] = None
 ) -> IElectricalBackend:

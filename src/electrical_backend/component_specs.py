@@ -6,6 +6,25 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 
+def normalize_cable_name(name: str) -> str:
+    """
+    Normalize cable name to canonical underscore format.
+
+    SINGLE SOURCE OF TRUTH for cable name normalization.
+    Canonical format: NAYY_4_120 (underscores, no 'x', no 'SE')
+
+    Examples:
+        "NAYY 4x120 SE" -> "NAYY_4_120"
+        "NAYY 4 120"    -> "NAYY_4_120"
+        "NAYY_4_120"    -> "NAYY_4_120"
+    """
+    import re
+    normalized = name.replace(' ', '_')
+    normalized = re.sub(r'(\d)x(\d)', r'\1_\2', normalized)
+    normalized = re.sub(r'_?SE$', '', normalized)
+    return normalized
+
+
 @dataclass
 class ComponentSpec:
     """Base class for all component specifications."""
@@ -57,7 +76,7 @@ class LineSpec(ComponentSpec):
     """
     bus1: str = ""  # From bus name
     bus2: str = ""  # To bus name
-    cable_name: str = ""  # Cable type from equipment_data (e.g. "NAYY 4x150 SE")
+    cable_name: str = ""  # Cable type from equipment_data (e.g. "NAYY_4_150")
     length_km: float = 0.0  # Cable length in km
     parallel: int = 1  # Number of parallel cables
     coordinates: Optional[list] = None  # Line geometry for visualization
