@@ -762,7 +762,7 @@ class ClusteringMixin(BaseMixin, ABC):
                    AND plz = %(p)s \
                    AND kcid = %(k)s \
                    AND bcid = %(b)s),
-                (SELECT the_geom FROM ways_tem_vertices_pgr WHERE id = %(c)s),
+                (SELECT geom FROM ways_tem_vertices_pgr WHERE id = %(c)s),
                 'on_way');"""
         params = {"v": VERSION_ID, "c": connection_id, "b": bcid, "k": kcid, "p": plz}
 

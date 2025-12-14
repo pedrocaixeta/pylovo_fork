@@ -99,7 +99,7 @@ class GridMixin(BaseMixin, ABC):
         return transformer_rated_power
 
     def get_node_geom(self, vid: int):
-        query = """SELECT ST_X(ST_Transform(the_geom, 4326)), ST_Y(ST_Transform(the_geom, 4326))
+        query = """SELECT ST_X(ST_Transform(geom, 4326)), ST_Y(ST_Transform(geom, 4326))
                    FROM ways_tem_vertices_pgr
                    WHERE id = %(id)s;"""
         self.cur.execute(query, {"id": vid})

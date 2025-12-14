@@ -252,7 +252,7 @@ class DatabaseConstructor:
         # Insert rows into local DB using executemany
         insert_query = """
             INSERT INTO postcode (plz, note, qkm, population, geom)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, ST_Transform(%s::geometry, 3035))
         """
         with self.dbc.conn.cursor() as cur:
             cur.executemany(insert_query, rows)

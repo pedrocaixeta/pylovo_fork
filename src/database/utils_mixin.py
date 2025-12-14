@@ -30,11 +30,11 @@ class UtilsMixin(BaseMixin, ABC):
     def drop_temp_tables(self, plz: int) -> None:
         """Drop PLZ-suffixed tables and their views."""
         for base_name in TEMP_CREATE_QUERIES.keys():
-            self.cur.execute(f"DROP VIEW IF EXISTS {base_name}")
-            self.cur.execute(f"DROP TABLE IF EXISTS {base_name}_{plz}")
-        self.cur.execute("DROP VIEW IF EXISTS ways_tem_vertices_pgr")
+            self.cur.execute(f"DROP VIEW IF EXISTS {base_name} CASCADE")
+            self.cur.execute(f"DROP TABLE IF EXISTS {base_name}_{plz} CASCADE")
+        self.cur.execute("DROP VIEW IF EXISTS ways_tem_vertices_pgr CASCADE")
         # Drop the vertices table created by pgr_createTopology (correct naming pattern)
-        self.cur.execute(f"DROP TABLE IF EXISTS ways_tem_{plz}_vertices_pgr")
+        self.cur.execute(f"DROP TABLE IF EXISTS ways_tem_{plz}_vertices_pgr CASCADE")
 
     def refresh_materialized_views(self) -> None:
         for query in REFRESH_QUERIES.values():

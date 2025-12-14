@@ -1,0 +1,84 @@
+# =============================================================================
+# PLOTTING CONFIGURATION FOR PYLOVO
+# =============================================================================
+# This file contains configuration for plotting styles, colors, and themes
+# used across the project. It follows the TUM (Technical University of Munich)
+# color scheme and branding guidelines.
+
+# =============================================================================
+# PLOTLY CONFIGURATION
+# =============================================================================
+PLOTLY:
+  ACCESS_TOKEN: 'pk.eyJ1IjoibXVza2F0bnVzcyIsImEiOiJjbGdxYnVyY28wN3lhM2VvMnBtYWwxZGl6In0.y5gIcGJSpwb0X4wgQQVolA'
+
+# =============================================================================
+# TUM COLOR PALETTE
+# =============================================================================
+COLORS:
+  # Primary TUM Colors
+  TUMBlue: '#0065BD'
+  TUMGreen: '#A2AD00'
+  TUMOrange: '#E37222'
+  TUMIvory: '#DAD7CB'
+
+  # Secondary TUM Colors
+  TUMBlue4: '#98C6EA'
+  TUMBlue2: '#005293'
+  TUMGray2: '#7F7F7F'
+
+# =============================================================================
+# COLOR PALETTES
+# =============================================================================
+PALETTES:
+  # Standard palette (6 colors)
+  TUMPalette:
+    - '#0065BD'  # TUMBlue
+    - '#A2AD00'  # TUMGreen
+    - '#E37222'  # TUMOrange
+    - '#98C6EA'  # TUMBlue4
+    - '#7F7F7F'  # TUMGray2
+    - '#005293'  # TUMBlue2
+
+  # Extended palette with ivory (7 colors)
+  TUMPalette1:
+    - '#0065BD'  # TUMBlue
+    - '#A2AD00'  # TUMGreen
+    - '#E37222'  # TUMOrange
+    - '#DAD7CB'  # TUMIvory
+    - '#98C6EA'  # TUMBlue4
+    - '#005293'  # TUMBlue2
+    - '#7F7F7F'  # TUMGray2
+
+  # Alternative palette (6 colors)
+  TUMPalette2:
+    - '#0065BD'  # TUMBlue
+    - '#A2AD00'  # TUMGreen
+    - '#E37222'  # TUMOrange
+    - '#98C6EA'  # TUMBlue4
+    - '#005293'  # TUMBlue2
+    - '#7F7F7F'  # TUMGray2
+
+  # Minimal palette (3 colors)
+  TUMPalette3:
+    - '#0065BD'  # TUMBlue
+    - '#A2AD00'  # TUMGreen
+    - '#E37222'  # TUMOrange
+
+# =============================================================================
+# NETWORK VISUALIZATION COLORS
+# =============================================================================
+NETWORK_COLORS:
+  NODE_COLOR_TRAFO: '#DAD7CB'      # TUMIvory
+  NODE_COLOR_CONSUMER: '#98C6EA'   # TUMBlue4
+  NODE_COLOR_CONNECTION_BUS: '#A2AD00'  # TUMGreen
+
+# =============================================================================
+# PLOT STYLE DEFAULTS
+# =============================================================================
+PLOT_DEFAULTS:
+  FIGURE_SIZE: [12, 6]
+  DPI: 300
+  FONT_SIZE: 12
+  TITLE_FONT_SIZE: 14
+  GRID_ALPHA: 0.3
+

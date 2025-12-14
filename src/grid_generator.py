@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed  # lightweight 
 
 import src.database.database_client as dbc
 from src.infdb.infdb_client import InfdbClient
-from src.parameter_calculator import ParameterCalculator
+from src.analysis.parameter_calculation import ParameterCalculator
 from src import utils
 from src.config_loader import *
 
@@ -68,8 +68,8 @@ class GridGenerator:
             self.dbc.commit_changes()
             if analyze_grids:
                 pc = ParameterCalculator()
-                pc.calc_parameters_per_plz(plz=self.plz)
-                # self.dbc.commit_changes()  # commit the changes to the database
+                pc.calc_parameters_per_plz(plz)
+                self.dbc.commit_changes()  # commit the changes to the database
         except ResultExistsError:
             self.dbc.logger.info(f"Grid for the postcode area {plz} has already been generated.")
         except Exception as e:

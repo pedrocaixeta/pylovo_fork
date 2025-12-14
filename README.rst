@@ -62,18 +62,19 @@ Main processing steps for pylovo:
 **Quick Start**
 ------------
 
-0. **Requirements**: Python 3.12+ and PostgreSQL with PostGIS extension
-1. **Setup InfDB**: Clone and set up the `InfDB <https://github.com/tum-ens/InfDB>`_ system using Docker
-2. **Run preprocessing pipeline**: Execute the data preprocessing as described in the InfDB documentation to populate InfDB with harmonized datasets
-3. **Clone pylovo**: ``git clone https://github.com/tum-ens/pylovo.git``
-4. **Install dependencies**: ``uv sync`` (see `documentation <https://pylovo.readthedocs.io/en/main/installation.html>`_ for more options)
-5. **Configure connection**: Set up ``config_database.yaml`` and ``.env`` file to connect to the previously created InfDB instance
-6. **Build pylovo database**: Run ``main_constructor.py`` to set up the pylovo database
-7. **Generate grids**: Configure ``config_generation.yaml`` and run ``main_generation.py`` to create synthetic LV grids
-8. **Analyze results**: Use provided visualization tools and statistical analysis features
+0. **Requirements**: Python 3.12+, Ubuntu WSL2 or Linux-based OS, Docker
+1. **Input data setup**
+1.1. **Setup InfDB**: Follow the `InfDB <https://github.com/tum-ens/InfDB>`_ "Getting Started" guide until "Start infDB" section to setup the database on your machine
+1.2. **Run preprocessing pipeline**: Start the data preprocessing docker required for pylovo by running ``docker compose -f tools/infdb-basedata/compose.yml up``
+2. **Pylovo setup**
+2.1. **Clone pylovo**: ``git clone https://github.com/tum-ens/pylovo.git``
+2.2 **Install dependencies**: ``uv sync`` (see `documentation <https://pylovo.readthedocs.io/en/main/installation.html>`_ for more options)
+2.3. **Configure connection**: Set up your pylovo ``.env`` file by using the .env.example. Use the previously defined connection settings from InfDB ``.env`` from the recently created InfDB instance.
+2.4. **Build pylovo database**: Run ``main_constructor.py`` to set up the pylovo database
+2.5 **Generate grids**: Configure ``config_generation.yaml`` and run ``main_generation.py`` to create synthetic LV grids.
+3. **Optional: Analyze results**: Use provided visualization tools and statistical analysis features.
 
 This setup ensures access to the full preprocessing pipeline with 3D building models, census data, and cadastral information for enhanced accuracy in grid generation.
-For detailed tutorials and documentation, see the `notebook_tutorials` directory and visit `https://pylovo.readthedocs.io <https://pylovo.readthedocs.io>`_.
 
 **Scientific Background**
 ------------

@@ -13,7 +13,21 @@ USE_INFDB: True  # ensure that you have the connection details in your .env file
 # 4. The .env file will override the default values below
 
 # =============================================================================
-# EXAMPLE 1: Local PostgreSQL Database
+# EXAMPLE 1: With InfDB Database
+# =============================================================================
+# Copy this to your .env file if using InfDB:
+
+# # PYLOVO Database
+# HOST="<infdb_host>"
+# PORT="<infdb_port>"
+# DBNAME="infdb"
+# DBUSER="infdb_user"
+# PASSWORD="<infdb_password>"
+# TARGET_SCHEMA="pylovo"
+# INFDB_SOURCE_SCHEMA="basedata"
+
+# =============================================================================
+# EXAMPLE 2: Local PostgreSQL Database
 # =============================================================================
 # Copy this to your .env file for local development:
 
@@ -24,24 +38,3 @@ USE_INFDB: True  # ensure that you have the connection details in your .env file
 # PORT="5432"
 # PASSWORD="pylovo_password"
 # TARGET_SCHEMA="public"
-
-# =============================================================================
-# EXAMPLE 2: With InfDB Database
-# =============================================================================
-# Copy this to your .env file if using InfDB:
-
-# # PYLOVO Database
-# DBNAME="citydb"
-# DBUSER="citydb_user"
-# HOST="citydb_host"
-# PORT="citydb_port"
-# PASSWORD="citydb_password"
-# TARGET_SCHEMA="pylovo"
-
-# USE_INFDB=True
-# INFDB_DBNAME="citydb"
-# INFDB_USER="citydb_user"
-# INFDB_HOST="citydb_host"
-# INFDB_PORT= "citydb_port"
-# INFDB_PASSWORD="citydb_password"
-# INFDB_SOURCE_SCHEMA="pylovo_input"
