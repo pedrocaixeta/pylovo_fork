@@ -18,7 +18,7 @@ LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
 RESULT_DIR: results # Directory for storing analysis results and outputs
 
 # Electrical backend configuration
-# Options: 'pandapower'
+# Options: 'pandapower', 'opendss'
 ELECTRICAL_BACKEND: pandapower
 
 # =============================================================================
@@ -61,10 +61,10 @@ EQUIPMENT_DATA:
 
 # Cables available for consumer connections (house connections from feeder to buildings) - must be a subset of the equipment data cables
 CONSUMER_CONNECTION_AVAILABLE_CABLES:
-  - NAYY 4 120  # NAYY_4_120
-  - NAYY 4 50   # NAYY_4_50
-  - NYY 4 35    # NYY_4_35
-  - NYY 4 16    # NYY_4_16
+  - NAYY_4_120  # NAYY_4_120
+  - NAYY_4_50   # NAYY_4_50
+  - NYY_4_35    # NYY_4_35
+  - NYY_4_16    # NYY_4_16
 # Thresholds to derive settlement_types
 RURAL_MAX_HOUSEHOLDS: 1.25 # Maximum average number of households per building for rural settlements
 URBAN_MIN_HOUSEHOLDS: 5 # Minimum average number of households per building for urban settlements
