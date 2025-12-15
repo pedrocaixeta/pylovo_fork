@@ -182,6 +182,13 @@ URBAN_MIN_HOUSEHOLDS = CONFIG_GENERATION["URBAN_MIN_HOUSEHOLDS"]
 RURAL_MIN_BUILDING_DISTANCE = CONFIG_GENERATION["RURAL_MIN_BUILDING_DISTANCE"]
 URBAN_MAX_BUILDING_DISTANCE = CONFIG_GENERATION["URBAN_MAX_BUILDING_DISTANCE"]
 
+# Transformer mapping: Settlement Type -> Allowed Transformer Capacities (s_max_kva)
+TRANSFORMER_MAPPING = CONFIG_GENERATION.get("TRANSFORMER_MAPPING", {
+    1: [100, 160, 250, 400, 630],
+    2: [100, 160, 250, 400, 630],
+    3: [100, 160, 250, 400, 630]
+})
+
 # =============================================================================
 # GRID GENERATION PARAMETERS (from CONFIG_GENERATION)
 # =============================================================================

@@ -27,7 +27,6 @@ def get_transformer_capacities() -> List[Dict[str, int]]:
             - s_max_kva: Maximum apparent power in kVA
             - cost_eur: Cost in EUR
             - typ: Equipment type (should be 'Transformer')
-            - application_area: Application area code
     """
     if not CONFIG_GENERATION or 'EQUIPMENT_DATA' not in CONFIG_GENERATION:
         return []
@@ -39,8 +38,7 @@ def get_transformer_capacities() -> List[Dict[str, int]]:
                 'name': equipment['name'],
                 's_max_kva': equipment['s_max_kva'],
                 'cost_eur': equipment['cost_eur'],
-                'typ': equipment['typ'],
-                'application_area': equipment['application_area']
+                'typ': equipment['typ']
             })
     
     # Sort by capacity for consistent ordering
@@ -135,5 +133,3 @@ if __name__ == "__main__":
     print(f"\nValidation tests:")
     print(f"  100 kVA valid: {validate_transformer_capacity(100)}")
     print(f"  999 kVA valid: {validate_transformer_capacity(999)}")
-
-
