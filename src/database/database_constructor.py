@@ -164,7 +164,6 @@ class DatabaseConstructor:
             with self.dbc.conn.cursor() as cur:
                 cur.execute("DELETE FROM transformers;")
             self.dbc.conn.commit()
-            print("Bestehende Transformer-Daten gelöscht (inkl. abhängiger transformer_positions via CASCADE).")
 
         trafos_processed_geojson_path = get_trafos_processed_geojson_path(RELATION_ID)
         trafos_processed_3035_geojson_path = get_trafos_processed_3035_geojson_path(RELATION_ID)
@@ -243,13 +242,13 @@ class DatabaseConstructor:
         if not rows:
             raise ValueError("No postcode data retrieved from InfDB")
 
-        # Optional: Clear existing data from local postcode table
+        # Optional: Clear existing data from postcode table
         if self.table_exists(table_name="postcode"):
             with self.dbc.conn.cursor() as cur:
                 cur.execute("DELETE FROM postcode")
                 self.dbc.conn.commit()
 
-        # Insert rows into local DB using executemany
+        # Insert rows into pylovo postcode table using executemany
         insert_query = """
             INSERT INTO postcode (plz, note, qkm, population, geom)
             VALUES (%s, %s, %s, %s, ST_Transform(%s::geometry, 3035))

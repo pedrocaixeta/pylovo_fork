@@ -582,7 +582,7 @@ class GridGenerator:
             kcid: K-means cluster ID
             transformer_list: List of transformer IDs
         """
-        self.logger.info(f"{len(transformer_list)} transformers found for {kcid}")
+        self.logger.info(f"{len(transformer_list)} Transformers found for kcid {kcid}")
 
         # Get cost dataframe between consumers and transformers
         cost_df = self.dbc.get_consumer_to_transformer_df(kcid, transformer_list)

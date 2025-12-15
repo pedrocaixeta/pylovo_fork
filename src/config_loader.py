@@ -184,9 +184,9 @@ URBAN_MAX_BUILDING_DISTANCE = CONFIG_GENERATION["URBAN_MAX_BUILDING_DISTANCE"]
 
 # Transformer mapping: Settlement Type -> Allowed Transformer Capacities (s_max_kva)
 TRANSFORMER_MAPPING = CONFIG_GENERATION.get("TRANSFORMER_MAPPING", {
-    1: [100, 160, 250, 400, 630],
-    2: [100, 160, 250, 400, 630],
-    3: [100, 160, 250, 400, 630]
+    1: [250, 400, 630],
+    2: [250, 400, 630],
+    3: [250, 400, 630]
 })
 
 # =============================================================================
