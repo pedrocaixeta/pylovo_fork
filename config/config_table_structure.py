@@ -359,17 +359,52 @@ CREATE_QUERIES = {
                                )
     """,
     "transformer_positions_with_grid": """CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_positions_with_grid AS (
-        SELECT tp.*, gr.kcid, gr.bcid, gr.plz, gr.transformer_rated_power
+        SELECT 
+            tp.*,
+            gr.kcid,
+            gr.bcid,
+            gr.plz,
+            gr.transformer_rated_power,
+            gr.transformer_equipment_name,
+            ed.s_max_kva,
+            ed.max_i_a,
+            ed.r_mohm_per_km,
+            ed.x_mohm_per_km,
+            ed.z_mohm_per_km,
+            ed.cost_eur,
+            ed.typ AS equipment_type,
+            ed.application_area
         FROM transformer_positions tp
         JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
+        LEFT JOIN equipment_data ed 
+            ON gr.version_id = ed.version_id 
+            AND gr.transformer_equipment_name = ed.name
     );
     CREATE INDEX IF NOT EXISTS idx_transformer_positions_with_grid_geom ON transformer_positions_with_grid USING gist (geom)
     """,
     "transformer_classified_with_grid": """
     CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_classified_with_grid AS (
-        SELECT tc.*, gr.version_id, gr.kcid, gr.bcid, gr.plz, gr.transformer_rated_power
+        SELECT 
+            tc.*,
+            gr.version_id,
+            gr.kcid,
+            gr.bcid,
+            gr.plz,
+            gr.transformer_rated_power,
+            gr.transformer_equipment_name,
+            ed.s_max_kva,
+            ed.max_i_a,
+            ed.r_mohm_per_km,
+            ed.x_mohm_per_km,
+            ed.z_mohm_per_km,
+            ed.cost_eur,
+            ed.typ AS equipment_type,
+            ed.application_area
         FROM transformer_classified tc
         JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
+        LEFT JOIN equipment_data ed 
+            ON gr.version_id = ed.version_id 
+            AND gr.transformer_equipment_name = ed.name
     );
     CREATE INDEX IF NOT EXISTS idx_transformer_classified_with_grid_geom ON transformer_classified_with_grid USING gist (geom)
     """,
