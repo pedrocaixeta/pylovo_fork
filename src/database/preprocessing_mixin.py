@@ -454,18 +454,18 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         score = 0.5 * hh_norm + 0.5 * dist_norm
         if score >= 2/3:
-            final_class = 3
+            settlement_type = 3
         elif score >= 1/3:
-            final_class = 2
+            settlement_type = 2
         else:
-            final_class = 1
+            settlement_type = 1
 
         update_query = """
             UPDATE postcode_result
             SET settlement_type = %(stype)s
             WHERE version_id = %(v)s AND postcode_result_plz = %(p)s;"""
-        self.cur.execute(update_query, {"stype": final_class, "v": VERSION_ID, "p": plz})
-        return final_class
+        self.cur.execute(update_query, {"stype": settlement_type, "v": VERSION_ID, "p": plz})
+        return settlement_type
 
     def set_building_peak_load(self) -> int:
         """
