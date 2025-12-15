@@ -77,6 +77,7 @@ CREATE_QUERIES = {
         bcid integer NOT NULL,
         plz integer NOT NULL,
         transformer_rated_power bigint,
+        transformer_equipment_name varchar(100),
         model_status integer,
         ont_vertice_id bigint,
         grid json,
@@ -85,7 +86,11 @@ CREATE_QUERIES = {
         CONSTRAINT fk_grid_result_version_id_plz
             FOREIGN KEY (version_id, plz)
             REFERENCES postcode_result (version_id, postcode_result_plz)
-            ON DELETE CASCADE
+            ON DELETE CASCADE,
+        CONSTRAINT fk_grid_result_transformer_equipment
+            FOREIGN KEY (version_id, transformer_equipment_name)
+            REFERENCES equipment_data(version_id, name)
+            ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_grid_result_version_id_plz_bcid_kcid
     ON grid_result (version_id, plz, bcid, kcid)
