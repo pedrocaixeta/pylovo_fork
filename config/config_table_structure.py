@@ -20,7 +20,6 @@ CREATE_QUERIES = {
        z_mohm_per_km    integer,
        cost_eur         integer,
        typ              varchar(50),
-       application_area integer,
        CONSTRAINT equipment_data_pkey PRIMARY KEY (version_id, name),
        CONSTRAINT fk_equipment_data_version
            FOREIGN KEY (version_id)
@@ -372,8 +371,7 @@ CREATE_QUERIES = {
             ed.x_mohm_per_km,
             ed.z_mohm_per_km,
             ed.cost_eur,
-            ed.typ AS equipment_type,
-            ed.application_area
+            ed.typ AS equipment_type
         FROM transformer_positions tp
         JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
         LEFT JOIN equipment_data ed 
@@ -398,8 +396,7 @@ CREATE_QUERIES = {
             ed.x_mohm_per_km,
             ed.z_mohm_per_km,
             ed.cost_eur,
-            ed.typ AS equipment_type,
-            ed.application_area
+            ed.typ AS equipment_type
         FROM transformer_classified tc
         JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
         LEFT JOIN equipment_data ed 

@@ -56,7 +56,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         df = equipment_data.copy()
         expected_cols = ["version_id", "name", "s_max_kva", "max_i_a", "r_mohm_per_km", "x_mohm_per_km",
-                         "z_mohm_per_km", "cost_eur", "typ", "application_area"]
+                         "z_mohm_per_km", "cost_eur", "typ"]
         if "version_id" not in df.columns:
             df["version_id"] = VERSION_ID
 
@@ -65,16 +65,11 @@ class PreprocessingMixin(BaseMixin, ABC):
             if col not in df.columns:
                 df[col] = None
         
-        # For cables, application_area is not needed - set to None
-        if 'typ' in df.columns:
-            df.loc[df['typ'] == 'Cable', 'application_area'] = None
-
         # Keep only relevant columns
         df = df[expected_cols]
 
         # Numeric conversion (Int / None)
-        int_cols = ["s_max_kva", "max_i_a", "r_mohm_per_km", "x_mohm_per_km", "z_mohm_per_km", "cost_eur",
-                    "application_area"]
+        int_cols = ["s_max_kva", "max_i_a", "r_mohm_per_km", "x_mohm_per_km", "z_mohm_per_km", "cost_eur"]
         for c in int_cols:
             df[c] = pd.to_numeric(df[c], errors='coerce').astype('Int64')
 
@@ -83,18 +78,16 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         insert_sql = ("""
                       INSERT INTO equipment_data
-                      (version_id, name, s_max_kva, max_i_a, r_mohm_per_km, x_mohm_per_km, z_mohm_per_km, cost_eur, typ,
-                       application_area)
+                      (version_id, name, s_max_kva, max_i_a, r_mohm_per_km, x_mohm_per_km, z_mohm_per_km, cost_eur, typ)
                       VALUES (%(version_id)s, %(name)s, %(s_max_kva)s, %(max_i_a)s, %(r_mohm_per_km)s,
-                              %(x_mohm_per_km)s, %(z_mohm_per_km)s, %(cost_eur)s, %(typ)s, %(application_area)s)
+                              %(x_mohm_per_km)s, %(z_mohm_per_km)s, %(cost_eur)s, %(typ)s)
                       ON CONFLICT (version_id, name) DO UPDATE SET s_max_kva        = EXCLUDED.s_max_kva,
                                                                    max_i_a          = EXCLUDED.max_i_a,
                                                                    r_mohm_per_km    = EXCLUDED.r_mohm_per_km,
                                                                    x_mohm_per_km    = EXCLUDED.x_mohm_per_km,
                                                                    z_mohm_per_km    = EXCLUDED.z_mohm_per_km,
                                                                    cost_eur         = EXCLUDED.cost_eur,
-                                                                   typ              = EXCLUDED.typ,
-                                                                   application_area = EXCLUDED.application_area;""")
+                                                                   typ              = EXCLUDED.typ;""")
         rows = df.to_dict(orient='records')
         try:
             self.cur.executemany(insert_sql, rows)
@@ -889,14 +882,14 @@ class PreprocessingMixin(BaseMixin, ABC):
         if self.cur.fetchone():
             return
 
-        required_cols = ['name', 'typ', 'application_area']
+        required_cols = ['name', 'typ']
         for rc in required_cols:
             if rc not in equipment_df.columns:
                 raise ValueError(f"Missing required equipment column: {rc}")
 
         # Ensure numeric coercion for optional integer fields
         int_cols = ['s_max_kva', 'max_i_a', 'r_mohm_per_km', 'x_mohm_per_km',
-                    'z_mohm_per_km', 'cost_eur', 'application_area']
+                    'z_mohm_per_km', 'cost_eur']
         for col in int_cols:
             if col in equipment_df.columns:
                 equipment_df[col] = pd.to_numeric(equipment_df[col], errors='coerce').astype('Int64')
@@ -906,8 +899,8 @@ class PreprocessingMixin(BaseMixin, ABC):
         insert_sql = """
             INSERT INTO equipment_data
             (version_id, name, s_max_kva, max_i_a, r_mohm_per_km, x_mohm_per_km,
-             z_mohm_per_km, cost_eur, typ, application_area)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             z_mohm_per_km, cost_eur, typ)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
         rows = []
         for _, r in equipment_df.iterrows():
@@ -920,8 +913,7 @@ class PreprocessingMixin(BaseMixin, ABC):
                 r.get('x_mohm_per_km'),
                 r.get('z_mohm_per_km'),
                 r.get('cost_eur'),
-                r.get('typ'),
-                r.get('application_area'),
+                r.get('typ')
             ))
         self.cur.executemany(insert_sql, rows)
         self.logger.debug("Inserted equipment_data for version %s", VERSION_ID)
@@ -937,10 +929,10 @@ class PreprocessingMixin(BaseMixin, ABC):
     def get_transformer_positions_for_plz_trafo_ui(self, plz: int) -> list[dict]:
         """
         Get all transformer positions for a given PLZ from the transformers table.
-        
+
         Args:
             plz (int): The postal code to get transformer positions for
-            
+
         Returns:
             list[dict]: List of transformer position dictionaries with keys:
                 - osm_id: OSM identifier
@@ -951,7 +943,7 @@ class PreprocessingMixin(BaseMixin, ABC):
                 - geom_wkt: Geometry as WKT (Well-Known Text)
         """
         query = """
-            SELECT 
+            SELECT
                 t.osm_id,
                 t.transformer_rated_power,
                 t.type,
@@ -967,12 +959,12 @@ class PreprocessingMixin(BaseMixin, ABC):
         columns = [desc[0] for desc in self.cur.description]
         return [dict(zip(columns, row)) for row in self.cur.fetchall()]
 
-    def add_transformer_position_trafo_ui(self, plz: int, geom_wkt: str, osm_id: str = None, 
-                                comment: str = "Manual", kcid: int = None, bcid: int = None, 
+    def add_transformer_position_trafo_ui(self, plz: int, geom_wkt: str, osm_id: str = None,
+                                comment: str = "Manual", kcid: int = None, bcid: int = None,
                                 transformer_rated_power: int = None) -> str:
         """
         Add a new transformer to the transformers table.
-        
+
         Args:
             plz (int): The postal code (for reference, not stored)
             geom_wkt (str): Geometry as Well-Known Text (Point format)
@@ -981,14 +973,14 @@ class PreprocessingMixin(BaseMixin, ABC):
             kcid (int, optional): K-means cluster ID (not used)
             bcid (int, optional): Building cluster ID (not used)
             transformer_rated_power (int, optional): Transformer power rating
-            
+
         Returns:
             str: The osm_id of the created transformer
         """
         # Generate a unique OSM ID if not provided
         if not osm_id:
             osm_id = f"manual/{int(time.time())}"
-        
+
         # Insert into transformers table
         transformer_query = """
             INSERT INTO transformers (osm_id, type, transformer_rated_power, geom_type, within_shopping, geom)
@@ -1003,19 +995,19 @@ class PreprocessingMixin(BaseMixin, ABC):
             "within_shopping": False,
             "geom_wkt": geom_wkt
         })
-        
+
         # Commit the transaction
         self.conn.commit()
-        
+
         return osm_id
 
     def delete_transformer_position_trafo_ui(self, grid_result_id: int) -> bool:
         """
         Delete a transformer position by grid_result_id.
-        
+
         Args:
             grid_result_id (int): The grid_result_id to delete
-            
+
         Returns:
             bool: True if deletion was successful, False otherwise
         """
@@ -1024,23 +1016,23 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.execute(check_query, {"grid_result_id": grid_result_id})
         if not self.cur.fetchone():
             return False
-            
+
         # Delete the transformer position (grid_result will be deleted via CASCADE)
         delete_query = "DELETE FROM transformer_positions WHERE grid_result_id = %(grid_result_id)s"
         self.cur.execute(delete_query, {"grid_result_id": grid_result_id})
-        
+
         # Commit the transaction to persist the deletion
         self.conn.commit()
-        
+
         return True
 
     def delete_transformer_by_osm_id_trafo_ui(self, osm_id: str) -> bool:
         """
         Delete a transformer by osm_id from the transformers table.
-        
+
         Args:
             osm_id (str): The osm_id to delete
-            
+
         Returns:
             bool: True if deletion was successful, False otherwise
         """
@@ -1048,7 +1040,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         check_query = "SELECT osm_id, type FROM transformers WHERE osm_id = %(osm_id)s"
         self.cur.execute(check_query, {"osm_id": osm_id})
         existing = self.cur.fetchone()
-        
+
         if existing:
             print(f"DEBUG: Found transformer to delete: {existing}")
         else:
@@ -1059,33 +1051,33 @@ class PreprocessingMixin(BaseMixin, ABC):
             similar = self.cur.fetchall()
             if similar:
                 print(f"DEBUG: Found similar OSM IDs: {similar}")
-        
+
         delete_query = "DELETE FROM transformers WHERE osm_id = %(osm_id)s"
         self.cur.execute(delete_query, {"osm_id": osm_id})
-        
+
         rows_affected = self.cur.rowcount
         print(f"DEBUG: Deletion query affected {rows_affected} rows")
-        
+
         # Commit the transaction to persist the deletion
         if rows_affected > 0:
             self.conn.commit()
             print(f"DEBUG: Transaction committed successfully")
-        
+
         return rows_affected > 0
 
     def clear_capacities_trafo_ui(self, plz: int) -> bool:
         """
         Clear all capacity information for transformers in a PLZ area.
-        
+
         Args:
             plz (int): The PLZ code
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             query = """
-                UPDATE transformers 
+                UPDATE transformers
                 SET transformer_rated_power = NULL
                 WHERE osm_id IN (
                     SELECT t.osm_id
@@ -1106,17 +1098,17 @@ class PreprocessingMixin(BaseMixin, ABC):
     def get_plz_bounds_trafo_ui(self, plz: int) -> dict:
         """
         Get the bounding box for a given PLZ.
-        
+
         Args:
             plz (int): The postal code
-            
+
         Returns:
             dict: Bounding box with keys: minx, miny, maxx, maxy
         """
         query = """
-            SELECT ST_XMin(ST_Transform(geom, 4326)) as minx, ST_YMin(ST_Transform(geom, 4326)) as miny, 
+            SELECT ST_XMin(ST_Transform(geom, 4326)) as minx, ST_YMin(ST_Transform(geom, 4326)) as miny,
                    ST_XMax(ST_Transform(geom, 4326)) as maxx, ST_YMax(ST_Transform(geom, 4326)) as maxy
-            FROM postcode 
+            FROM postcode
             WHERE plz = %(plz)s
         """
         self.cur.execute(query, {"plz": plz})
@@ -1124,7 +1116,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         if row:
             return {
                 "minx": float(row[0]),
-                "miny": float(row[1]), 
+                "miny": float(row[1]),
                 "maxx": float(row[2]),
                 "maxy": float(row[3])
             }
@@ -1133,46 +1125,46 @@ class PreprocessingMixin(BaseMixin, ABC):
     def get_available_plz_list_trafo_ui(self) -> list[int]:
         """
         Get list of available PLZ codes that have been processed.
-        
+
         Returns:
             list[int]: List of PLZ codes
         """
         query = """
-            SELECT DISTINCT plz 
-            FROM postcode 
+            SELECT DISTINCT plz
+            FROM postcode
             ORDER BY plz
         """
         self.cur.execute(query)
         return [row[0] for row in self.cur.fetchall()]
-    
+
     def update_transformer_capacity_trafo_ui(self, osm_id: str, transformer_rated_power: int) -> bool:
         """
         Update transformer capacity.
-        
+
         Args:
             osm_id (str): The OSM ID of the transformer
             transformer_rated_power (int): The new rated power in kVA
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         query = """
-            UPDATE transformers 
+            UPDATE transformers
             SET transformer_rated_power = %(transformer_rated_power)s
             WHERE osm_id = %(osm_id)s
         """
         self.cur.execute(query, {"osm_id": osm_id, "transformer_rated_power": transformer_rated_power})
         self.conn.commit()
         return self.cur.rowcount > 0
-    
+
     def bulk_update_capacities_uniform_trafo_ui(self, plz: int, transformer_rated_power: int) -> bool:
         """
         Set all transformers in a PLZ area to the same capacity.
-        
+
         Args:
             plz (int): The PLZ code
             transformer_rated_power (int): The rated power in kVA to set for all transformers
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -1187,13 +1179,13 @@ class PreprocessingMixin(BaseMixin, ABC):
             self.cur.execute(check_query, {"plz": plz})
             count = self.cur.fetchone()[0]
             print(f"Found {count} transformers in PLZ {plz}")
-            
+
             if count == 0:
                 print("No transformers found in PLZ area")
                 return False
-            
+
             query = """
-                UPDATE transformers 
+                UPDATE transformers
                 SET transformer_rated_power = %(transformer_rated_power)s
                 WHERE osm_id IN (
                     SELECT DISTINCT t.osm_id
@@ -1210,21 +1202,21 @@ class PreprocessingMixin(BaseMixin, ABC):
         except Exception as e:
             print(f"Error in bulk_update_capacities_uniform_trafo_ui: {str(e)}")
             return False
-    
+
     def bulk_update_capacities_percentage_trafo_ui(self, plz: int, capacity_distribution: dict) -> bool:
         """
         Apply percentage-based distribution of transformer capacities.
-        
+
         Args:
             plz (int): The PLZ code
             capacity_distribution (dict): Dictionary with capacity values as keys and percentages as values
             Example: {400: 30, 630: 50, 1000: 20} means 30% 400kVA, 50% 630kVA, 20% 1000kVA
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         import random
-        
+
         try:
             # Get all transformer OSM IDs in the PLZ area
             query = """
@@ -1236,11 +1228,11 @@ class PreprocessingMixin(BaseMixin, ABC):
             self.cur.execute(query, {"plz": plz})
             transformer_ids = [row[0] for row in self.cur.fetchall()]
             print(f"Found {len(transformer_ids)} transformers for percentage distribution")
-            
+
             if not transformer_ids:
                 print("No transformers found in PLZ area for percentage distribution")
                 return False
-        
+
             # Create capacity list based on percentages
             capacity_list = []
             for capacity, percentage in capacity_distribution.items():
@@ -1248,35 +1240,35 @@ class PreprocessingMixin(BaseMixin, ABC):
                     count = int(len(transformer_ids) * percentage / 100)
                     capacity_list.extend([capacity] * count)
                     print(f"Added {count} transformers with {capacity}kVA capacity ({percentage}%)")
-            
+
             # Fill remaining with the most common capacity if we have fewer than expected
             if len(capacity_list) < len(transformer_ids):
                 most_common_capacity = max(capacity_distribution.keys(), key=lambda k: capacity_distribution[k])
                 remaining = len(transformer_ids) - len(capacity_list)
                 capacity_list.extend([most_common_capacity] * remaining)
                 print(f"Added {remaining} more transformers with {most_common_capacity}kVA capacity")
-            
+
             print(f"Total capacity list length: {len(capacity_list)}, transformer count: {len(transformer_ids)}")
-            
+
             # Shuffle to randomize distribution
             random.shuffle(capacity_list)
-            
+
             # Update each transformer
             update_query = """
-                UPDATE transformers 
+                UPDATE transformers
                 SET transformer_rated_power = %(transformer_rated_power)s
                 WHERE osm_id = %(osm_id)s
             """
-            
+
             updated_count = 0
             for i, osm_id in enumerate(transformer_ids):
                 if i < len(capacity_list):
                     self.cur.execute(update_query, {
-                        "osm_id": osm_id, 
+                        "osm_id": osm_id,
                         "transformer_rated_power": capacity_list[i]
                     })
                     updated_count += 1
-            
+
             print(f"Updated {updated_count} transformers with new capacities")
             self.conn.commit()
             return True

@@ -555,23 +555,19 @@ class ClusteringMixin(BaseMixin, ABC):
             Settlement type: 1=Rural, 2=Semi-urban, 3=Urban
         Returns: Typical transformer capacities and costs depending on the settlement type
         """
-        if settlement_type == 1:
-            application_area_tuple = (1, 2, 3)
-        elif settlement_type == 2:
-            application_area_tuple = (2, 3, 4, 5)
-        elif settlement_type == 3:
-            application_area_tuple = (4, 5)
-        else:
+        if settlement_type not in TRANSFORMER_MAPPING:
             self.logger.info("Incorrect settlement type number specified.")
             return
+
+        allowed_capacities = tuple(TRANSFORMER_MAPPING[settlement_type])
 
         query = """SELECT equipment_data.s_max_kva, cost_eur
                    FROM equipment_data
                    WHERE typ = 'Transformer' \
-                     AND application_area IN %(tuple)s
+                     AND s_max_kva IN %(capacities)s
                    ORDER BY s_max_kva;"""
 
-        self.cur.execute(query, {"tuple": application_area_tuple})
+        self.cur.execute(query, {"capacities": allowed_capacities})
         data = self.cur.fetchall()
         capacities = [i[0] for i in data]
         transformer2cost = {i[0]: i[1] for i in data}
