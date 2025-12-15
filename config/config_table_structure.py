@@ -9,26 +9,6 @@ CREATE_QUERIES = {
         other_parameters varchar
     )
     """,
-    "equipment_data": """
-                      CREATE TABLE IF NOT EXISTS equipment_data
-                      (
-                          version_id       varchar(10)  NOT NULL,
-                          name             varchar(100) NOT NULL,
-                          s_max_kva        integer,
-                          max_i_a          integer,
-                          r_mohm_per_km    integer,
-                          x_mohm_per_km    integer,
-                          z_mohm_per_km    integer,
-                          cost_eur         integer,
-                          typ              varchar(50),
-                          application_area integer,
-                          CONSTRAINT equipment_data_pkey PRIMARY KEY (version_id, name),
-                          CONSTRAINT fk_equipment_data_version
-                              FOREIGN KEY (version_id)
-                                  REFERENCES version (version_id)
-                                  ON DELETE CASCADE
-                      )
-    """,
     "classification_version": """
     CREATE TABLE IF NOT EXISTS classification_version (
         classification_id integer NOT NULL,
@@ -70,7 +50,6 @@ CREATE_QUERIES = {
             ON DELETE CASCADE
     )
     """,
-    # old name: building_clusters, got merged with grids
     "grid_result": """
     CREATE TABLE IF NOT EXISTS grid_result (
         grid_result_id SERIAL PRIMARY KEY,
@@ -309,8 +288,6 @@ CREATE_QUERIES = {
             ON DELETE CASCADE
     )
     """,
-    # old name: grid_parameters
-    # saves grid parameters for a whole plz for visualization
     "plz_parameters": """
     CREATE TABLE IF NOT EXISTS plz_parameters (
         version_id varchar(10) NOT NULL,
