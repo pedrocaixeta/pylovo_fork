@@ -41,8 +41,8 @@ CONSUMER_CATEGORIES:
 
 # Equipment data for transformers and cables
 EQUIPMENT_DATA:
-  - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer}
-  - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer}
+#  - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer} Not included in pandapower standard trafo types
+#  - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer} Not included in pandapower standard trafo types
   - {name: Tr_250, s_max_kva: 250, cost_eur: 5000, typ: Transformer}
   - {name: Tr_400, s_max_kva: 400, cost_eur: 8000, typ: Transformer}
   - {name: Tr_630, s_max_kva: 630, cost_eur: 12000, typ: Transformer}

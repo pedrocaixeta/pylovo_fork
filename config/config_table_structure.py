@@ -9,7 +9,7 @@ CREATE_QUERIES = {
         other_parameters varchar
     )
     """,
-   "equipment_data": """
+    "equipment_data": """
    CREATE TABLE IF NOT EXISTS equipment_data(
        version_id       varchar(10)  NOT NULL,
        name             varchar(100) NOT NULL,
@@ -233,7 +233,7 @@ CREATE_QUERIES = {
         geom geometry(MultiPoint, 3035)
     )
     """,
-        "transformer_positions": """
+    "transformer_positions": """
     CREATE TABLE IF NOT EXISTS transformer_positions (
         grid_result_id bigint PRIMARY KEY,
         geom geometry(Point,3035),
