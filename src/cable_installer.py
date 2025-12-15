@@ -91,25 +91,27 @@ class CableInstaller:
         self.backend.create_component(busbar_line_spec)
 
     def create_transformer(self, plz: int, kcid: int, bcid: int) -> None:
-        """Create transformer."""
+        """
+        Create a transformer based on the required rated power.
+
+        Maps the required capacity to either a single standard transformer
+        or a parallel configuration (2x) for specific larger loads.
+        """
         transformer_rated_power = self.dbc.get_transformer_rated_power_from_bcid(plz, kcid, bcid)
 
-        if transformer_rated_power in (250, 400, 630):
+        if transformer_rated_power in (100, 160, 250, 400, 630):
             trafo_name = f"{str(transformer_rated_power)} transformer"
             kva = transformer_rated_power
             parallel = 1
-        elif transformer_rated_power in (100, 160):
-            trafo_name = f"{str(transformer_rated_power)} transformer"
-            kva = 250
-            parallel = 1
-        elif transformer_rated_power in (500, 800):
-            trafo_name = f"{str(transformer_rated_power * 0.5)} transformer"
+        elif transformer_rated_power in (500, 800, 1260):
+            trafo_name = f"double {str(transformer_rated_power * 0.5)} transformer"
             kva = transformer_rated_power * 0.5
             parallel = 2
         else:
-            trafo_name = "630 transformer"
+            # Fallback: use 630 kVA transformers in parallel for large parallel transormers
+            trafo_name = "multiple 630 transformer"
             kva = 630
-            parallel = transformer_rated_power / 630
+            parallel = max(1, int(transformer_rated_power / 630))
 
         trafo_spec = TransformerSpec(
             name=trafo_name,
