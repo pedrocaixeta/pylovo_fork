@@ -188,9 +188,34 @@ class ClusteringMixin(BaseMixin, ABC):
 
         return load
 
-    def try_clustering(self, Z: np.ndarray, cluster_amount: int, localid2vid: dict, buildings: pd.DataFrame,
+    def load_constrained_hierarchical_clustering(self, Z: np.ndarray, cluster_amount: int, localid2vid: dict, buildings: pd.DataFrame,
             consumer_cat_df: pd.DataFrame, transformer_capacities: np.ndarray, double_trans: np.ndarray, ) -> tuple[
         dict, dict, int]:
+        """
+        Attempts to cluster buildings based on hierarchical clustering linkage matrix Z and assigns transformers.
+
+        This function cuts the hierarchical tree to form `cluster_amount` clusters. For each cluster, it calculates
+        the simultaneous peak load. It then attempts to assign an optimal transformer (single or double) based on
+        the load and available capacities. If a cluster's load exceeds the maximum single transformer capacity
+        and has enough buildings, it is marked as invalid (too big).
+
+        Args:
+            Z (np.ndarray): The linkage matrix from hierarchical clustering (scipy.cluster.hierarchy.linkage).
+            cluster_amount (int): The number of clusters to form.
+            localid2vid (dict): Mapping from local clustering indices to building vertice IDs.
+            buildings (pd.DataFrame): DataFrame containing building information (loads, types, etc.).
+            consumer_cat_df (pd.DataFrame): DataFrame containing consumer category definitions (simultaneity factors).
+            transformer_capacities (np.ndarray): Array of available single transformer capacities (sorted).
+            double_trans (np.ndarray): Array of available double transformer capacities (sorted).
+
+        Returns:
+            tuple[dict, dict, int]:
+                - invalid_cluster_dict (dict): Clusters that are too big (load > max single capacity & >= 5 buildings).
+                  Key: cluster_id, Value: list of vertice IDs.
+                - cluster_dict (dict): Valid clusters with assigned transformers.
+                  Key: cluster_id, Value: tuple(list of vertice IDs, assigned transformer capacity).
+                - cluster_count (int): The actual number of clusters formed.
+        """
         flat_groups = cut_tree(Z, n_clusters=cluster_amount)
         cluster_ids = np.unique(flat_groups)
         cluster_count = len(cluster_ids)

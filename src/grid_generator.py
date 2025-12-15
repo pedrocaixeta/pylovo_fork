@@ -498,9 +498,9 @@ class GridGenerator:
         # Iterative clustering process
         while True:
             # Try clustering with current parameters
-            invalid_cluster_dict, cluster_dict, _ = self.dbc.try_clustering(Z, cluster_amount, new_localid2vid, buildings,
-                                                                        consumer_cat_df, transformer_capacities,
-                                                                        double_trans)
+            invalid_cluster_dict, cluster_dict, _ = self.dbc.load_constrained_hierarchical_clustering(Z, cluster_amount, new_localid2vid, buildings,
+                                                                                                      consumer_cat_df, transformer_capacities,
+                                                                                                      double_trans)
 
             # Process valid clusters
             if cluster_dict:
