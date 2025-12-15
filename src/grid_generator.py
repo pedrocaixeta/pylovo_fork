@@ -557,7 +557,6 @@ class GridGenerator:
         for bcid, cluster_data in valid_cluster_dict.items():
             self.dbc.upsert_bcid(plz, kcid, bcid, vertices=cluster_data[0],
                                          transformer_rated_power=cluster_data[1])
-        self.logger.debug(f"bcids for plz {plz} kcid {kcid} created.")
 
         self.logger.debug(f"bcids for plz {plz} kcid {kcid} found...")
 
@@ -625,6 +624,11 @@ class GridGenerator:
 
         # Create building clusters for each transformer
         building_cluster_count = 0
+
+        # Get available transformer capacities from database
+        settlement_type = self.dbc.get_settlement_type_from_plz(plz)
+        possible_transformers, _ = self.dbc.get_transformer_data(settlement_type)
+
         for transformer_id in transformer_list:
             # Skip empty transformers
             if not pre_result_dict[transformer_id]:
@@ -637,9 +641,6 @@ class GridGenerator:
 
             # Calculate the simulated load for all loads assigned to this transformer
             sim_load = self.dbc.calculate_sim_load(pre_result_dict[transformer_id])
-
-            # Define the available standard transformer sizes in kVA
-            possible_transformers = np.array([100, 160, 250, 400, 630])  # TODO: check with settlement_type approach
 
             # Select the smallest transformer that is larger than the simulated load
             transformer_rated_power = possible_transformers[possible_transformers > float(sim_load)][0].item()
