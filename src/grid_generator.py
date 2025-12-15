@@ -441,7 +441,7 @@ class GridGenerator:
             if not transformers:
                 self.logger.debug(f"kcid{kcid} has no included transformer")
                 # Create greenfield building clusters
-                self.create_bcid_for_kcid(self.plz, kcid)
+                self.dimension_bcid_for_kcid(self.plz, kcid)
                 self.logger.debug(f"kcid{kcid} building clusters finished")
 
             # Case 2: Transformers present
@@ -452,7 +452,7 @@ class GridGenerator:
 
                 # Check buildings and manage clusters
                 if self.dbc.count_kmean_cluster_consumers(kcid) > 1:
-                    self.create_bcid_for_kcid(self.plz, kcid) #TODO: name should include transformer_size allocation
+                    self.dimension_bcid_for_kcid(self.plz, kcid)
                 else:
                     self.dbc.delete_isolated_building(self.plz, kcid) #TODO: check approach with isolated buildings
                 self.logger.debug("Remaining building clustering finished")
@@ -466,7 +466,7 @@ class GridGenerator:
                     self.dbc.update_transformer_rated_power(self.plz, kcid, bcid, 1)
                     self.logger.debug("Transformer_rated_power in grid_result updated.")
 
-    def create_bcid_for_kcid(self, plz: int, kcid: int) -> None:
+    def dimension_bcid_for_kcid(self, plz: int, kcid: int) -> None:
         """
         Create building clusters (bcids) with average linkage method for a given kcid.
         :param plz: Postal code
@@ -518,12 +518,14 @@ class GridGenerator:
             # Check if clustering is complete
             if not invalid_trans_cluster_dict:
                 self.logger.info(
-                    f"Found {len(valid_cluster_dict)} single transformer clusters for KCID: {kcid} (postcode: {plz})")
+                    f"Found {len(valid_cluster_dict)} single transformer clusters for KCID: {kcid} (postcode: {plz})"
+                )
                 break
             else:
                 # Process too large clusters by re-clustering them
                 self.logger.info(
-                    f"Found {len(invalid_trans_cluster_dict)} too_large clusters for PLZ: {plz}, KCID: {kcid}")
+                    f"Found {len(invalid_trans_cluster_dict)} too_large clusters for PLZ: {plz}, KCID: {kcid}"
+                )
 
                 # Get buildings from the first too-large cluster for re-clustering
                 invalid_vertice_ids = list(invalid_trans_cluster_dict[0])
@@ -588,6 +590,10 @@ class GridGenerator:
         # Filter out connections with distance >= 800
         cost_df = cost_df[cost_df["agg_cost"] < MAX_BROWNFIELD_TRAFO_DISTANCE].sort_values(by=["agg_cost"])
 
+        # Get available transformer capacities from database
+        settlement_type = self.dbc.get_settlement_type_from_plz(plz)
+        possible_transformers, _ = self.dbc.get_transformer_data(settlement_type)
+
         # Initialize tracking variables
         pre_result_dict = {transformer_id: [] for transformer_id in transformer_list}
         full_transformer_list = []
@@ -606,8 +612,7 @@ class GridGenerator:
             pre_result_dict[end_transformer_id].append(int(start_consumer_id))
             sim_load = self.dbc.calculate_sim_load(pre_result_dict[end_transformer_id])
 
-            # Check if transformer capacity exceeded
-            if float(sim_load) >= 630:
+            if float(sim_load) > max(possible_transformers):
                 # Remove consumer and mark transformer as full
                 pre_result_dict[end_transformer_id].pop()
                 full_transformer_list.append(end_transformer_id)
@@ -624,10 +629,6 @@ class GridGenerator:
 
         # Create building clusters for each transformer
         building_cluster_count = 0
-
-        # Get available transformer capacities from database
-        settlement_type = self.dbc.get_settlement_type_from_plz(plz)
-        possible_transformers, _ = self.dbc.get_transformer_data(settlement_type)
 
         for transformer_id in transformer_list:
             # Skip empty transformers
