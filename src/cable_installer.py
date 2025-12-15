@@ -4,9 +4,7 @@ import numpy as np
 import pandas as pd
 from src.electrical_backend.template_backend import IElectricalBackend
 from src.electrical_backend.component_specs import BusSpec, TransformerSpec, LineSpec, LoadSpec, ExtGridSpec
-from src.config_loader import VN, V_BAND_LOW, VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM
-from src.config_loader import VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM, SMALL_LOAD_THRESHOLD_KW
-from src.config_loader import VOLTAGE_DROP_DISTRIBUTION_PERCENT
+from src.config_loader import VN, V_BAND_LOW, VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM, VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM, SMALL_LOAD_THRESHOLD_KW, VOLTAGE_DROP_DISTRIBUTION_PERCENT, DEFAULT_POWER_FACTOR
 from src.utils import oneSimultaneousLoad
 
 
@@ -142,7 +140,6 @@ class CableInstaller:
 
         Applies Kerber formula per building to calculate simultaneous load.
         """
-        DEFAULT_POWER_FACTOR = 0.95  # cos(phi) for residential loads
 
         for consumer in consumer_list:
             node_geodata = self.dbc.get_node_geom(consumer)
