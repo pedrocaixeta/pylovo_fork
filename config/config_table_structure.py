@@ -92,7 +92,7 @@ CREATE_QUERIES = {
             ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_grid_result_version_id_plz_bcid_kcid
-    ON grid_result (version_id, plz, bcid, kcid)
+    ON grid_result (version_id, plz, bcid, kcid);
     """,
     "lines_result": """
     CREATE TABLE IF NOT EXISTS lines_result (
