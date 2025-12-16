@@ -138,10 +138,13 @@ class InfdbClient:
     
     def fetch_postcode_data(self) -> list[tuple]:
         """
-        Fetch postcode data from {INFDB_SOURCE_SCHEMA} and return rows matching the local schema
+        Fetch postcode data from {INFDB_SOURCE_SCHEMA} and return rows matching the local schema.
+        Returns tuples of (plz, note, qkm, population, geom) from INFDB_SOURCE_SCHEMA.
         """
         query = """
-            SELECT * FROM postcode;
+            SELECT plz, note, qkm, population, geom
+            FROM postcode
+            ORDER BY plz;
         """
         self.cur.execute(query)
         rows = self.cur.fetchall()
