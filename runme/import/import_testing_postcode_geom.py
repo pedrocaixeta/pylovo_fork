@@ -21,7 +21,7 @@ TEST_POSTCODES = [
     {
         'postcode_id': 99999,
         'plz': 99999,
-        'testing_plz': 91301,
+        'testing_plz': 91301, # Add the PlZ region within which the test postcode is located
         'note': 'Forchheim Test - Buckenhofen',
         'qkm': 1.0,
         'population': 1000,
@@ -37,7 +37,7 @@ TEST_POSTCODES = [
         'postcode_id': 99998,
         'plz': 99998,
         'testing_plz': 91301,
-        'note': 'Forchheim Test - Serlbach',
+        'note': 'Forchheim Test - Serlbach', # Add the PlZ region within which the test postcode is located
         'qkm': 1.0,
         'population': 1000,
         'coordinates': [
