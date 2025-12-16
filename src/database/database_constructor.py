@@ -245,12 +245,12 @@ class DatabaseConstructor:
         # Optional: Clear existing data from postcode table
         if self.table_exists(table_name="postcode"):
             with self.dbc.conn.cursor() as cur:
-                cur.execute("DELETE FROM postcode")
+                cur.execute("DELETE FROM pylovo.postcode")
                 self.dbc.conn.commit()
 
         # Insert rows into pylovo postcode table using executemany
         insert_query = """
-            INSERT INTO postcode (plz, note, qkm, population, geom)
+            INSERT INTO pylovo.postcode (plz, note, qkm, population, geom)
             VALUES (%s, %s, %s, %s, ST_Transform(%s::geometry, 3035))
         """
         with self.dbc.conn.cursor() as cur:
