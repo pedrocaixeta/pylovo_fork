@@ -4,6 +4,7 @@ import psycopg2 as psy
 
 from src import utils
 from src.config_loader import *
+from src.database.database_client import DatabaseClient
 
 
 class InfdbClient:
@@ -57,7 +58,6 @@ class InfdbClient:
         if TESTING:
             # In testing mode, we need to get the testing_plz from local DB first
             # Get the testing_plz from local database
-            from src.database.database_client import DatabaseClient
             local_dbc = DatabaseClient()
             local_dbc.cur.execute("SELECT testing_plz FROM postcode WHERE plz = %(p)s LIMIT 1", {"p": plz})
             row = local_dbc.cur.fetchone()
