@@ -77,6 +77,7 @@ CREATE_QUERIES = {
         plz integer NOT NULL,
         transformer_rated_power bigint,
         transformer_equipment_name varchar(100),
+        transformer_description varchar(100),
         model_status integer,
         ont_vertice_id bigint,
         grid json,
