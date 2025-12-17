@@ -293,7 +293,6 @@ class GridGenerator:
         INTO: buildings_tem
         """
         if USE_INFDB:
-            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
             buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
             self.dbc.set_buildings_table(buildings_data, self.plz)
         else:
@@ -348,7 +347,8 @@ class GridGenerator:
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
         if USE_INFDB:
-            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
+            if TESTING:
+                self.plz = self.dbc.get_plz_for_testing(self.plz)
             ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
             ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, self.plz)
         else:

@@ -296,7 +296,7 @@ class PreprocessingMixin(BaseMixin, ABC):
             FROM testing_buildings tb
             CROSS JOIN postcode p
             WHERE p.plz = %(plz)s
-            AND p.testing_plz IS NOT NULL
+            AND p.allocated_plz IS NOT NULL
             AND ST_Intersects(tb.geom, p.geom)
         """
         self.cur.execute(filter_query, {"plz": plz})
@@ -683,7 +683,7 @@ class PreprocessingMixin(BaseMixin, ABC):
             FROM temp_ways tw
             CROSS JOIN postcode p
             WHERE p.plz = %(plz)s
-            AND p.testing_plz IS NOT NULL
+            AND p.allocated_plz IS NOT NULL
             AND ST_Intersects(tw.geom, p.geom)
         """
         self.cur.execute(filter_query, {"plz": plz})
@@ -918,13 +918,20 @@ class PreprocessingMixin(BaseMixin, ABC):
         self.cur.executemany(insert_sql, rows)
         self.logger.debug("Inserted equipment_data for version %s", VERSION_ID)
 
-    def get_testing_plz(self, plz: int) -> int:
-        """Return mapped testing_plz if TESTING mode provides one, else original plz."""
-        self.cur.execute("SELECT testing_plz FROM postcode WHERE plz = %(p)s LIMIT 1;", {"p": plz})
-        row = self.cur.fetchone()
-        if row and row[0]:
-            return int(row[0])
-        return plz
+    def get_plz_for_testing(self, plz) -> list:
+        """
+        Get the allocated_plz allocated to our dummy testing plz when testing. Each small testing plz must be allocated
+        to the larger real plz it is located in to fetch data correctly.
+        """
+        query = """
+                SELECT allocated_plz
+                FROM pylovo.postcode
+                WHERE plz = %(p)s LIMIT 1", {"p": plz}) """
+
+        self.cur.execute(query, {"plz": plz})
+        allocated_plz = self.cur.fetchall()
+
+        return allocated_plz
 
     def get_transformer_positions_for_plz_trafo_ui(self, plz: int) -> list[dict]:
         """
