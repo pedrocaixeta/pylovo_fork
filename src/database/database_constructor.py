@@ -410,11 +410,5 @@ class DatabaseConstructor:
         Drops all tables in the database
         """
         cur = self.dbc.conn.cursor()
-
-        cur.execute("DROP EXTENSION IF EXISTS pgRouting CASCADE;")
-        print("Dropped pgRouting extension.")
-        cur.execute("DROP EXTENSION IF EXISTS postgis CASCADE;")
-        print("Dropped postgis extension.")
-
         cur.execute(f"DROP SCHEMA {TARGET_SCHEMA} CASCADE")
         self.dbc.conn.commit()
