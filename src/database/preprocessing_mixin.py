@@ -211,29 +211,54 @@ class PreprocessingMixin(BaseMixin, ABC):
         """
         Insert buildings data with geometry filtering for testing mode.
         Only buildings that intersect with the testing geometry are inserted.
+
+        The temporary table approach is necessary here because:
+        1. We need to bulk insert all buildings first (for performance)
+        2. Then filter them against postcode geometry (complex spatial operation)
+        3. PostgreSQL can't efficiently do both in a single operation without either
+           a temp table or individual queries per building
         """
         if not buildings_data:
             return
 
-        # Filter and insert buildings that intersect with the testing geometry
-        # Use a subquery to check intersection condition for each building
+        # Create temporary table - automatically dropped at end of session
+        self.cur.execute("""
+            CREATE TEMP TABLE IF NOT EXISTS testing_buildings (
+                osm_id integer,
+                area double precision,
+                type varchar,
+                geom geometry,
+                center geometry,
+                floors integer,
+                households_per_building integer,
+                address_street_id integer,
+                construction_year integer
+            ) ON COMMIT DROP
+        """)
+
+        # Bulk insert all buildings with geometry transformation
         insert_query = """
+            INSERT INTO testing_buildings
+            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
+            VALUES (%s, %s, %s, ST_Transform(%s::geometry, 3035), ST_Transform(%s::geometry, 3035), %s, %s, %s, %s)
+        """
+        self.cur.executemany(insert_query, buildings_data)
+
+        # Filter and insert only buildings that intersect with the postcode geometry
+        self.cur.execute("""
             INSERT INTO buildings_tem
             (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
-            SELECT %s, %s, %s, ST_Transform(%s::geometry, 3035), ST_Transform(%s::geometry, 3035), %s, %s, %s, %s
-            WHERE EXISTS (
-                SELECT 1 FROM postcode p
-                WHERE p.plz = %s
-                AND p.allocated_plz IS NOT NULL
-                AND ST_Intersects(ST_Transform(%s::geometry, 3035), p.geom)
-            )
-        """
+            SELECT tb.osm_id, tb.area, tb.type, tb.geom, tb.center, tb.floors, 
+                   tb.households_per_building, tb.address_street_id, tb.construction_year
+            FROM testing_buildings tb
+            CROSS JOIN postcode p
+            WHERE p.plz = %(plz)s
+            AND p.allocated_plz IS NOT NULL
+            AND ST_Intersects(tb.geom, p.geom)
+        """, {"plz": allocated_plz})
 
-        # Execute for each building with geometry filtering
-        for building in buildings_data:
-            # building tuple: (osm_id, area, type, geom, center, floors, households, street_id, year)
-            params = building + (allocated_plz, building[3])  # Add plz and geom for the WHERE clause
-            self.cur.execute(insert_query, params)
+        # Explicitly drop temp table (though ON COMMIT DROP would handle it)
+        self.cur.execute("DROP TABLE IF EXISTS testing_buildings")
 
     def set_other_buildings_table(self, plz: int):
         """
@@ -562,21 +587,17 @@ class PreprocessingMixin(BaseMixin, ABC):
         if not ways_data:
             raise ValueError("No rows to insert into ways_tem")
 
-        if TESTING and plz is not None:
-            # In testing mode, filter ways by testing geometry
-            return self._set_ways_tem_table_with_geometry_filter(ways_data, plz)
-        else:
-            # Normal mode - insert all ways
-            insert_query = """
-                INSERT INTO ways_tem
-                (clazz, source, target, cost, reverse_cost, geom, way_id)
-                VALUES (%s, %s, %s, %s, %s, ST_Transform(%s::geometry, 3035), %s)
-            """
-            self.cur.executemany(insert_query, ways_data)
-            self.cur.execute("SELECT COUNT(*) FROM ways_tem")
-            return self.cur.fetchone()[0]
+        # Normal mode - insert all ways
+        insert_query = """
+            INSERT INTO ways_tem
+            (clazz, source, target, cost, reverse_cost, geom, way_id)
+            VALUES (%s, %s, %s, %s, %s, ST_Transform(%s::geometry, 3035), %s)
+        """
+        self.cur.executemany(insert_query, ways_data)
+        self.cur.execute("SELECT COUNT(*) FROM ways_tem")
+        return self.cur.fetchone()[0]
 
-    def _set_ways_tem_table_with_geometry_filter(self, ways_data: list[tuple], plz: int) -> int:
+    def set_ways_tem_table_with_geometry_filter(self, ways_data: list[tuple], plz: int) -> int:
         """
         Insert ways data with geometry filtering for testing mode.
         Only ways that intersect with the testing geometry are inserted.
