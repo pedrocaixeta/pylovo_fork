@@ -355,7 +355,7 @@ class GridGenerator:
             if TESTING:
                 allocated_plz = self.dbc.get_plz_for_testing(self.plz)
                 ways_rows = self.inf_dbc.fetch_ways_from_infdb(allocated_plz)
-                ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, allocated_plz)
+                ways_count = self.dbc.set_ways_tem_table_with_geometry_filter(ways_rows, allocated_plz)
             else:
                 ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
                 ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, self.plz)

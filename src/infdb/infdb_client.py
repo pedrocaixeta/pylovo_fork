@@ -45,7 +45,7 @@ class InfdbClient:
             plz (str): The plz of the buildings to get
 
         Returns:
-            list[tuple[int, float, str, str, str, int, int]]: A list of tuples, where each tuple contains:
+            list[tuple]: A list of tuples, where each tuple contains:
                 - id (int): Unique building identifier
                 - floor_area (float): Floor area of the building in square meters
                 - building_type (str): Type of building (e.g., 'SFH' for Single Family House)
@@ -54,6 +54,7 @@ class InfdbClient:
                 - floor_number (int): Number of floors in the building
                 - households (int): Number of households in the building
                 - address_street_id (int): id of the way that the building is connected to
+                - construction_year (str): Year the building was constructed
         """
         query = """
             SELECT id, floor_area, COALESCE(building_type, building_use) as type,

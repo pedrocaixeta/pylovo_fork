@@ -195,7 +195,7 @@ class PreprocessingMixin(BaseMixin, ABC):
 
         Args:
             buildings_data (list[tuple[int, float, str, str, str, int, int]]): List of building tuples
-                containing (id, floor_area, building_type, geom, center_geom, floor_number, households).
+                containing (id, floor_area, building_type, geom, center_geom, floor_number, households, address_street_id, construction_year).
 
         Returns:
             None
@@ -206,6 +206,7 @@ class PreprocessingMixin(BaseMixin, ABC):
             VALUES (%s, %s, %s, ST_Transform(%s::geometry, 3035), ST_Transform(%s::geometry, 3035), %s, %s, %s, %s)
         """
         self.cur.executemany(insert_query, buildings_data)
+        # self.conn.commit() only for debugging
 
     def set_buildings_table_with_geometry_filter(self, buildings_data: list[tuple], allocated_plz: int) -> None:
         """

@@ -18,7 +18,7 @@ def main():
     logger.info("### CREATING DATABASE CONSTRUCTOR CLASS ###")
     sgc = DatabaseConstructor()
     logger.info("### DROPPING ALL TABLES ###")
-    # sgc.drop_all_tables() uncomment for debugging
+    # sgc.drop_all_tables() #uncomment for debugging
 
     ### Create schema if it doesn't exist
     logger.info(f"### CREATING SCHEMA {TARGET_SCHEMA} IF NOT EXISTS ###")
