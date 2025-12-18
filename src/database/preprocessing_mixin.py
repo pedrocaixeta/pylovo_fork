@@ -631,7 +631,8 @@ class PreprocessingMixin(BaseMixin, ABC):
         filter_query = """
             INSERT INTO ways_tem
             (clazz, source, target, cost, reverse_cost, geom, way_id)
-            SELECT tw.clazz, tw.source, tw.target, tw.cost, tw.reverse_cost, tw.geom, tw.way_id
+            SELECT tw.clazz, tw.source, tw.target, tw.cost, tw.reverse_cost, 
+                   ST_Transform(%s::geometry, 3035), tw.way_id
             FROM temp_ways tw
             CROSS JOIN postcode p
             WHERE p.plz = %(plz)s
