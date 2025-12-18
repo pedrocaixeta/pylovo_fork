@@ -200,109 +200,40 @@ class PreprocessingMixin(BaseMixin, ABC):
         Returns:
             None
         """
-        if TESTING and plz is not None:
-            # In testing mode, filter buildings by testing geometry
-            self._set_buildings_table_with_geometry_filter(buildings_data, plz)
-        else:
-            # Normal mode - insert all buildings with processed construction_year
-            processed_data = []
-            for building in buildings_data:
-                # Extract construction_year - take the first year if it's a range
-                construction_year = building[8] if len(building) > 8 else None
-                if construction_year and isinstance(construction_year, str) and '-' in construction_year:
-                    try:
-                        construction_year = int(construction_year.split('-')[0])
-                    except (ValueError, IndexError):
-                        construction_year = None
-                elif construction_year:
-                    try:
-                        construction_year = int(construction_year)
-                    except (ValueError, TypeError):
-                        construction_year = None
-                else:
-                    construction_year = None
-                
-                # Create new tuple with processed construction_year
-                processed_building = building[:8] + (construction_year,)
-                processed_data.append(processed_building)
-            
-            insert_query = """
-                INSERT INTO buildings_tem
-                (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
-                VALUES (%s, %s, %s, ST_Transform(%s::geometry, 3035), ST_Transform(%s::geometry, 3035), %s, %s, %s, %s)
-            """
-            self.cur.executemany(insert_query, processed_data)
+        insert_query = """
+            INSERT INTO buildings_tem
+            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
+            VALUES (%s, %s, %s, ST_Transform(%s::geometry, 3035), ST_Transform(%s::geometry, 3035), %s, %s, %s, %s)
+        """
+        self.cur.executemany(insert_query, buildings_data)
 
-    def _set_buildings_table_with_geometry_filter(self, buildings_data: list[tuple], plz: int) -> None:
+    def set_buildings_table_with_geometry_filter(self, buildings_data: list[tuple], allocated_plz: int) -> None:
         """
         Insert buildings data with geometry filtering for testing mode.
         Only buildings that intersect with the testing geometry are inserted.
         """
         if not buildings_data:
             return
-            
-        # Create a temporary table to hold the building data
-        temp_table_query = """
-            CREATE TEMP TABLE testing_buildings (
-                osm_id integer,
-                area double precision,
-                type varchar,
-                geom geometry,
-                center geometry,
-                floors integer,
-                households_per_building integer,
-                address_street_id integer,
-                construction_year integer
-            )
-        """
-        self.cur.execute(temp_table_query)
-        
-        # Process building data to handle construction_year ranges
-        processed_data = []
-        for building in buildings_data:
-            # Extract construction_year - take the first year if it's a range
-            construction_year = building[8] if len(building) > 8 else None
-            if construction_year and isinstance(construction_year, str) and '-' in construction_year:
-                try:
-                    construction_year = int(construction_year.split('-')[0])
-                except (ValueError, IndexError):
-                    construction_year = None
-            elif construction_year:
-                try:
-                    construction_year = int(construction_year)
-                except (ValueError, TypeError):
-                    construction_year = None
-            else:
-                construction_year = None
-            
-            # Create new tuple with processed construction_year
-            processed_building = building[:8] + (construction_year,)
-            processed_data.append(processed_building)
-        
-        # Insert all building data into temp table
+
+        # Filter and insert buildings that intersect with the testing geometry
+        # Use a subquery to check intersection condition for each building
         insert_query = """
-            INSERT INTO testing_buildings
-            (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
-            VALUES (%s, %s, %s, ST_Transform(%s::geometry, 3035), %s, %s, %s, %s, %s)
-        """
-        self.cur.executemany(insert_query, processed_data)
-        
-        # Filter and insert only buildings that intersect with testing geometry
-        filter_query = """
             INSERT INTO buildings_tem
             (osm_id, area, type, geom, center, floors, households_per_building, address_street_id, construction_year)
-            SELECT tb.osm_id, tb.area, tb.type, tb.geom, tb.center, tb.floors, 
-                   tb.households_per_building, tb.address_street_id, tb.construction_year
-            FROM testing_buildings tb
-            CROSS JOIN postcode p
-            WHERE p.plz = %(plz)s
-            AND p.allocated_plz IS NOT NULL
-            AND ST_Intersects(tb.geom, p.geom)
+            SELECT %s, %s, %s, ST_Transform(%s::geometry, 3035), ST_Transform(%s::geometry, 3035), %s, %s, %s, %s
+            WHERE EXISTS (
+                SELECT 1 FROM postcode p
+                WHERE p.plz = %s
+                AND p.allocated_plz IS NOT NULL
+                AND ST_Intersects(ST_Transform(%s::geometry, 3035), p.geom)
+            )
         """
-        self.cur.execute(filter_query, {"plz": plz})
-        
-        # Drop temp table
-        self.cur.execute("DROP TABLE testing_buildings")
+
+        # Execute for each building with geometry filtering
+        for building in buildings_data:
+            # building tuple: (osm_id, area, type, geom, center, floors, households, street_id, year)
+            params = building + (allocated_plz, building[3])  # Add plz and geom for the WHERE clause
+            self.cur.execute(insert_query, params)
 
     def set_other_buildings_table(self, plz: int):
         """
@@ -926,10 +857,11 @@ class PreprocessingMixin(BaseMixin, ABC):
         query = """
                 SELECT allocated_plz
                 FROM pylovo.postcode
-                WHERE plz = %(p)s LIMIT 1", {"p": plz}) """
+                WHERE plz = %(plz)s LIMIT 1
+                """
 
         self.cur.execute(query, {"plz": plz})
-        allocated_plz = self.cur.fetchall()
+        allocated_plz = self.cur.fetchone()[0]
 
         return allocated_plz
 
