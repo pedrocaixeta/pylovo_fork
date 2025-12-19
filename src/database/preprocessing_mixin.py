@@ -233,7 +233,7 @@ class PreprocessingMixin(BaseMixin, ABC):
                 floors integer,
                 households_per_building integer,
                 address_street_id integer,
-                construction_year integer
+                construction_year text
             ) ON COMMIT DROP
         """)
 
@@ -633,7 +633,7 @@ class PreprocessingMixin(BaseMixin, ABC):
             INSERT INTO ways_tem
             (clazz, source, target, cost, reverse_cost, geom, way_id)
             SELECT tw.clazz, tw.source, tw.target, tw.cost, tw.reverse_cost, 
-                   ST_Transform(%s::geometry, 3035), tw.way_id
+                   ST_Transform(tw.geom, 3035), tw.way_id
             FROM temp_ways tw
             CROSS JOIN postcode p
             WHERE p.plz = %(plz)s
