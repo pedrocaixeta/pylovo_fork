@@ -1,33 +1,29 @@
 """
-Template for implementing electrical simulation backends in pylovo.
+Abstract base class for electrical simulation backends.
 
-This module defines the abstract base class that all electrical simulation backends
+This module defines the interface that all electrical simulation backends
 must implement. It serves as a contract between pylovo's grid generation algorithms
 and the underlying electrical simulation software.
 
-Purpose within pylovo
----------------------
-This template enables pylovo to support multiple electrical simulation engines
+Purpose
+-------
+Enables pylovo to support multiple electrical simulation engines
 (pandapower, OpenDSS, etc.) without modifying the core grid generation logic.
-Grid construction algorithms in cable_installer.py and grid_generator.py work with
-high-level component specifications (BusSpec, LineSpec, etc.) rather than
-backend-specific API calls.
+Grid construction algorithms work with high-level component specifications
+(BusSpec, LineSpec, etc.) rather than backend-specific API calls.
 
-Architecture Pattern
---------------------
-- Grid generation algorithms create ComponentSpec objects (see component_specs.py)
+Architecture
+------------
+- Grid generation algorithms create ComponentSpec objects (see specs.py)
 - Backend implementations translate these specs to their native API calls
 - This decoupling allows easy switching between simulation engines via config
 
-Current Implementations
------------------------
-- PandapowerBackend: Production implementation using pandapower library
 Contract Requirements
 ---------------------
 Any backend implementation MUST:
 1. Implement all @abstractmethod functions defined below
 2. Accept ComponentSpec objects and translate to native API calls
-3. Handle Pylovo grid conventions (400V, 20kV MV)
+3. Handle pylovo grid conventions (400V LV, 20kV MV for German grids)
 4. Support cable types from equipment_data table
 5. Return consistent circuit metrics for analysis
 """
@@ -38,11 +34,10 @@ from typing import Any, Dict, Optional
 
 class IElectricalBackend(ABC):
     """
-    Abstract backend template for electrical simulation engines.
+    Abstract backend interface for electrical simulation engines.
 
     This class defines the required interface that all electrical backends must implement
-    to be compatible with pylovo's grid generation system. See module docstring for
-    detailed explanation of purpose and usage patterns.
+    to be compatible with pylovo's grid generation system.
 
     Implementation Guide
     --------------------
@@ -54,7 +49,7 @@ class IElectricalBackend(ABC):
 
     Example
     -------
-    See src/electrical_backend/pandapower_backend.py for reference implementation.
+    See src/electrical_backend/pandapower/backend.py for reference implementation.
     """
 
     @abstractmethod

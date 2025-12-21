@@ -1,5 +1,22 @@
 """
-Component specification classes for German 3-phase LV grids.
+Component specification dataclasses for electrical grid elements.
+
+These backend-agnostic dataclasses define the interface between grid generation
+algorithms and electrical simulation backends. Grid algorithms create spec objects,
+and backends translate them to native API calls.
+
+Note:
+    Default values are configured for German distribution grids (0.4kV LV, 20kV MV).
+    For other regions, override defaults when creating spec instances or consider
+    config-driven regional parameters.
+
+Classes:
+    ComponentSpec: Base class for all specifications
+    BusSpec: Bus/node specification
+    TransformerSpec: MV/LV transformer specification
+    LineSpec: Cable/line specification
+    LoadSpec: Load specification
+    ExtGridSpec: External grid connection specification
 """
 
 from dataclasses import dataclass

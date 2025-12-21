@@ -1,11 +1,12 @@
 """
-Equipment adapter dataclasses for OpenDSS backend.
+Equipment dataclasses for electrical components.
 
-These minimal dataclasses convert pylovo's database tuples to objects
-that the OpenDSS component factory can consume.
+These dataclasses represent physical equipment parameters loaded from the database.
+They provide a structured way to pass equipment data to backend implementations.
 
-Separated from opendss_backend.py to avoid circular imports with
-opendss_component_factory.py.
+Classes:
+    CableEquipment: Cable/line electrical parameters
+    TransformerEquipment: Transformer electrical parameters
 """
 from dataclasses import dataclass
 

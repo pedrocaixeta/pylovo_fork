@@ -1,14 +1,30 @@
 """
-Pandapower backend implementation for Pylovo
+Pandapower backend implementation for pylovo.
 
+This module implements IElectricalBackend using pandapower as the simulation engine.
+Pandapower uses pandas DataFrames to represent network components.
+
+Key features:
+    - DataFrame-based network representation
+    - Simple component creation via pp.create_*() functions
+    - Built-in power flow solvers (Newton-Raphson, etc.)
 """
+
 import logging
 from typing import Any, Dict, Optional
 
 import pandapower as pp
 
-from .template_backend import IElectricalBackend
-from .component_specs import BusSpec, ComponentSpec, LineSpec, LoadSpec, TransformerSpec, ExtGridSpec
+from ..core.base import IElectricalBackend
+from ..core.specs import (
+    BusSpec,
+    ComponentSpec,
+    LineSpec,
+    LoadSpec,
+    TransformerSpec,
+    ExtGridSpec,
+    normalize_cable_name,
+)
 from src.config_loader import V_BAND_HIGH, V_BAND_LOW
 
 
@@ -18,17 +34,14 @@ class PandapowerBackendError(Exception):
 
 class PandapowerBackend(IElectricalBackend):
     """
+    Pandapower implementation of IElectricalBackend.
 
     Manages pandapower network lifecycle and component creation.
     Designed to be a drop-in replacement for direct pp.create_*() calls.
     """
 
     def __init__(self, logger: Optional[logging.Logger] = None):
-        """
-        Initialize pandapower backend.
-        Args:
-            logger: Optional logger instance
-        """
+        """Initialize pandapower backend."""
         self.logger = logger or logging.getLogger(__name__)
         self.net = None
         self._circuit_name = None
@@ -37,39 +50,17 @@ class PandapowerBackend(IElectricalBackend):
     def initialize_circuit(
         self, name: str, source_bus: str, primary_kv: float,
     ) -> None:
-        """
-        Initialize pandapower network with external grid.
-
-        Args:
-            name: Circuit name (e.g. "PLZ80331_kcid1_bcid2")
-            source_bus: Name of MV source bus
-            primary_kv: MV voltage level in kV (typically 20kV)
-        """
+        """Initialize pandapower network."""
         try:
             self.net = pp.create_empty_network(name=name)
             self._circuit_name = name
             self._bus_cache = {}
-
-          
         except Exception as e:
             self.logger.error(f"Failed to initialize circuit: {e}")
-            raise PandapowerBackendError(
-                f"Circuit initialization failed: {e}"
-            ) from e
+            raise PandapowerBackendError(f"Circuit initialization failed: {e}") from e
 
     def create_component(self, spec: ComponentSpec) -> Any:
-        """
-        Create pandapower component from specification.
-
-        Args:
-            spec: Component specification (BusSpec, TransformerSpec, LineSpec, LoadSpec)
-
-        Returns:
-            Component index in pandapower network
-
-        Raises:
-            PandapowerBackendError: If component creation fails
-        """
+        """Create pandapower component from specification."""
         if self.net is None:
             raise PandapowerBackendError(
                 "Backend not initialized. Call initialize_circuit() first."
@@ -92,17 +83,15 @@ class PandapowerBackend(IElectricalBackend):
                 )
         except Exception as e:
             self.logger.error(f"Failed to create component {spec.name}: {e}")
-            raise PandapowerBackendError(
-                f"Component creation failed: {e}"
-            ) from e
+            raise PandapowerBackendError(f"Component creation failed: {e}") from e
+
+    # =========================================================================
+    # Private Component Creation Methods
+    # =========================================================================
 
     def _create_bus(self, spec: BusSpec) -> int:
         """Create bus from specification."""
-        if spec.zone is not None:
-            zone = spec.zone
-        else:
-            # TODO: What is the default here?  -->
-            zone = "n"
+        zone = spec.zone if spec.zone is not None else "n"
         bus_idx = pp.create_bus(
             self.net,
             name=spec.name,
@@ -119,12 +108,9 @@ class PandapowerBackend(IElectricalBackend):
 
     def _create_transformer(self, spec: TransformerSpec) -> int:
         """Create transformer from specification."""
-        # Get bus indices
         mv_bus = self._get_bus_index(spec.bus1)
         lv_bus = self._get_bus_index(spec.bus2)
 
-        # Use standard pandapower transformer type
-        # Format: "sn_mva hv_kv/lv_kv" e.g. "0.63 MVA 20/0.4 kV"
         sn_mva = spec.kva / 1000.0
         std_type = f"{sn_mva} MVA 20/0.4 kV"
 
@@ -136,17 +122,14 @@ class PandapowerBackend(IElectricalBackend):
             name=spec.name,
             parallel=spec.parallel
         )
-
         self.logger.debug(f"Created transformer: {spec.name} (kva={spec.kva})")
         return trafo_idx
 
     def _create_line(self, spec: LineSpec) -> int:
         """Create line/cable from specification."""
-        # Get bus indices
         from_bus = self._get_bus_index(spec.bus1)
         to_bus = self._get_bus_index(spec.bus2)
 
-        # Use cable name as standard type (must be registered first)
         std_type = spec.cable_name if spec.cable_name else "NAYY_4_150"
 
         line_idx = pp.create_line(
@@ -159,7 +142,6 @@ class PandapowerBackend(IElectricalBackend):
             geodata=spec.coordinates,
             parallel=spec.parallel
         )
-
         self.logger.debug(
             f"Created line: {spec.name} (length={spec.length_km:.3f}km, type={std_type})"
         )
@@ -167,10 +149,7 @@ class PandapowerBackend(IElectricalBackend):
 
     def _create_load(self, spec: LoadSpec) -> int:
         """Create load from specification."""
-        # Get bus index
         bus = self._get_bus_index(spec.bus)
-
-        # Convert kW/kvar to MW/Mvar
         p_mw = spec.kw / 1000.0
 
         load_idx = pp.create_load(
@@ -180,7 +159,6 @@ class PandapowerBackend(IElectricalBackend):
             name=spec.name,
             max_p_mw=spec.max_p_mw
         )
-
         self.logger.debug(
             f"Created load: {spec.name} (kw={spec.kw:.1f}, kvar={spec.kvar:.1f})"
         )
@@ -189,26 +167,16 @@ class PandapowerBackend(IElectricalBackend):
     def _create_ext_grid(self, spec: ExtGridSpec) -> int:
         """Create external grid from specification."""
         bus = self._get_bus_index(spec.bus)
-        ext_grid_idx = pp.create_ext_grid(self.net, bus=bus, vm_pu=spec.vm_pu, name=spec.name)
+        ext_grid_idx = pp.create_ext_grid(
+            self.net, bus=bus, vm_pu=spec.vm_pu, name=spec.name
+        )
         return ext_grid_idx
 
     def _get_bus_index(self, bus_name: str) -> int:
-        """
-        Get bus index from name using cache.
-
-        Args:
-            bus_name: Bus name
-
-        Returns:
-            Bus index in pandapower network
-
-        Raises:
-            ValueError: If bus not found
-        """
+        """Get bus index from name using cache."""
         if bus_name in self._bus_cache:
             return self._bus_cache[bus_name]
 
-        # Fallback: search in dataframe
         buses = self.net.bus[self.net.bus.name == bus_name]
         if buses.empty:
             raise ValueError(f"Bus not found: {bus_name}")
@@ -217,39 +185,39 @@ class PandapowerBackend(IElectricalBackend):
         self._bus_cache[bus_name] = bus_idx
         return bus_idx
 
-    def register_cable_types(self, cables: list) -> None:
-        """
-        Register cable standard types from equipment data.
+    # =========================================================================
+    # Cable Registration
+    # =========================================================================
 
-        Args:
-            cables: List with cable specifications from database
-        """
-        # Create standard type for each cable in the database
-        from .component_specs import normalize_cable_name
+    def register_cable_types(self, cables: list) -> None:
+        """Register cable standard types from equipment data."""
         for cable in cables:
             name, r_ohm_per_km, x_ohm_per_km, max_i_ka = cable
             normalized = normalize_cable_name(name)
-            q_mm2 = int(name.split("_")[-1])  # Extract cross-section from name
+            q_mm2 = int(name.split("_")[-1])
 
-            pp.create_std_type(self.net,
-                {"r_ohm_per_km": float(r_ohm_per_km), "x_ohm_per_km": float(x_ohm_per_km), "max_i_ka": float(max_i_ka),
-                    "c_nf_per_km": float(0),  # Set to zero for our standard grids
-                    "q_mm2": q_mm2}, name=normalized, element="line", )
+            pp.create_std_type(
+                self.net,
+                {
+                    "r_ohm_per_km": float(r_ohm_per_km),
+                    "x_ohm_per_km": float(x_ohm_per_km),
+                    "max_i_ka": float(max_i_ka),
+                    "c_nf_per_km": float(0),
+                    "q_mm2": q_mm2
+                },
+                name=normalized,
+                element="line",
+            )
+        self.logger.debug(f"Created {len(cables)} standard cable types")
 
-        self.logger.debug(f"Created {len(cables)} standard cable types from equipment_data table")
-        return None
+    # =========================================================================
+    # Power Flow & Analysis
+    # =========================================================================
 
     def solve_power_flow(self) -> bool:
-        """
-        Solve power flow using Newton-Raphson.
-
-        Returns:
-            True if converged, False otherwise
-        """
+        """Solve power flow using Newton-Raphson."""
         if self.net is None:
-            raise PandapowerBackendError(
-                "No network available for power flow analysis"
-            )
+            raise PandapowerBackendError("No network available for power flow analysis")
 
         try:
             self.logger.debug("Solving power flow...")
@@ -257,67 +225,17 @@ class PandapowerBackend(IElectricalBackend):
 
             converged = self.net.converged
             if converged:
-                self.logger.info("✓ Power flow converged")
+                self.logger.info("Power flow converged")
             else:
-                self.logger.warning("✗ Power flow did not converge")
-
+                self.logger.warning("Power flow did not converge")
             return converged
 
         except Exception as e:
             self.logger.error(f"Power flow failed: {e}")
             return False
 
-    def export_to_format(self, filename: Optional[str] = None) -> str:
-        """
-        Export circuit to JSON format.
-
-        Args:
-            filename: If provided, save to this file path. If None, return JSON string only.
-
-        Returns:
-            JSON string representation of pandapower network
-        """
-        if self.net is None:
-            raise PandapowerBackendError(
-                "No network available for export"
-            )
-
-        try:
-            if filename:
-                # pp.to_json returns None when filename is provided
-                pp.to_json(self.net, filename=filename)
-                # Read back to return the string as required by interface
-                with open(filename, 'r') as f:
-                    json_str = f.read()
-                self.logger.info(f"✓ Exported to JSON file: {filename}")
-            else:
-                json_str = pp.to_json(self.net)
-                self.logger.info("✓ Exported to JSON")
-
-            return json_str
-
-        except Exception as e:
-            self.logger.error(f"JSON export failed: {e}")
-            raise PandapowerBackendError(
-                f"JSON export failed: {e}"
-            ) from e
-
-    def cleanup(self) -> None:
-        """Clean up network resources."""
-        if self.net:
-            self.net = None
-            self._bus_cache = {}
-            self.logger.debug("✓ Cleaned up network")
-
-        self._circuit_name = None
-
     def get_circuit_metrics(self) -> Dict[str, Any]:
-        """
-        Get circuit metrics after power flow solution.
-
-        Returns:
-            Dictionary with network statistics and power flow results
-        """
+        """Get circuit metrics after power flow solution."""
         if self.net is None:
             return {}
 
@@ -329,34 +247,54 @@ class PandapowerBackend(IElectricalBackend):
             "num_loads": len(self.net.load),
         }
 
-        # Add convergence status
         if hasattr(self.net, 'converged'):
             metrics["converged"] = self.net.converged
 
-        # Add voltage results if available
         if hasattr(self.net, 'res_bus') and not self.net.res_bus.empty:
             vm_pu = self.net.res_bus.vm_pu
             metrics["min_voltage_pu"] = float(vm_pu.min())
             metrics["max_voltage_pu"] = float(vm_pu.max())
             metrics["avg_voltage_pu"] = float(vm_pu.mean())
 
-            # Check for voltage violations
-            if metrics["min_voltage_pu"] < 0.95 or metrics["max_voltage_pu"] > 1.05:
-                self.logger.warning(
-                    f"Voltage violations: "
-                    f"min={metrics['min_voltage_pu']:.3f}pu, "
-                    f"max={metrics['max_voltage_pu']:.3f}pu"
-                )
-
-        # Add loss information
         if hasattr(self.net, 'res_line') and not self.net.res_line.empty:
-            total_losses_mw = float(self.net.res_line.pl_mw.sum())
-            metrics["total_losses_mw"] = total_losses_mw
+            metrics["total_losses_mw"] = float(self.net.res_line.pl_mw.sum())
 
         return metrics
 
     # =========================================================================
-    # Query Methods - Read data from backend
+    # Export & Cleanup
+    # =========================================================================
+
+    def export_to_format(self, filename: Optional[str] = None) -> str:
+        """Export circuit to JSON format."""
+        if self.net is None:
+            raise PandapowerBackendError("No network available for export")
+
+        try:
+            if filename:
+                pp.to_json(self.net, filename=filename)
+                with open(filename, 'r') as f:
+                    json_str = f.read()
+                self.logger.info(f"Exported to JSON file: {filename}")
+            else:
+                json_str = pp.to_json(self.net)
+                self.logger.info("Exported to JSON")
+            return json_str
+
+        except Exception as e:
+            self.logger.error(f"JSON export failed: {e}")
+            raise PandapowerBackendError(f"JSON export failed: {e}") from e
+
+    def cleanup(self) -> None:
+        """Clean up network resources."""
+        if self.net:
+            self.net = None
+            self._bus_cache = {}
+            self.logger.debug("Cleaned up network")
+        self._circuit_name = None
+
+    # =========================================================================
+    # Query Methods
     # =========================================================================
 
     def get_cable_types(self) -> list[str]:
@@ -366,15 +304,7 @@ class PandapowerBackend(IElectricalBackend):
         return list(self.net.std_types.get("line", {}).keys())
 
     def get_component_count(self, component_type: str) -> int:
-        """
-        Get component count by type.
-
-        Args:
-            component_type: One of 'buses', 'lines', 'loads', 'transformers'
-
-        Returns:
-            Number of components of the specified type
-        """
+        """Get component count by type."""
         if self.net is None:
             return 0
         type_map = {
@@ -388,15 +318,7 @@ class PandapowerBackend(IElectricalBackend):
         return len(df) if df is not None else 0
 
     def get_bus_coordinates(self, bus_name: str) -> tuple[float, float] | None:
-        """
-        Get bus geographic coordinates.
-
-        Args:
-            bus_name: Name of the bus
-
-        Returns:
-            Tuple of (x, y) coordinates, or None if not available
-        """
+        """Get bus geographic coordinates."""
         if self.net is None or self.net.bus_geodata.empty:
             return None
         try:
@@ -409,51 +331,32 @@ class PandapowerBackend(IElectricalBackend):
         return (float(row["x"]), float(row["y"]))
 
     # =========================================================================
-    # Update Methods - Modify existing components
+    # Update Methods
     # =========================================================================
 
     def set_bus_coordinates(self, bus_name: str, x: float, y: float) -> None:
-        """
-        Set bus geographic coordinates.
-
-        Args:
-            bus_name: Name of the bus
-            x: X coordinate
-            y: Y coordinate
-        """
+        """Set bus geographic coordinates."""
         if self.net is None:
             return
         try:
             bus_idx = self._get_bus_index(bus_name)
+            self.net.bus_geodata.at[bus_idx, "x"] = x
+            self.net.bus_geodata.at[bus_idx, "y"] = y
         except ValueError:
-            return
-        self.net.bus_geodata.at[bus_idx, "x"] = x
-        self.net.bus_geodata.at[bus_idx, "y"] = y
+            pass
 
     def set_bus_zone(self, bus_name: str, zone: str) -> None:
-        """
-        Set bus zone attribute.
-
-        Args:
-            bus_name: Name of the bus
-            zone: Zone identifier string
-        """
+        """Set bus zone attribute."""
         if self.net is None:
             return
         try:
             bus_idx = self._get_bus_index(bus_name)
+            self.net.bus.at[bus_idx, "zone"] = zone
         except ValueError:
-            return
-        self.net.bus.at[bus_idx, "zone"] = zone
+            pass
 
     def set_transformer_rating(self, trafo_name: str, rating_mva: float) -> None:
-        """
-        Set transformer rated power.
-
-        Args:
-            trafo_name: Name of the transformer
-            rating_mva: Rated power in MVA
-        """
+        """Set transformer rated power."""
         if self.net is None:
             return
         trafo_df = self.net.trafo[self.net.trafo["name"] == trafo_name]
