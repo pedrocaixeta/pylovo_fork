@@ -135,8 +135,7 @@ class CableInstaller:
             self.backend.create_component(bus_spec)
 
     def create_consumer_bus_and_load(self, consumer_list: list, load_units: dict,
-                                     load_type: dict, building_df: pd.DataFrame,
-                                     consumer_categories: pd.DataFrame) -> None:
+                                     sim_load_per_building: dict, buildings_df: pd.DataFrame, load_type: dict) -> None:
         """Create consumer buses and loads with simultaneity-adjusted power.
 
         Applies Kerber formula per building to calculate simultaneous load.
@@ -145,26 +144,8 @@ class CableInstaller:
         for consumer in consumer_list:
             node_geodata = self.dbc.get_node_geom(consumer)
             ltype = load_type[consumer]
-
-            # Get peak load per household
-            if ltype in ["SFH", "MFH", "AB", "TH"]:
-                peak_load = consumer_categories.loc[
-                    consumer_categories["definition"] == ltype, "peak_load"
-                ].values[0]
-            else:
-                peak_load = building_df[building_df["vertice_id"] == consumer]["peak_load_in_kw"].tolist()[0]
-
-            # Get simultaneity factor for this building type
-            sim_factor_row = consumer_categories.loc[
-                consumer_categories["definition"] == ltype, "sim_factor"
-            ]
-            sim_factor = sim_factor_row.values[0] if len(sim_factor_row) > 0 else 0.07
-
-            # Calculate simultaneous load using Kerber formula (per building)
-            num_households = load_units[consumer]
-            total_installed_kw = peak_load * num_households
-            simultaneous_load_kw = oneSimultaneousLoad(total_installed_kw, num_households, sim_factor)
-
+            total_installed_kw = buildings_df[buildings_df["vertice_id"] == consumer]["peak_load_in_kw"].tolist()[0]
+            simultaneous_load_kw = sim_load_per_building[consumer] * 1e3
             # Calculate reactive power from power factor
             phi = np.arccos(DEFAULT_POWER_FACTOR)
             kvar = simultaneous_load_kw * np.tan(phi)

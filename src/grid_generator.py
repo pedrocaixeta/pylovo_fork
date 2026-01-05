@@ -711,9 +711,9 @@ class GridGenerator:
 
         return (vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes,)
 
-    def get_consumer_simultaneous_load_dict(self, consumer_list: list, buildings_df: pd.DataFrame) -> tuple[
+    def get_building_simultaneous_load_dict(self, consumer_list: list, buildings_df: pd.DataFrame) -> tuple[
         dict, dict, dict]:
-        Pd = {consumer: 0 for consumer in consumer_list}  # dict of all vertices in bc, 0 as default
+        sim_load_per_building = {consumer: 0 for consumer in consumer_list}  # dict of all vertices in bc, 0 as default
         load_units = {consumer: 0 for consumer in consumer_list}
         load_type = {consumer: "SFH" for consumer in consumer_list}
 
@@ -723,9 +723,9 @@ class GridGenerator:
             gzf = CONSUMER_CATEGORIES.loc[CONSUMER_CATEGORIES.definition == row.type, "sim_factor"].item()
 
             # Determine simultaneous load of each building in MW
-            Pd[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.households_per_building, gzf)
+            sim_load_per_building[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.households_per_building, gzf)
 
-        return Pd, load_units, load_type
+        return sim_load_per_building, load_units, load_type
 
 
     def find_furthest_node_path_list(self, connection_node_list: list, vertices_dict: dict, ont_vertice: int) -> list:
@@ -812,7 +812,7 @@ class GridGenerator:
             vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes = (
                 self.prepare_vertices_list(self.plz, kcid, bcid)
             )
-            Pd, load_units, load_type = self.get_consumer_simultaneous_load_dict(consumer_list, buildings_df)
+            sim_load_per_building, load_units, load_type = self.get_building_simultaneous_load_dict(consumer_list, buildings_df)
 
             # Initialize backend using configuration
             backend = create_backend(ELECTRICAL_BACKEND, logger=self.logger)
@@ -838,7 +838,7 @@ class GridGenerator:
             installer.create_lvmv_bus(self.plz, kcid, bcid)
             installer.create_transformer(self.plz, kcid, bcid)
             installer.create_connection_bus(connection_nodes)
-            installer.create_consumer_bus_and_load(consumer_list, load_units, load_type, buildings_df, CONSUMER_CATEGORIES)
+            installer.create_consumer_bus_and_load(consumer_list, sim_load_per_building, buildings_df, load_type)
 
             trafo_power = self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)
             self.logger.info(
@@ -864,7 +864,7 @@ class GridGenerator:
                     # Install consumer cables
                     local_length_dict = installer.install_consumer_cables(
                         self.plz, bcid, kcid, branch_deviation, connection_node_list,
-                        ont_vertice, vertices_dict, Pd, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict,
+                        ont_vertice, vertices_dict, sim_load_per_building, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict,
                     )
 
                     # Connect to transformer
@@ -901,7 +901,7 @@ class GridGenerator:
                 # Install cables for this branch
                 local_length_dict = installer.install_consumer_cables(
                     self.plz, bcid, kcid, branch_deviation, branch_node_list,
-                    ont_vertice, vertices_dict, Pd, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict
+                    ont_vertice, vertices_dict, sim_load_per_building, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict
                 )
 
                 # Select appropriate cable and connect nodes
