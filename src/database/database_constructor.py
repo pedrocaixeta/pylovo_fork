@@ -237,7 +237,7 @@ class DatabaseConstructor:
         infdb_client = InfdbClient()
 
         # Fetch postcode data from InfDB
-        rows = infdb_client.fetch_postcode_data()
+        rows = infdb_client.fetch_postcode_from_infb()
 
         if not rows:
             raise ValueError("No postcode data retrieved from InfDB")
@@ -245,12 +245,12 @@ class DatabaseConstructor:
         # Optional: Clear existing data from postcode table
         if self.table_exists(table_name="postcode"):
             with self.dbc.conn.cursor() as cur:
-                cur.execute("DELETE FROM postcode")
+                cur.execute("DELETE FROM pylovo.postcode")
                 self.dbc.conn.commit()
 
         # Insert rows into pylovo postcode table using executemany
         insert_query = """
-            INSERT INTO postcode (plz, note, qkm, population, geom)
+            INSERT INTO pylovo.postcode (plz, note, qkm, population, geom)
             VALUES (%s, %s, %s, %s, ST_Transform(%s::geometry, 3035))
         """
         with self.dbc.conn.cursor() as cur:
@@ -410,11 +410,5 @@ class DatabaseConstructor:
         Drops all tables in the database
         """
         cur = self.dbc.conn.cursor()
-
-        cur.execute("DROP EXTENSION IF EXISTS pgRouting CASCADE;")
-        print("Dropped pgRouting extension.")
-        cur.execute("DROP EXTENSION IF EXISTS postgis CASCADE;")
-        print("Dropped postgis extension.")
-
         cur.execute(f"DROP SCHEMA {TARGET_SCHEMA} CASCADE")
         self.dbc.conn.commit()

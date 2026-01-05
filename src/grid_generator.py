@@ -292,9 +292,13 @@ class GridGenerator:
         INTO: buildings_tem
         """
         if USE_INFDB:
-            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
-            buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
-            self.dbc.set_buildings_table(buildings_data, self.plz)
+            if TESTING:
+                allocated_plz = self.dbc.get_plz_for_testing(self.plz)
+                buildings_data = self.inf_dbc.fetch_buildings_from_infdb(allocated_plz)
+                self.dbc.set_buildings_table_with_geometry_filter(buildings_data, allocated_plz)
+            else:
+                buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
+                self.dbc.set_buildings_table(buildings_data, self.plz)
         else:
             self.dbc.set_residential_buildings_table(self.plz)
             self.dbc.set_other_buildings_table(self.plz)
@@ -347,9 +351,13 @@ class GridGenerator:
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
         if USE_INFDB:
-            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
-            ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
-            ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, self.plz)
+            if TESTING:
+                allocated_plz = self.dbc.get_plz_for_testing(self.plz)
+                ways_rows = self.inf_dbc.fetch_ways_from_infdb(allocated_plz)
+                ways_count = self.dbc.set_ways_tem_table_with_geometry_filter(ways_rows, allocated_plz)
+            else:
+                ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
+                ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, self.plz)
         else:
             ways_count = self.dbc.set_ways_tem_table(self.plz)
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
@@ -985,8 +993,9 @@ class GridGenerator:
             backend.export_to_format(filename=savepath_file)
 
         json_string = backend.export_to_format(filename=None)
+        transformer_description = backend.net.trafo.name[0]
 
-        self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string)
+        self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string, transformer_description)
 
         self.logger.info(f"Grid with kcid:{kcid} bcid:{bcid} is stored. ")
 

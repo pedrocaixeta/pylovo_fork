@@ -80,7 +80,7 @@ TRANSFORMER_MAPPING:
   3: [400, 630] # 3=Urban
 
 # Transformer placement parameters
-MAX_BROWNFIELD_TRAFO_DISTANCE: 800 # Maximum distance from brownfield areas for transformer placement
+MAX_BROWNFIELD_TRAFO_DISTANCE: 800 # Maximum connection distance from brownfield transformer
 # Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
 LARGE_COMPONENT_LOWER_BOUND: 2000 # Threshold for number of buildings in a component to apply k-means clustering
 LARGE_COMPONENT_DIVIDER: 1000 # Divider to derive the target number of clusters for k-means clustering

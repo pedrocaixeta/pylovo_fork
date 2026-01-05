@@ -99,7 +99,7 @@ class CableInstaller:
         transformer_rated_power = self.dbc.get_transformer_rated_power_from_bcid(plz, kcid, bcid)
 
         if transformer_rated_power in (100, 160, 250, 400, 630):
-            trafo_name = f"{str(transformer_rated_power)} transformer"
+            trafo_name = f"single {str(transformer_rated_power)} kva transformer"
             kva = transformer_rated_power
             parallel = 1
         elif transformer_rated_power in (500, 800, 1260):
@@ -108,9 +108,9 @@ class CableInstaller:
             parallel = 2
         else:
             # Fallback: use 630 kVA transformers in parallel for large parallel transormers
-            trafo_name = "multiple 630 transformer"
             kva = 630
             parallel = max(1, int(transformer_rated_power / 630))
+            trafo_name = f"{str(parallel)}-fold 630 transformer"
 
         trafo_spec = TransformerSpec(
             name=trafo_name,
