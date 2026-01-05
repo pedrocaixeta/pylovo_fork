@@ -21,7 +21,7 @@ Usage:
 
 from typing import Callable, Dict, Iterable, Optional
 
-from .core.base import IElectricalBackend
+from .core.backend_base import IElectricalBackend
 
 
 # Type alias for backend factory functions

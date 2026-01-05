@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 import pandapower as pp
 
-from ..core.base import IElectricalBackend
+from ..core.backend_base import IElectricalBackend
 from ..core.specs import (
     BusSpec,
     ComponentSpec,

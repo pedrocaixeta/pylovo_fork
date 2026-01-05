@@ -18,7 +18,7 @@ Package structure:
     - factory.py: Backend registration and creation
 """
 
-from .core.base import IElectricalBackend
+from .core.backend_base import IElectricalBackend
 from .core.specs import (
     ComponentSpec,
     BusSpec,

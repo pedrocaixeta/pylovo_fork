@@ -15,7 +15,7 @@ Usage:
     from src.electrical_backend import IElectricalBackend, BusSpec
 """
 
-from .base import IElectricalBackend
+from .backend_base import IElectricalBackend
 from .specs import (
     ComponentSpec,
     BusSpec,

@@ -22,7 +22,7 @@ import shutil
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from ..core.base import IElectricalBackend
+from ..core.backend_base import IElectricalBackend
 from ..core.specs import (
     BusSpec,
     ComponentSpec,
