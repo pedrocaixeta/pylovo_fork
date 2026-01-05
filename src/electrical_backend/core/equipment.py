@@ -14,9 +14,9 @@ from dataclasses import dataclass
 @dataclass
 class CableEquipment:
     """
-    Minimal cable equipment adapter for OpenDSS.
+    Minimal cable equipment adapter for electrical backends.
 
-    Converts pylovo database cable tuples to OpenDSS-compatible objects.
+    Converts pylovo database cable tuples to backend-compatible objects (e.g. for OpenDSS).
     """
     name: str
     r_ohm_per_km: float
@@ -34,7 +34,7 @@ class CableEquipment:
 @dataclass
 class TransformerEquipment:
     """
-    Minimal transformer equipment adapter for OpenDSS.
+    Minimal transformer equipment adapter for electrical backends.
 
     Provides German distribution standard values (20kV/0.4kV).
     """
