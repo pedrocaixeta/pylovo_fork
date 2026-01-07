@@ -993,7 +993,11 @@ class GridGenerator:
             backend.export_to_format(filename=savepath_file)
 
         json_string = backend.export_to_format(filename=None)
-        transformer_description = backend.net.trafo.name[0]
+
+        if ELECTRICAL_BACKEND == "pandapower":
+            transformer_description = backend.net.trafo.name[0]
+        else:
+            transformer_description = "N/A"
 
         self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string, transformer_description)
 

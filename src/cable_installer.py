@@ -134,8 +134,8 @@ class CableInstaller:
             )
             self.backend.create_component(bus_spec)
 
-    def create_consumer_bus_and_load(self, consumer_list: list, load_units: dict,
-                                     sim_load_per_building: dict, buildings_df: pd.DataFrame, load_type: dict) -> None:
+    def create_consumer_bus_and_load(self, consumer_list: list, sim_load_per_building: dict, buildings_df: pd.DataFrame,
+                                     load_type: dict) -> None:
         """Create consumer buses and loads with simultaneity-adjusted power.
 
         Applies Kerber formula per building to calculate simultaneous load.
