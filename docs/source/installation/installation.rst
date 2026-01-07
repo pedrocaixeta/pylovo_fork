@@ -62,8 +62,8 @@ Create your database
 - Install `PostGIS <https://postgis.net/documentation/getting_started/>`_. If you installed Stack Builder use it to install PostGIS.
 - `GDAL <https://gdal.org/en/stable/index.html>`_ is required for some geo-transformations. Ensure it is installed on your system. (e.g. for Ubuntu 24.04: ``sudo apt install gdal-bin``).
 - Create your database with the appropriate configuration (dbname, user, password, host, port).
-- Create a ``.env`` file in the root directory of the repository with these configurations or adjust the connections parameters in the ``config_data.py``.
-- Your configurations might might look like this:
+- Create a ``.env`` file in the root directory of the repository with these configurations.
+- Your configurations might look like this:
 
 ::
 
@@ -100,7 +100,7 @@ To do so, setup the fully dockerized InfDB from the corresponding `GitHub reposi
 Make sure to also run the processor in your InfDB instance. For more information check out ``src/services/processor/Readme.md`` in the InfDB repository.
 
 | Then, before running the ``main_constructor.py`` script to initialize the pylovo database set the ``USE_INFDB: True`` in the
-``config_data.yaml`` file.
+``config/config_database.yaml`` file.
 | Next, the connection configurations set in the InfDB have to be added in the pylovo repository as
 well: add the InfDB configuration to your ``.env`` file below the pylovo configurations:
 
@@ -115,12 +115,12 @@ well: add the InfDB configuration to your ``.env`` file below the pylovo configu
     TARGET_SCHEMA = "pylovo" # optional, default is "public"
 
     # InfDB Database (Input Data)
-    INFDB_DBNAME="citydb"               # replace
-    INFDB_USER="citydb_user"            # replace
+    INFDB_DBNAME="infdb"               # replace
+    INFDB_USER="infdb_user"            # replace
     INFDB_HOST="00.000.00.000"          # replace
     INFDB_PORT=5432                     # replace
-    INFDB_PASSWORD="citydb_password"    # replace
-    INFDB_SOURCE_SCHEMA="pylovo_input"  # InfDB processor puts relevant tables into "pylovo_input" schema
+    INFDB_PASSWORD="infdb"    # replace
+    INFDB_SOURCE_SCHEMA="basedata"  # InfDB processor puts relevant tables into "pylovo_input" schema
 
 .. note::
     If you want to keept it simple, you can also add the pylovo database as schema to the InfDB database by setting the same connection parameters and a

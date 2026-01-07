@@ -141,5 +141,5 @@ def process_trafos(relation_id: int) -> None:
     if "@id" in gdf_substations:
         gdf_substations.drop('@id', axis=1, inplace=True)
 
-    # export geojson
+    # gis_preparation geojson
     gdf_substations.to_file(get_trafos_processed_geojson_path(relation_id), driver='GeoJSON')

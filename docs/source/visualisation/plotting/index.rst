@@ -1,7 +1,7 @@
 Plotting Networks
 ==================
 
-The configuration of plot characteristics can be set in config_plots
+The configuration of plot characteristics can be set in ``config/config_plotting.yaml``
 
 see also examples notebooks to see the use of the functions
 

@@ -1,5 +1,5 @@
 # Must be run after get_parameters_per_plz.py
-from src.parameter_calculator import ParameterCalculator
+from src.analysis.parameter_calculation import ParameterCalculator
 
 plz = 80803
 pc = ParameterCalculator()

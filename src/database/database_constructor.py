@@ -5,6 +5,7 @@ from pathlib import Path
 
 import psycopg2 as psy
 import sqlparse
+import pandas as pd
 
 from src.config_loader import *
 from config.config_table_structure import *
@@ -32,6 +33,18 @@ class DatabaseConstructor:
         else:
             self.dbc = dbc.DatabaseClient()
 
+    def create_schema(self):
+        """
+        Creates the target schema if it doesn't exist.
+        """
+        try:
+            with self.dbc.conn.cursor() as cur:
+                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {TARGET_SCHEMA}")
+                self.dbc.conn.commit()
+                print(f"Schema '{TARGET_SCHEMA}' created or already exists.")
+        except (Exception, psy.DatabaseError) as error:
+            print(f"Error creating schema: {error}")
+            raise error
 
     def get_table_name_list(self):
         with self.dbc.conn.cursor() as cur:
@@ -105,7 +118,7 @@ class DatabaseConstructor:
                     "-progress",
                     "-f",
                     "PostgreSQL",
-                    f"PG:dbname={DBNAME} user={USER} password={PASSWORD} host={HOST} port={PORT}",
+                    f"PG:dbname={DBNAME} user={DBUSER} password={PASSWORD} host={HOST} port={PORT}",
                     file_path,
                     "-nln",
                     f"{TARGET_SCHEMA}.{table_name}",  # explicitly tells ogr2ogr where to append (for the case of table already existing)
@@ -138,12 +151,20 @@ class DatabaseConstructor:
             print(f"{file_name} is successfully imported to db in {int(et - st)} s")
 
 
-    def transformers_to_db(self):
+    def transformers_to_db(self, clear_existing: bool = True):
         """Call the overpass api for transformer data and populate the transformers table.
         Delete raw_data/transformer_data/processed_trafos/*_trafos_processed.geojson to
         fetch fresh data from OSM.
 
+        If clear_existing=True (default), all existing Transformer datasets are deleted before import
+        to avoid duplicate primary keys.
         """
+        # clear existing data to avoid duplicate primary keys
+        if clear_existing and self.table_exists(table_name="transformers"):
+            with self.dbc.conn.cursor() as cur:
+                cur.execute("DELETE FROM transformers;")
+            self.dbc.conn.commit()
+
         trafos_processed_geojson_path = get_trafos_processed_geojson_path(RELATION_ID)
         trafos_processed_3035_geojson_path = get_trafos_processed_3035_geojson_path(RELATION_ID)
 
@@ -204,7 +225,8 @@ class DatabaseConstructor:
 
             et = time.time()
             print(f"{file_name} is successfully imported to db in {int(et - st)} s")
-    
+
+
     def load_postcode_from_infdb(self):
         """
         Load postcode data from InfDB and insert into local 'postcode' table in pylovo.
@@ -215,21 +237,21 @@ class DatabaseConstructor:
         infdb_client = InfdbClient()
 
         # Fetch postcode data from InfDB
-        rows = infdb_client.fetch_postcode_data()
+        rows = infdb_client.fetch_postcode_from_infb()
 
         if not rows:
             raise ValueError("No postcode data retrieved from InfDB")
 
-        # Optional: Clear existing data from local postcode table
+        # Optional: Clear existing data from postcode table
         if self.table_exists(table_name="postcode"):
             with self.dbc.conn.cursor() as cur:
-                cur.execute("DELETE FROM postcode")
+                cur.execute("DELETE FROM pylovo.postcode")
                 self.dbc.conn.commit()
 
-        # Insert rows into local DB using executemany
+        # Insert rows into pylovo postcode table using executemany
         insert_query = """
-            INSERT INTO postcode (plz, note, qkm, population, geom)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO pylovo.postcode (plz, note, qkm, population, geom)
+            VALUES (%s, %s, %s, %s, ST_Transform(%s::geometry, 3035))
         """
         with self.dbc.conn.cursor() as cur:
             cur.executemany(insert_query, rows)
@@ -382,3 +404,11 @@ class DatabaseConstructor:
             print(f"[ERROR] Failed while executing SQL function from file '{filename}': {e}")
             self.dbc.conn.rollback()
             raise
+
+    def drop_all_tables(self):
+        """
+        Drops all tables in the database
+        """
+        cur = self.dbc.conn.cursor()
+        cur.execute(f"DROP SCHEMA {TARGET_SCHEMA} CASCADE")
+        self.dbc.conn.commit()

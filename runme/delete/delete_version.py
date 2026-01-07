@@ -1,7 +1,7 @@
 from src.grid_generator import GridGenerator
 
 # select version you want to delete entirely
-version_id = "1.0"
+version_id = "1"
 
 # delete networks
 gg = GridGenerator(plz="91301") # just a dummy plz for the initialization of the class

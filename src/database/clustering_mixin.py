@@ -161,11 +161,6 @@ class ClusteringMixin(BaseMixin, ABC):
         cost_arr = cost_df.to_numpy()
         et = time.time()
         self.logger.debug(f"Elapsed time for SQL to cost_arr: {et - st}")
-        # Speichere die echte vertices_ids mit neuen Indexen
-        # 0 5346
-        # 1 3263
-        # 2 3653
-        # ...
         localid2vid = dict(enumerate(cost_df["start_vid"].unique()))
         vid2localid = {y: x for x, y in localid2vid.items()}
 
@@ -193,9 +188,34 @@ class ClusteringMixin(BaseMixin, ABC):
 
         return load
 
-    def try_clustering(self, Z: np.ndarray, cluster_amount: int, localid2vid: dict, buildings: pd.DataFrame,
+    def load_constrained_hierarchical_clustering(self, Z: np.ndarray, cluster_amount: int, localid2vid: dict, buildings: pd.DataFrame,
             consumer_cat_df: pd.DataFrame, transformer_capacities: np.ndarray, double_trans: np.ndarray, ) -> tuple[
         dict, dict, int]:
+        """
+        Attempts to cluster buildings based on hierarchical clustering linkage matrix Z and assigns transformers.
+
+        This function cuts the hierarchical tree to form `cluster_amount` clusters. For each cluster, it calculates
+        the simultaneous peak load. It then attempts to assign an optimal transformer (single or double) based on
+        the load and available capacities. If a cluster's load exceeds the maximum single transformer capacity
+        and has enough buildings, it is marked as invalid (too big).
+
+        Args:
+            Z (np.ndarray): The linkage matrix from hierarchical clustering (scipy.cluster.hierarchy.linkage).
+            cluster_amount (int): The number of clusters to form.
+            localid2vid (dict): Mapping from local clustering indices to building vertice IDs.
+            buildings (pd.DataFrame): DataFrame containing building information (loads, types, etc.).
+            consumer_cat_df (pd.DataFrame): DataFrame containing consumer category definitions (simultaneity factors).
+            transformer_capacities (np.ndarray): Array of available single transformer capacities (sorted).
+            double_trans (np.ndarray): Array of available double transformer capacities (sorted).
+
+        Returns:
+            tuple[dict, dict, int]:
+                - invalid_cluster_dict (dict): Clusters that are too big (load > max single capacity & >= 5 buildings).
+                  Key: cluster_id, Value: list of vertice IDs.
+                - cluster_dict (dict): Valid clusters with assigned transformers.
+                  Key: cluster_id, Value: tuple(list of vertice IDs, assigned transformer capacity).
+                - cluster_count (int): The actual number of clusters formed.
+        """
         flat_groups = cut_tree(Z, n_clusters=cluster_amount)
         cluster_ids = np.unique(flat_groups)
         cluster_count = len(cluster_ids)
@@ -398,15 +418,111 @@ class ClusteringMixin(BaseMixin, ABC):
 
         return buildings_df
 
+    def get_existing_transformer_capacity_trafo_ui(self, plz: int, kcid: int, bcid: int) -> Optional[int]:
+        """
+        Check if there's an existing transformer with a specific capacity for the given cluster.
+        
+        Args:
+            plz (int): The postal code
+            kcid (int): K-means cluster ID
+            bcid (int): Building cluster ID
+            
+        Returns:
+            Optional[int]: Transformer capacity if found, None otherwise
+        """
+        # Get the geometry of the cluster area as text format for proper psycopg2 serialization
+        cluster_geom_query = """
+            SELECT ST_AsText(ST_Collect(geom)) as cluster_geom_wkt
+            FROM buildings_tem
+            WHERE kcid = %(kcid)s AND bcid = %(bcid)s
+        """
+        self.cur.execute(cluster_geom_query, {"kcid": kcid, "bcid": bcid})
+        result = self.cur.fetchone()
+        
+        if not result or not result[0]:
+            return None
+            
+        cluster_geom_wkt = result[0]
+        
+        # Check if there's a transformer with a specific capacity in this area
+        # Use a more robust approach to handle GEOS topology issues
+        transformer_query = """
+            SELECT transformer_rated_power
+            FROM transformers t
+            WHERE t.transformer_rated_power IS NOT NULL
+            AND ST_Intersects(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)))
+            LIMIT 1
+        """
+        
+        try:
+            self.cur.execute(transformer_query, {"cluster_geom_wkt": cluster_geom_wkt})
+            result = self.cur.fetchone()
+            
+            if result:
+                return int(result[0])
+        except Exception as e:
+            # If ST_Intersects fails due to topology issues, try with a small buffer
+            try:
+                fallback_query = """
+                    SELECT transformer_rated_power
+                    FROM transformers t
+                    WHERE t.transformer_rated_power IS NOT NULL
+                    AND ST_DWithin(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)), 1.0)
+                    LIMIT 1
+                """
+                self.cur.execute(fallback_query, {"cluster_geom_wkt": cluster_geom_wkt})
+                result = self.cur.fetchone()
+                
+                if result:
+                    return int(result[0])
+            except Exception as fallback_error:
+                # Log the error but don't fail the entire process
+                self.logger.warning(f"Could not check transformer intersection for plz={plz}, kcid={kcid}, bcid={bcid}: {fallback_error}")
+        
+        return None
+
     def update_transformer_rated_power(self, plz: int, kcid: int, bcid: int, note: int):
         """
-        Updates transformer_rated_power in grid_result
-        :param plz:
-        :param kcid:
-        :param bcid:
-        :param note:
-        :return:
+        Update the field transformer_rated_power in grid_result for a given building cluster (bcid).
+
+        Process:
+        1) Determine settlement type from postcode (plz) and fetch the allowed standard transformer capacities
+           (ascending array transformer_capacities).
+        2) Read the currently stored transformer_rated_power for the (plz, kcid, bcid) tuple.
+
+        Behaviour controlled by note:
+        - note == 0 (single standard transformer mode):
+          Upgrade to the smallest standard capacity strictly greater than the current value.
+          (Precondition: such a larger capacity must exist; otherwise an IndexError would occur.)
+        - note != 0 (multi / grouped mode):
+          a) Build an extended list by appending doubled capacities of selected mid–range sizes (transformer_capacities[2:4] * 2).
+          b) If the current capacity already matches any allowed (standard or doubled) value: no change.
+          c) Else round up to the next multiple of 630 kVA (ceil(current / 630) * 630) to emulate a grouped / parallel transformer arrangement.
+
+        Parameters:
+        plz  : Postcode cluster ID.
+        kcid : K‑means cluster ID.
+        bcid : Building cluster ID within the k‑means cluster.
+        note : Control flag for update strategy (0 = standard single transformer upgrade, !=0 = multi / grouping logic).
+
+        Returns:
+        None. Performs an in‑place database update.
         """
+        # First check if there's an existing transformer with a specific capacity
+        existing_capacity = self.get_existing_transformer_capacity_trafo_ui(plz, kcid, bcid)
+        if existing_capacity is not None:
+            # Use the existing transformer capacity
+            update_query = """UPDATE grid_result
+                              SET transformer_rated_power = %(n)s
+                              WHERE version_id = %(v)s
+                                AND plz = %(p)s
+                                AND kcid = %(k)s
+                                AND bcid = %(b)s;"""
+            self.cur.execute(update_query,
+                             {"v": VERSION_ID, "p": plz, "k": kcid, "b": bcid, "n": existing_capacity})
+            self.logger.debug(f"Using existing transformer capacity {existing_capacity} kVA for plz={plz}, kcid={kcid}, bcid={bcid}")
+            return
+        
         sdl = self.get_settlement_type_from_plz(plz)
         transformer_capacities, _ = self.get_transformer_data(sdl)
 
@@ -453,31 +569,30 @@ class ClusteringMixin(BaseMixin, ABC):
                                 AND bcid = %(b)s;"""
             self.cur.execute(update_query,
                              {"v": VERSION_ID, "p": plz, "k": kcid, "b": bcid, "n": new_transformer_rated_power}, )
-            self.logger.debug("double or multiple transformer group transformer_rated_power assigned")
+            self.logger.info(
+                f"Updated transformer_rated_power (multi/group mode): plz={plz}, kcid={kcid}, bcid={bcid}, "
+                f"old={transformer_rated_power} kVA -> new={new_transformer_rated_power} kVA)"
+            )
 
     def get_transformer_data(self, settlement_type: int = None) -> tuple[np.array, dict]:
         """
         Args:
-            Settlement type: 1=City, 2=Village, 3=Rural
+            Settlement type: 1=Rural, 2=Semi-urban, 3=Urban
         Returns: Typical transformer capacities and costs depending on the settlement type
         """
-        if settlement_type == 1:
-            application_area_tuple = (1, 2, 3)
-        elif settlement_type == 2:
-            application_area_tuple = (2, 3, 4)
-        elif settlement_type == 3:
-            application_area_tuple = (3, 4, 5)
-        else:
-            self.logger.debug("Incorrect settlement type number specified.")
+        if settlement_type not in TRANSFORMER_MAPPING:
+            self.logger.info("Incorrect settlement type number specified.")
             return
+
+        allowed_capacities = tuple(TRANSFORMER_MAPPING[settlement_type])
 
         query = """SELECT equipment_data.s_max_kva, cost_eur
                    FROM equipment_data
                    WHERE typ = 'Transformer' \
-                     AND application_area IN %(tuple)s
+                     AND s_max_kva IN %(capacities)s
                    ORDER BY s_max_kva;"""
 
-        self.cur.execute(query, {"tuple": application_area_tuple})
+        self.cur.execute(query, {"capacities": allowed_capacities})
         data = self.cur.fetchall()
         capacities = [i[0] for i in data]
         transformer2cost = {i[0]: i[1] for i in data}
@@ -668,7 +783,7 @@ class ClusteringMixin(BaseMixin, ABC):
                    AND plz = %(p)s \
                    AND kcid = %(k)s \
                    AND bcid = %(b)s),
-                (SELECT the_geom FROM ways_tem_vertices_pgr WHERE id = %(c)s),
+                (SELECT geom FROM ways_tem_vertices_pgr WHERE id = %(c)s),
                 'on_way');"""
         params = {"v": VERSION_ID, "c": connection_id, "b": bcid, "k": kcid, "p": plz}
 
@@ -701,7 +816,7 @@ class ClusteringMixin(BaseMixin, ABC):
         """
         Args:
             plz:
-        Returns: Settlement type: 1=City, 2=Village, 3=Rural
+        Returns: Settlement type: 1=Rural, 2=Semi-urban, 3=Urban
         """
         settlement_query = """SELECT settlement_type
                               FROM postcode_result

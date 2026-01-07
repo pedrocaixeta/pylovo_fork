@@ -10,7 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 - Add new changes here before merging into the next official version.
-- 
+
+## [0.6.0] - 2026-01-07
+### Changed
+- Introduce electrical backend architecture that decouples grid construction algorithms from electrical simulation softwares such as pandapower
+- Restructure config files and move all relevant user input to config files (e.g. equipment data, cable parameters, etc.)
+- Add a more flexible transformer selection based on new settlement types
+- Change analysis and plotting structure for easier integration into real data analysis.
+
+### Fixed
+- Fixed cable naming mismatch between config and pandapower standard types
+
+### Added
+- Add UI to add known transformer locations and/or capacities to be considered in the brownfield grid generation approach.
+- Add automated target schema creation for easier setup
+
 ## [0.5.0] - 2025-08-11
 ### Changed
 - Adjust grid generation to be completely deterministic

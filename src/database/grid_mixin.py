@@ -14,34 +14,16 @@ class GridMixin(BaseMixin, ABC):
     def __init__(self):
         super().__init__()
 
-    def create_cable_std_type(self, net: pp.pandapowerNet) -> None:
-        """Create standard pandapower cable types from equipment_data table."""
-        query = """
-                SELECT name,
+    def fetch_cables(self) -> list:
+        query = """SELECT name,
                        r_mohm_per_km / 1000.0 as r_ohm_per_km,
                        x_mohm_per_km / 1000.0 as x_ohm_per_km,
                        max_i_a / 1000.0       as max_i_ka
                 FROM equipment_data
                 WHERE typ = 'Cable' \
                 """
-
-        # Execute query and fetch cable data
         self.cur.execute(query)
-        cables = self.cur.fetchall()
-
-        # Create standard type for each cable in the database
-        for cable in cables:
-            name, r_ohm_per_km, x_ohm_per_km, max_i_ka = cable
-            pp_name = name.replace('_', ' ')  # Extract name
-            q_mm2 = int(name.split("_")[-1])  # Extract cross-section from name
-
-            pp.create_std_type(net,
-                {"r_ohm_per_km": float(r_ohm_per_km), "x_ohm_per_km": float(x_ohm_per_km), "max_i_ka": float(max_i_ka),
-                    "c_nf_per_km": float(0),  # Set to zero for our standard grids
-                    "q_mm2": q_mm2}, name=pp_name, element="line", )
-
-        self.logger.debug(f"Created {len(cables)} standard cable types from equipment_data table")
-        return None
+        return self.cur.fetchall()
 
     def get_vertices_from_bcid(self, plz: int, kcid: int, bcid: int) -> tuple[dict, int]:
         ont = self.get_ont_info_from_bc(plz, kcid, bcid)["ont_vertice_id"]
@@ -117,7 +99,7 @@ class GridMixin(BaseMixin, ABC):
         return transformer_rated_power
 
     def get_node_geom(self, vid: int):
-        query = """SELECT ST_X(ST_Transform(the_geom, 4326)), ST_Y(ST_Transform(the_geom, 4326))
+        query = """SELECT ST_X(ST_Transform(geom, 4326)), ST_Y(ST_Transform(geom, 4326))
                    FROM ways_tem_vertices_pgr
                    WHERE id = %(id)s;"""
         self.cur.execute(query, {"id": vid})

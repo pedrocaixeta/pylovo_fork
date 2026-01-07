@@ -9,32 +9,36 @@ from src import utils
 from src.config_loader import *
 
 
-logger = utils.create_logger(name="main_constructor", log_file="log.txt", log_level=LOG_LEVEL)
-
-
 def main():
+    # Set up logging
+    log_dir = utils.reset_log_directory()
+    logger = utils.create_logger(name="main_constructor", log_file=log_dir / "log.txt", log_level=LOG_LEVEL)
+
     ### Create constructor class
+    logger.info("### CREATING DATABASE CONSTRUCTOR CLASS ###")
     sgc = DatabaseConstructor()
+    logger.info("### DROPPING ALL TABLES ###")
+    # sgc.drop_all_tables() #uncomment for debugging
+
+    ### Create schema if it doesn't exist
+    logger.info(f"### CREATING SCHEMA {TARGET_SCHEMA} IF NOT EXISTS ###")
+    sgc.create_schema()
 
     ### Create database with predefined table structure
     logger.info("### CREATE ALL TABLES ###")
     sgc.create_table(table_name="all")
 
     ### Add transformer data from geojson to the database
-    logger.info("### QUERY TRANSFORMERS AND INSERT THEM INTO DB (~50 min if processing new trafo data) ###")
-    sgc.transformers_to_db()
+    logger.info("### DELETE EXISTING TRANSFORMERS AND INSERT NEW ONES INTO DB (without geojson in raw_data/transformer_data this can take more than 30 min) ###")
+    sgc.transformers_to_db(clear_existing=True)
 
     if USE_INFDB:
-        ### Here atm only equipment_data are imported as postcodes are imported from infdb but keep this for modularity
-        logger.info("### POPULATE DB WITH EQUIPMENT DATA ###")
-        sgc.csv_to_db(CSV_FILE_LIST_INFDB)
-
         ### Fetch postcode data from InfDB and insert into local 'postcode' table
         logger.info("### FETCH AND POPULATE POSTCODE DATA FROM INFDB ###")
         sgc.load_postcode_from_infdb()
 
     if not USE_INFDB:
-        ### Add defined csv raw data from CSV_FILE_LIST to the database
+        ### Add defined csv raw data from CSV_FILE_LIST to the database (ATM only postcode data)
         logger.info("### POPULATE DB WITH CSV RAW DATA ###")
         sgc.csv_to_db(CSV_FILE_LIST)
 
@@ -46,7 +50,7 @@ def main():
         logger.info("### PROCESS WAYS AND INSERTING THEM INTO ways TABLE ###")
         sgc.ways_to_db()
 
-   # Load PostGIS SQL functions required for preprocessing ways
+    # Load PostGIS SQL functions required for preprocessing ways
     logger.info("### LOAD POSTGIS FUNCTIONS FOR WAYS PREPROCESSING ###")
     sgc.load_ways_preprocessing_functions()
 

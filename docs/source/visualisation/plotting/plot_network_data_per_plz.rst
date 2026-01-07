@@ -1,17 +1,17 @@
 Plot Network Data per PLZ
 ==========================
 
-.. autofunction:: plotting.plot_for_plz.plot_pie_of_trafo_cables
+.. autofunction:: plotting.generation.statistics.plot_pie_of_trafo_cables
 .. image:: ../../images/visualisation/pie_plot.png
     :width: 600
     :alt: Default view
 
-.. autofunction:: plotting.plot_for_plz.plot_hist_trafos
+.. autofunction:: plotting.generation.statistics.plot_hist_trafos
 .. image:: ../../images/visualisation/hist_trafos.png
     :width: 600
     :alt: Default view
 
-.. autofunction:: plotting.plot_for_plz.plot_boxplot_plz
+.. autofunction:: plotting.generation.statistics.plot_boxplot_plz
 .. image:: ../../images/visualisation/boxplot_plz.png
     :width: 600
     :alt: Default view
@@ -21,7 +21,7 @@ Plot Network Data per PLZ
     :width: 600
     :alt: Default view
 
-.. autofunction:: plotting.plot_for_plz.plot_cable_length_of_types
+.. autofunction:: plotting.generation.statistics.plot_cable_length_of_types
 .. image:: ../../images/visualisation/cable_type_distribution.png
     :width: 600
     :alt: Default view

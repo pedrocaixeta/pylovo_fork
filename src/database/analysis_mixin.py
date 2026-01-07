@@ -45,14 +45,14 @@ class AnalysisMixin(BaseMixin, ABC):
                           "a": trafo_avg_distance_string, }, )
         self.logger.debug("per trafo analysis finished")
 
-    def save_pp_net_with_json(self, plz: int, kcid: int, bcid: int, json_string: str) -> None:
+    def save_pp_net_with_json(self, plz: int, kcid: int, bcid: int, json_string: str, transformer_description: str) -> None:
         insert_query = ("""UPDATE grid_result
-                           SET grid = %s
+                           SET grid = %s, transformer_description = %s
                            WHERE version_id = %s
                              AND plz = %s
                              AND kcid = %s
                              AND bcid = %s;""")
-        self.cur.execute(insert_query, vars=(json_string, VERSION_ID, plz, kcid, bcid))
+        self.cur.execute(insert_query, vars=(json_string, transformer_description, VERSION_ID, plz, kcid, bcid))
 
     def count_clustering_parameters(self, plz: int) -> int:
         """
@@ -94,7 +94,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
         return data_list, data_labels, trafo_dict
 
-    def read_net(self, plz: int, kcid: int, bcid: int) -> pp.pandapowerNet:
+    def read_net_db(self, plz: int, kcid: int, bcid: int) -> pp.pandapowerNet:
         """
         Reads a pandapower network from the database for the specified grid.
 
@@ -302,3 +302,12 @@ class AnalysisMixin(BaseMixin, ABC):
         self.cur.execute(query, {"version_id": VERSION_ID, "plz": plz})
         result = self.cur.fetchone()
         return result is not None
+
+    def get_grids_from_plz(self, plz : int) -> pd.DataFrame:
+        grids_query = """SELECT * FROM grid_result
+                        WHERE plz = %(p)s"""
+        params = {"p": plz}
+        grids_df = pd.read_sql_query(grids_query, con=self.conn, params=params)
+        self.logger.debug(f"{len(grids_df)} grid data fetched.")
+
+        return grids_df
