@@ -1,6 +1,6 @@
 [project]
 name = "pylovo"
-version = "0.3.0"
+version = "0.6.0"
 description = "Python tool for generating synthetic low-voltage distribution grids"
 readme = "README.rst"
 requires-python = ">=3.12"
