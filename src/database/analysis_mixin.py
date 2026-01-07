@@ -45,14 +45,14 @@ class AnalysisMixin(BaseMixin, ABC):
                           "a": trafo_avg_distance_string, }, )
         self.logger.debug("per trafo analysis finished")
 
-    def save_pp_net_with_json(self, plz: int, kcid: int, bcid: int, json_string: str) -> None:
+    def save_pp_net_with_json(self, plz: int, kcid: int, bcid: int, json_string: str, transformer_description: str) -> None:
         insert_query = ("""UPDATE grid_result
-                           SET grid = %s
+                           SET grid = %s, transformer_description = %s
                            WHERE version_id = %s
                              AND plz = %s
                              AND kcid = %s
                              AND bcid = %s;""")
-        self.cur.execute(insert_query, vars=(json_string, VERSION_ID, plz, kcid, bcid))
+        self.cur.execute(insert_query, vars=(json_string, transformer_description, VERSION_ID, plz, kcid, bcid))
 
     def count_clustering_parameters(self, plz: int) -> int:
         """

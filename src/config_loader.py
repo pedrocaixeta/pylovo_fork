@@ -117,6 +117,9 @@ N_JOBS = max(1, round(AVAILABLE_CORES * N_JOBS_PERCENT / 100))
 # Result directory configuration
 RESULT_DIR = os.path.join(os.getcwd(), CONFIG_GENERATION.get("RESULT_DIR", "results"))
 
+# Electrical backend configuration
+ELECTRICAL_BACKEND = CONFIG_GENERATION.get("ELECTRICAL_BACKEND", "pandapower")
+
 # =============================================================================
 # GRID GENERATION CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================
@@ -127,6 +130,7 @@ VERSION_COMMENT = CONFIG_GENERATION["VERSION_COMMENT"]
 # Load calculation parameters
 PEAK_LOAD_HOUSEHOLD = CONFIG_GENERATION["PEAK_LOAD_HOUSEHOLD"]
 SIM_FACTOR = CONFIG_GENERATION["SIM_FACTOR"]
+DEFAULT_POWER_FACTOR = CONFIG_GENERATION["DEFAULT_POWER_FACTOR"]
 
 # Consumer categories for load calculation
 CONSUMER_CATEGORIES = pd.DataFrame(CONFIG_GENERATION["CONSUMER_CATEGORIES"])
@@ -177,6 +181,13 @@ RURAL_MAX_HOUSEHOLDS = CONFIG_GENERATION["RURAL_MAX_HOUSEHOLDS"]
 URBAN_MIN_HOUSEHOLDS = CONFIG_GENERATION["URBAN_MIN_HOUSEHOLDS"]
 RURAL_MIN_BUILDING_DISTANCE = CONFIG_GENERATION["RURAL_MIN_BUILDING_DISTANCE"]
 URBAN_MAX_BUILDING_DISTANCE = CONFIG_GENERATION["URBAN_MAX_BUILDING_DISTANCE"]
+
+# Transformer mapping: Settlement Type -> Allowed Transformer Capacities (s_max_kva)
+TRANSFORMER_MAPPING = CONFIG_GENERATION.get("TRANSFORMER_MAPPING", {
+    1: [250, 400, 630],
+    2: [250, 400, 630],
+    3: [250, 400, 630]
+})
 
 # =============================================================================
 # GRID GENERATION PARAMETERS (from CONFIG_GENERATION)

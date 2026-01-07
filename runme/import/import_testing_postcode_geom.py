@@ -21,7 +21,7 @@ TEST_POSTCODES = [
     {
         'postcode_id': 99999,
         'plz': 99999,
-        'testing_plz': 91301,
+        'allocated_plz': 91301, # Add the PlZ region within which the test postcode is located
         'note': 'Forchheim Test - Buckenhofen',
         'qkm': 1.0,
         'population': 1000,
@@ -36,8 +36,8 @@ TEST_POSTCODES = [
     {
         'postcode_id': 99998,
         'plz': 99998,
-        'testing_plz': 91301,
-        'note': 'Forchheim Test - Serlbach',
+        'allocated_plz': 91301,
+        'note': 'Forchheim Test - Serlbach', # Add the PlZ region within which the test postcode is located
         'qkm': 1.0,
         'population': 1000,
         'coordinates': [
@@ -76,7 +76,7 @@ def load_test_postcodes():
                 
                 # Insert the postcode data
                 insert_query = """
-                INSERT INTO pylovo.postcode (postcode_id, plz, testing_plz, note, qkm, population, geom)
+                INSERT INTO pylovo.postcode (postcode_id, plz, allocated_plz, note, qkm, population, geom)
                 VALUES (
                     %s, %s, %s, %s, %s, %s,
                     ST_Transform(
@@ -90,7 +90,7 @@ def load_test_postcodes():
                     )
                 )
                 ON CONFLICT (plz) DO UPDATE SET
-                    testing_plz = EXCLUDED.testing_plz,
+                    allocated_plz = EXCLUDED.allocated_plz,
                     note = EXCLUDED.note,
                     qkm = EXCLUDED.qkm,
                     population = EXCLUDED.population,
@@ -100,7 +100,7 @@ def load_test_postcodes():
                 cur.execute(insert_query, (
                     postcode['postcode_id'],
                     postcode['plz'],
-                    postcode['testing_plz'],
+                    postcode['allocated_plz'],
                     postcode['note'],
                     postcode['qkm'],
                     postcode['population'],

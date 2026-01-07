@@ -16,6 +16,10 @@ from src.analysis.parameter_calculation import ParameterCalculator
 from src import utils
 from src.config_loader import *
 
+# Import electrical backend components
+from src.electrical_backend import IElectricalBackend, create_backend
+from src.cable_installer import CableInstaller
+
 class ResultExistsError(Exception):
     "Raised when the PLZ has already been created."
     pass
@@ -269,6 +273,7 @@ class GridGenerator:
         Load data from config.
         """
         self.dbc.insert_equipment_data_from_config(equipment_data=EQUIPMENT_DATA)
+        self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
         self.dbc.insert_consumer_categories_from_config(consumer_categories=CONSUMER_CATEGORIES)
 
     def prepare_postcodes(self):
@@ -287,9 +292,13 @@ class GridGenerator:
         INTO: buildings_tem
         """
         if USE_INFDB:
-            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
-            buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
-            self.dbc.set_buildings_table(buildings_data, self.plz)
+            if TESTING:
+                allocated_plz = self.dbc.get_plz_for_testing(self.plz)
+                buildings_data = self.inf_dbc.fetch_buildings_from_infdb(allocated_plz)
+                self.dbc.set_buildings_table_with_geometry_filter(buildings_data, allocated_plz)
+            else:
+                buildings_data = self.inf_dbc.fetch_buildings_from_infdb(self.plz)
+                self.dbc.set_buildings_table(buildings_data, self.plz)
         else:
             self.dbc.set_residential_buildings_table(self.plz)
             self.dbc.set_other_buildings_table(self.plz)
@@ -342,9 +351,13 @@ class GridGenerator:
         INTO: ways_tem, buildings_tem, ways_tem_vertices_pgr, ways_tem_
         """
         if USE_INFDB:
-            # Always pass the original plz to infdb client, let it handle testing_plz lookup internally
-            ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
-            ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, self.plz)
+            if TESTING:
+                allocated_plz = self.dbc.get_plz_for_testing(self.plz)
+                ways_rows = self.inf_dbc.fetch_ways_from_infdb(allocated_plz)
+                ways_count = self.dbc.set_ways_tem_table_with_geometry_filter(ways_rows, allocated_plz)
+            else:
+                ways_rows = self.inf_dbc.fetch_ways_from_infdb(self.plz)
+                ways_count = self.dbc.set_ways_tem_table_infdb(ways_rows, self.plz)
         else:
             ways_count = self.dbc.set_ways_tem_table(self.plz)
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
@@ -435,7 +448,7 @@ class GridGenerator:
             if not transformers:
                 self.logger.debug(f"kcid{kcid} has no included transformer")
                 # Create greenfield building clusters
-                self.create_bcid_for_kcid(self.plz, kcid)
+                self.dimension_bcid_for_kcid(self.plz, kcid)
                 self.logger.debug(f"kcid{kcid} building clusters finished")
 
             # Case 2: Transformers present
@@ -446,7 +459,7 @@ class GridGenerator:
 
                 # Check buildings and manage clusters
                 if self.dbc.count_kmean_cluster_consumers(kcid) > 1:
-                    self.create_bcid_for_kcid(self.plz, kcid) #TODO: name should include transformer_size allocation
+                    self.dimension_bcid_for_kcid(self.plz, kcid)
                 else:
                     self.dbc.delete_isolated_building(self.plz, kcid) #TODO: check approach with isolated buildings
                 self.logger.debug("Remaining building clustering finished")
@@ -460,7 +473,7 @@ class GridGenerator:
                     self.dbc.update_transformer_rated_power(self.plz, kcid, bcid, 1)
                     self.logger.debug("Transformer_rated_power in grid_result updated.")
 
-    def create_bcid_for_kcid(self, plz: int, kcid: int) -> None:
+    def dimension_bcid_for_kcid(self, plz: int, kcid: int) -> None:
         """
         Create building clusters (bcids) with average linkage method for a given kcid.
         :param plz: Postal code
@@ -492,9 +505,9 @@ class GridGenerator:
         # Iterative clustering process
         while True:
             # Try clustering with current parameters
-            invalid_cluster_dict, cluster_dict, _ = self.dbc.try_clustering(Z, cluster_amount, new_localid2vid, buildings,
-                                                                        consumer_cat_df, transformer_capacities,
-                                                                        double_trans)
+            invalid_cluster_dict, cluster_dict, _ = self.dbc.load_constrained_hierarchical_clustering(Z, cluster_amount, new_localid2vid, buildings,
+                                                                                                      consumer_cat_df, transformer_capacities,
+                                                                                                      double_trans)
 
             # Process valid clusters
             if cluster_dict:
@@ -512,12 +525,14 @@ class GridGenerator:
             # Check if clustering is complete
             if not invalid_trans_cluster_dict:
                 self.logger.info(
-                    f"Found {len(valid_cluster_dict)} single transformer clusters for KCID: {kcid} (postcode: {plz})")
+                    f"Found {len(valid_cluster_dict)} single transformer clusters for KCID: {kcid} (postcode: {plz})"
+                )
                 break
             else:
                 # Process too large clusters by re-clustering them
                 self.logger.info(
-                    f"Found {len(invalid_trans_cluster_dict)} too_large clusters for PLZ: {plz}, KCID: {kcid}")
+                    f"Found {len(invalid_trans_cluster_dict)} too_large clusters for PLZ: {plz}, KCID: {kcid}"
+                )
 
                 # Get buildings from the first too-large cluster for re-clustering
                 invalid_vertice_ids = list(invalid_trans_cluster_dict[0])
@@ -551,7 +566,6 @@ class GridGenerator:
         for bcid, cluster_data in valid_cluster_dict.items():
             self.dbc.upsert_bcid(plz, kcid, bcid, vertices=cluster_data[0],
                                          transformer_rated_power=cluster_data[1])
-        self.logger.debug(f"bcids for plz {plz} kcid {kcid} created.")
 
         self.logger.debug(f"bcids for plz {plz} kcid {kcid} found...")
 
@@ -575,13 +589,17 @@ class GridGenerator:
             kcid: K-means cluster ID
             transformer_list: List of transformer IDs
         """
-        self.logger.info(f"{len(transformer_list)} transformers found for {kcid}")
+        self.logger.info(f"{len(transformer_list)} Transformers found for kcid {kcid}")
 
         # Get cost dataframe between consumers and transformers
         cost_df = self.dbc.get_consumer_to_transformer_df(kcid, transformer_list)
 
         # Filter out connections with distance >= 800
         cost_df = cost_df[cost_df["agg_cost"] < MAX_BROWNFIELD_TRAFO_DISTANCE].sort_values(by=["agg_cost"])
+
+        # Get available transformer capacities from database
+        settlement_type = self.dbc.get_settlement_type_from_plz(plz)
+        possible_transformers, _ = self.dbc.get_transformer_data(settlement_type)
 
         # Initialize tracking variables
         pre_result_dict = {transformer_id: [] for transformer_id in transformer_list}
@@ -601,8 +619,7 @@ class GridGenerator:
             pre_result_dict[end_transformer_id].append(int(start_consumer_id))
             sim_load = self.dbc.calculate_sim_load(pre_result_dict[end_transformer_id])
 
-            # Check if transformer capacity exceeded
-            if float(sim_load) >= 630:
+            if float(sim_load) > max(possible_transformers):
                 # Remove consumer and mark transformer as full
                 pre_result_dict[end_transformer_id].pop()
                 full_transformer_list.append(end_transformer_id)
@@ -619,6 +636,7 @@ class GridGenerator:
 
         # Create building clusters for each transformer
         building_cluster_count = 0
+
         for transformer_id in transformer_list:
             # Skip empty transformers
             if not pre_result_dict[transformer_id]:
@@ -631,9 +649,6 @@ class GridGenerator:
 
             # Calculate the simulated load for all loads assigned to this transformer
             sim_load = self.dbc.calculate_sim_load(pre_result_dict[transformer_id])
-
-            # Define the available standard transformer sizes in kVA
-            possible_transformers = np.array([100, 160, 250, 400, 630])  # TODO: check with settlement_type approach
 
             # Select the smallest transformer that is larger than the simulated load
             transformer_rated_power = possible_transformers[possible_transformers > float(sim_load)][0].item()
@@ -682,187 +697,6 @@ class GridGenerator:
 
         self.logger.info("Greenfield clusters completed")
 
-    def install_cables(self):
-        """
-        Installs electrical cables to connect buildings and transformers in power grid clusters.
-
-        This method creates a pandapower network for each building cluster (kcid, bcid) in the
-        postal code area and connects the buildings with appropriate electrical cables. It follows
-        a branch-by-branch approach, starting from the furthest nodes and working inward toward
-        the transformer.
-
-        The algorithm works as follows:
-        1. Retrieves all clusters (kcid, bcid) for the postal code area
-        2. For each cluster:
-           a. Prepares building and connection data
-           b. Creates an electrical network with pandapower
-           c. Adds buses, transformers, and loads to the network
-           d. Installs cables using a greedy algorithm that:
-              - Starts from the furthest nodes from the transformer
-              - Creates branches with maximum possible load
-              - Selects minimum size cables that can handle the current
-              - Connects branches back to transformer
-        3. Tracks progress and saves the network configurations
-
-        The cable installation prioritizes cost efficiency while ensuring the electrical
-        requirements are met for each branch of the distribution network.
-
-        Returns:
-            None
-        """
-        # Get all clusters for the postal code area
-        cluster_list = self.dbc.get_list_from_plz(self.plz)
-        if TESTING:
-            cluster_list = cluster_list[:5] # Limit to first 5 clusters for testing
-        ci_count = 0
-        ci_process = 0
-
-        for id in cluster_list:
-            kcid, bcid = id
-            self.logger.info(f"Start cable installation for PLZ {self.plz} kcid {kcid} bcid {bcid}")
-            # Get data for this cluster
-            vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes = (
-                self.prepare_vertices_list(self.plz, kcid, bcid)
-            )
-            Pd, load_units, load_type = self.get_consumer_simultaneous_load_dict(consumer_list, buildings_df)
-
-            # Create network and add components
-            net = pp.create_empty_network()
-            self.dbc.create_cable_std_type(net)
-            # Get all available cable types from the pandapower network for main distribution
-            # Main distribution cables can use all non-commented cables from equipment data
-            all_available_cables = list(net.std_types["line"].keys())
-            local_length_dict = {c: 0 for c in all_available_cables}
-            self.create_lvmv_bus(self.plz, kcid, bcid, net)
-            self.create_transformer(self.plz, kcid, bcid, net)
-            self.create_connection_bus(connection_nodes, net)
-            self.create_consumer_bus_and_load(consumer_list, load_units, net, load_type, buildings_df)
-            self.logger.info(
-                f"Pandapower net initialised (buses={len(net.bus)}, loads={len(net.load)}, transformer_rated_power={self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)} kVA)"
-            )
-
-            # Install cables branch by branch
-            branch_deviation = 0
-            connection_node_list = connection_nodes
-            branch_index = 0
-
-            while connection_node_list:
-                # Handle single remaining node case
-                if len(connection_node_list) == 1:
-                    remaining = connection_node_list[0]
-                    self.logger.debug(
-                        f"Final remaining connection node {remaining} (kcid={kcid}, bcid={bcid}); installing direct connection."
-                    )
-                    sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, connection_node_list)
-                    # Calculate maximum current using worst-case voltage (VN * V_BAND_LOW)
-                    Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
-
-                    # Install consumer cables
-                    local_length_dict = self.install_consumer_cables(
-                        self.plz, bcid, kcid, branch_deviation, connection_node_list,
-                        ont_vertice, vertices_dict, Pd, net, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict,
-                    )
-
-                    # Connect to transformer
-                    if connection_node_list[0] == ont_vertice:
-                        cable, count = self.find_minimal_available_cable(Imax, net)
-                        self.create_line_ont_to_lv_bus(
-                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation, net, cable, count
-                        )
-                    else:
-                        cable, count = self.find_minimal_available_cable(
-                            Imax, net, vertices_dict[connection_nodes[0]]
-                        )
-                        length = self.create_line_start_to_lv_bus(
-                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation,
-                            net, vertices_dict, cable, count, ont_vertice
-                        )
-                        local_length_dict[cable] += length
-                        self.logger.info(
-                            f"Final branch backbone installed (PLZ={self.plz}, kcid={kcid}, bcid={bcid}, start_node={connection_node_list[0]}, cable={cable}, parallels={count}, length_km={length:.4f})"
-                        )
-                    break
-
-                furthest_node_path_list = self.find_furthest_node_path_list(
-                    connection_node_list, vertices_dict, ont_vertice
-                )
-                branch_node_list, Imax = self.determine_maximum_load_branch(
-                    furthest_node_path_list, buildings_df, consumer_df
-                )
-                self.logger.debug(
-                    f"Selected branch {branch_index} (nodes={len(branch_node_list)}, first={branch_node_list[0]}, last={branch_node_list[-1]}, Imax={Imax:.3f} kA)"
-                )
-
-                # Install cables for this branch
-                local_length_dict = self.install_consumer_cables(
-                    self.plz, bcid, kcid, branch_deviation, branch_node_list,
-                    ont_vertice, vertices_dict, Pd, net, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict
-                )
-
-                # Select appropriate cable and connect nodes
-                branch_distance = vertices_dict[branch_node_list[0]]
-                cable, count = self.find_minimal_available_cable(
-                    Imax, net, branch_distance
-                )
-
-                if len(branch_node_list) >= 2:
-                    local_length_dict = self.create_line_node_to_node(
-                        self.plz, kcid, bcid, branch_node_list, branch_deviation,
-                        vertices_dict, local_length_dict, cable, ont_vertice, count, net
-                    )
-
-                # Connect branch to transformer
-                branch_start_node = branch_node_list[-1]
-                if branch_start_node == ont_vertice:
-                    self.create_line_ont_to_lv_bus(
-                        self.plz, bcid, kcid, branch_start_node, branch_deviation, net, cable, count
-                    )
-                    self.logger.debug(
-                        f"Branch {branch_index} connected directly to transformer (cable={cable}, parallels={count})."
-                    )
-                else:
-                    length = self.create_line_start_to_lv_bus(
-                        self.plz, bcid, kcid, branch_start_node, branch_deviation,
-                        net, vertices_dict, cable, count, ont_vertice
-                    )
-                    local_length_dict[cable] += length
-                    self.logger.debug(
-                        f"Branch {branch_index} connected to LV bus (cable={cable}, parallels={count}, length_km={length:.4f})."
-                    )
-
-                # Update processed nodes and visualization
-                for vertice in branch_node_list:
-                    connection_node_list.remove(vertice)
-
-                self.deviate_bus_geodata(branch_node_list, branch_deviation, net)
-                branch_deviation += 1
-                branch_index += 1
-
-            # Cluster summary
-            total_length = sum(local_length_dict.values())
-            used_cables = {k: v for k, v in local_length_dict.items() if v > 0}
-            if used_cables:
-                cable_summary = ", ".join([f"{k}:{v:.3f} km" for k, v in sorted(used_cables.items(), key=lambda x: -x[1])])
-            else:
-                cable_summary = "no cables installed"
-            self.logger.info(
-                f"Finished cluster kcid={kcid}, bcid={bcid}: branches={branch_index}, lines={len(net.line)}, total_length={total_length:.3f} km ({cable_summary})"
-            )
-
-            # Track and report progress
-            ci_count += 1
-            progress_increment = 10  # Report progress in 10% increments
-            progress_threshold = max(1, len(cluster_list) / progress_increment)
-
-            if ci_count >= progress_threshold:
-                ci_process += progress_increment
-                ci_count = 0
-                self.logger.info(
-                    f"Cable installation: {min(ci_process, 100)}% complete ({ci_process // progress_increment}/{progress_increment})"
-                )
-
-            self.save_net(net, kcid, bcid)
-
     def prepare_vertices_list(self, plz: int, kcid: int, bcid: int) -> tuple[
         dict, int, list, pd.DataFrame, pd.DataFrame, list, list]:
         vertices_dict, ont_vertice = self.dbc.get_vertices_from_bcid(plz, kcid, bcid)
@@ -877,9 +711,9 @@ class GridGenerator:
 
         return (vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes,)
 
-    def get_consumer_simultaneous_load_dict(self, consumer_list: list, buildings_df: pd.DataFrame) -> tuple[
+    def get_building_simultaneous_load_dict(self, consumer_list: list, buildings_df: pd.DataFrame) -> tuple[
         dict, dict, dict]:
-        Pd = {consumer: 0 for consumer in consumer_list}  # dict of all vertices in bc, 0 as default
+        sim_load_per_building = {consumer: 0 for consumer in consumer_list}  # dict of all vertices in bc, 0 as default
         load_units = {consumer: 0 for consumer in consumer_list}
         load_type = {consumer: "SFH" for consumer in consumer_list}
 
@@ -889,326 +723,10 @@ class GridGenerator:
             gzf = CONSUMER_CATEGORIES.loc[CONSUMER_CATEGORIES.definition == row.type, "sim_factor"].item()
 
             # Determine simultaneous load of each building in MW
-            Pd[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.households_per_building, gzf)
+            sim_load_per_building[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.households_per_building, gzf)
 
-        return Pd, load_units, load_type
+        return sim_load_per_building, load_units, load_type
 
-    def create_lvmv_bus(self, plz: int, kcid: int, bcid: int, net: pp.pandapowerNet) -> None:
-        geodata = self.dbc.get_ont_geom_from_bcid(plz, kcid, bcid)
-
-        pp.create_bus(net, name="LVbus 1", vn_kv=VN * 1e-3, geodata=geodata, max_vm_pu=V_BAND_HIGH,
-            min_vm_pu=V_BAND_LOW, type="n", )
-
-        # medium voltage external network and mvbus
-        mv_data = (float(geodata[0]), float(geodata[1]) + 1.5 * 1e-4)
-        mv_bus = pp.create_bus(net, name="MVbus 1", vn_kv=20, geodata=mv_data, max_vm_pu=V_BAND_HIGH,
-            min_vm_pu=V_BAND_LOW, type="n", )
-        pp.create_ext_grid(net, bus=mv_bus, vm_pu=1, name="External grid")
-
-        return None
-
-    def create_transformer(self, plz: int, kcid: int, bcid: int, net: pp.pandapowerNet) -> None:
-        transformer_rated_power = self.dbc.get_transformer_rated_power_from_bcid(plz, kcid, bcid)
-        if transformer_rated_power in (250, 400, 630):
-            trafo_name = f"{str(transformer_rated_power)} transformer"
-            trafo_std = f"{str(transformer_rated_power * 1e-3)} MVA 20/0.4 kV"
-            parallel = 1
-        elif transformer_rated_power in (100, 160):
-            trafo_name = f"{str(transformer_rated_power)} transformer"
-            trafo_std = "0.25 MVA 20/0.4 kV"
-            parallel = 1
-        elif transformer_rated_power in (500, 800):
-            trafo_name = f"{str(transformer_rated_power * 0.5)} transformer"
-            trafo_std = f"{str(transformer_rated_power * 1e-3 * 0.5)} MVA 20/0.4 kV"
-            parallel = 2
-        else:
-            trafo_name = "630 transformer"
-            trafo_std = "0.63 MVA 20/0.4 kV"
-            parallel = transformer_rated_power / 630
-        trafo_index = pp.create_transformer(net, pp.get_element_index(net, "bus", "MVbus 1"),
-            pp.get_element_index(net, "bus", "LVbus 1"), name=trafo_name, std_type=trafo_std, tap_pos=0,
-            parallel=parallel, )
-        net.trafo.at[trafo_index, "sn_mva"] = transformer_rated_power * 1e-3
-        return None
-
-    def create_connection_bus(self, connection_nodes: list, net: pp.pandapowerNet):
-        for i in range(len(connection_nodes)):
-            node_geodata = self.dbc.get_node_geom(connection_nodes[i])
-            pp.create_bus(net, name=f"Connection Nodebus {connection_nodes[i]}", vn_kv=VN * 1e-3, geodata=node_geodata,
-                max_vm_pu=V_BAND_HIGH, min_vm_pu=V_BAND_LOW, type="n", )
-
-    def create_consumer_bus_and_load(self, consumer_list: list, load_units: dict, net: pp.pandapowerNet,
-            load_type: dict, building_df: pd.DataFrame) -> None:
-        for i in range(len(consumer_list)):
-            node_geodata = self.dbc.get_node_geom(consumer_list[i])
-
-            ltype = load_type[consumer_list[i]]
-
-            if ltype in ["SFH", "MFH", "AB", "TH"]:
-                peak_load = CONSUMER_CATEGORIES.loc[CONSUMER_CATEGORIES["definition"] == ltype, "peak_load"].values[0]
-            else:
-                peak_load = building_df[building_df["vertice_id"] == consumer_list[i]]["peak_load_in_kw"].tolist()[0]
-
-            pp.create_bus(net=net, name=f"Consumer Nodebus {consumer_list[i]}", vn_kv=VN * 1e-3, geodata=node_geodata,
-                max_vm_pu=V_BAND_HIGH, min_vm_pu=V_BAND_LOW, type="n", zone=ltype, )
-            for j in range(1, load_units[consumer_list[i]] + 1):
-                pp.create_load(net=net, bus=pp.get_element_index(net, "bus", f"Consumer Nodebus {consumer_list[i]}"),
-                    p_mw=0, name=f"Load {consumer_list[i]} household {j}", max_p_mw=peak_load * 1e-3, )
-
-    def install_consumer_cables(self, plz: int, bcid: int, kcid: int, branch_deviation: float, branch_node_list: list,
-            ont_vertice: int, vertices_dict: dict, Pd: dict, net: pp.pandapowerNet,
-            connection_available_cables: list[str], local_length_dict: dict, ) -> dict:
-        """
-        Install consumer connection cables from connection nodes to individual buildings.
-        
-        This method implements both primary (current capacity) and secondary (voltage drop) 
-        constraints for cable dimensioning. It selects the smallest suitable cable that meets
-        both electrical requirements.
-        
-        Voltage Drop Logic:
-        - Small loads (≤100kW): Stricter voltage drop limit
-        - Large loads (>100kW): Relaxed voltage drop limit
-        - Different limits account for equipment sensitivity and economic optimization
-        
-        Args:
-            plz: Postal code
-            bcid: Building cluster ID
-            kcid: K-means cluster ID
-            branch_deviation: Offset for visualization
-            branch_node_list: List of connection nodes in the branch
-            ont_vertice: Transformer connection point vertex ID
-            vertices_dict: Dictionary mapping vertex IDs to distances
-            Pd: Dictionary of power demands per vertex
-            net: Pandapower network object
-            connection_available_cables: List of available cable types
-            local_length_dict: Dictionary tracking cable lengths used
-            
-        Returns:
-            dict: Updated local_length_dict with installed cable lengths
-        """
-        # Get all consumer vertices connected to the connection nodes in this branch
-        consumer_list = self.dbc.get_vertices_from_connection_points(branch_node_list)
-        branch_consumer_list = [n for n in consumer_list if n in vertices_dict.keys()]
-        
-        # Install house connection cables from each consumer to its connection node
-        for vertice in branch_consumer_list:  # TODO: looping for duplicate vertices
-            # Get the path from consumer to transformer to find connection point
-            path_list = self.dbc.get_path_to_bus(vertice, ont_vertice)
-            start_vid = path_list[1]  # Connection node
-            end_vid = path_list[0]    # Consumer node
-
-            # Prepare geodata for cable visualization
-            geodata = self.dbc.get_node_geom(start_vid)
-            start_node_geodata = (float(geodata[0]) + 5 * 1e-6 * branch_deviation,
-                                  float(geodata[1]) + 5 * 1e-6 * branch_deviation,)
-
-            end_node_geodata = self.dbc.get_node_geom(end_vid)
-            line_geodata = [start_node_geodata, end_node_geodata]
-
-            # Calculate cable length in km
-            cost_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
-
-            count = 1  # Number of parallel cables
-            sim_load = Pd[end_vid]  # Power demand
-            
-            # Calculate maximum current using worst-case voltage conditions
-            # V_BAND_LOW ensures sizing for 95% of nominal voltage (worst case)
-            Imax = sim_load * 1e-3 / (VN * V_BAND_LOW * np.sqrt(3))  # current in kA
-            # Cable selection loop: try different cable counts until suitable cable found
-            voltage_available_cables_df = None
-            while True:
-                # Get all available cable types from pandapower standard types
-                line_df = pd.DataFrame.from_dict(net.std_types["line"], orient="index")
-                
-                # PRIMARY CONSTRAINT: Filter cables by current capacity and consumer connection availability
-                # Only consider cables that can handle the calculated current and are available for consumer connections
-                current_available_cables_df = line_df[
-                    (line_df["max_i_ka"] >= Imax / count) & (line_df.index.isin(connection_available_cables))]
-
-                if len(current_available_cables_df) == 0:
-                    # No cable can handle the current - try more parallel cables
-                    count += 1
-                    continue
-
-                # Calculate cable impedance (magnitude of complex impedance)
-                # This is used for voltage drop calculations instead of direct voltage drop
-                current_available_cables_df["cable_impedence"] = np.sqrt(
-                    current_available_cables_df["r_ohm_per_km"] ** 2 + current_available_cables_df[
-                        "x_ohm_per_km"] ** 2)  # impedance in ohm / km
-                
-                # SECONDARY CONSTRAINT: Filter cables by voltage drop limits
-                # Different voltage drop limits based on load size for economic optimization
-                if sim_load <= SMALL_LOAD_THRESHOLD_KW:
-                    # Small loads: Stricter voltage drop limit (0.05% of nominal voltage per km)
-                    # This ensures better power quality for sensitive equipment
-                    voltage_drop_limit = VN * VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM / 100
-                    voltage_available_cables_df = current_available_cables_df[
-                        current_available_cables_df["cable_impedence"] <= 
-                        voltage_drop_limit / (Imax * cost_km / count)]
-                else:
-                    # Large loads: Relaxed voltage drop limit (0.1% of nominal voltage per km)
-                    # This allows economic cable selection for larger loads
-                    voltage_drop_limit = VN * VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM / 100
-                    voltage_available_cables_df = current_available_cables_df[
-                        current_available_cables_df["cable_impedence"] <= 
-                        voltage_drop_limit / (Imax * cost_km / count)]
-
-                if len(voltage_available_cables_df) == 0:
-                    # No cable meets voltage drop requirements - try more parallel cables
-                    count += 1
-                    continue
-                else:
-                    # Found suitable cable(s) - exit selection loop
-                    break
-
-            # Select the smallest suitable cable (by cross-sectional area)
-            # This optimizes for cost while meeting electrical requirements
-            cable = voltage_available_cables_df.sort_values(by=["q_mm2"]).index.tolist()[0]
-            local_length_dict[cable] += count * cost_km
-
-            # Create the cable in the pandapower network
-            pp.create_line(net, from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
-                to_bus=pp.get_element_index(net, "bus", f"Consumer Nodebus {end_vid}"), length_km=cost_km,
-                std_type=cable, name=f"Line to {end_vid}", geodata=line_geodata, parallel=count, )
-
-            # Store cable information in database
-            line_name = f"L{end_vid}"[:15]  # Truncate to fit database column
-            self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
-                              std_type=cable,
-                              from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
-                              to_bus=pp.get_element_index(net, "bus", f"Consumer Nodebus {end_vid}"), length_km=cost_km)
-
-        return local_length_dict
-
-    def find_minimal_available_cable(self, Imax: float, net: pp.pandapowerNet, distance: int = 0) -> \
-    tuple[str, int]:
-        """
-        Find the smallest cable that meets both current capacity and voltage drop requirements.
-        
-        This method implements the cable selection algorithm for main distribution cables.
-        It applies both primary (current) and secondary (voltage drop) constraints to select
-        the most economical cable solution.
-        
-        Voltage Drop Logic for Distribution Cables:
-        - Uses total voltage drop limit (4.5% of nominal voltage)
-        - Applied to entire distribution length, not per-km basis
-        - More relaxed than consumer connections for economic optimization
-        
-        Args:
-            Imax: Maximum current in kA
-            net: Pandapower network object
-            distance: Distance in meters (0 means no distance-based voltage drop check)
-            
-        Returns:
-            tuple: (cable_name, parallel_count) - Selected cable type and number of parallels
-        """
-        count = 1  # Number of parallel cables
-        cable = None
-        
-        while 1:
-            # Get all available cable types from pandapower standard types
-            line_df = pd.DataFrame.from_dict(net.std_types["line"], orient="index")
-            
-            # PRIMARY CONSTRAINT: Filter cables by current capacity
-            # Main distribution cables can use all available cables from equipment data
-            current_available_cables = line_df[
-                (line_df["max_i_ka"] >= Imax / count)]
-            
-            if len(current_available_cables) == 0:
-                # No cable can handle the current - try more parallel cables
-                count += 1
-                continue
-
-            if distance != 0:
-                # SECONDARY CONSTRAINT: Apply voltage drop limit for distribution cables
-                # Calculate cable impedance for voltage drop assessment
-                current_available_cables["cable_impedence"] = np.sqrt(
-                    current_available_cables["r_ohm_per_km"] ** 2 + current_available_cables[
-                        "x_ohm_per_km"] ** 2)  # impedance in ohm / km
-                
-                # Apply total voltage drop limit (4.5% of 400V = 18V)
-                # This is more relaxed than consumer connections as it's for main distribution
-                voltage_available_cables = current_available_cables[
-                    current_available_cables["cable_impedence"] <= 
-                    VN * VOLTAGE_DROP_DISTRIBUTION_PERCENT / 100 / (Imax * distance / count)]
-                
-                if len(voltage_available_cables) == 0:
-                    # No cable meets voltage drop requirements - try more parallel cables
-                    count += 1
-                    continue
-                else:
-                    # Select smallest suitable cable by cross-sectional area
-                    cable = voltage_available_cables.sort_values(by=["q_mm2"]).index.tolist()[0]
-                    break
-            else:
-                # No distance-based voltage drop check - select by current capacity only
-                cable = current_available_cables.sort_values(by=["q_mm2"]).index.tolist()[0]
-                break
-
-        return cable, count
-
-    def create_line_ont_to_lv_bus(self, plz: int, bcid: int, kcid: int, branch_start_node: int, branch_deviation: float,
-            net: pp.pandapowerNet, cable: str, count: int):  # TODO: check if this line is required
-        end_vid = branch_start_node
-        node_geodata = self.dbc.get_node_geom(end_vid)
-        node_geodata = (float(node_geodata[0]) + 5 * 1e-6 * branch_deviation,
-                        float(node_geodata[1]) + 5 * 1e-6 * branch_deviation,)
-        lvbus_geodata = (
-            net.bus_geodata.loc[pp.get_element_index(net, "bus", "LVbus 1"), "x"] + 5 * 1e-6 * branch_deviation,
-            net.bus_geodata.loc[pp.get_element_index(net, "bus", "LVbus 1"), "y"],)
-        line_geodata = [lvbus_geodata, node_geodata]
-
-        cost_km = 0
-        pp.create_line(net, from_bus=pp.get_element_index(net, "bus", "LVbus 1"),
-            to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km, std_type=cable,
-            name=f"Line to {end_vid}", geodata=line_geodata, parallel=count, )
-
-        line_name = f"L{end_vid}"[:15]  # Truncate to fit database column
-        self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
-            std_type=cable, from_bus=pp.get_element_index(net, "bus", "LVbus 1"),
-            to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km)
-
-    def create_line_start_to_lv_bus(self, plz: int, bcid: int, kcid: int, branch_start_node: int,
-            branch_deviation: float, net: pp.pandapowerNet, vertices_dict: dict, cable: str, count: int,
-            ont_vertice: int, ) -> int:
-
-        node_path_list = self.dbc.get_path_to_bus(branch_start_node, ont_vertice)
-
-        line_geodata = []
-        for p in node_path_list:
-            node_geodata = self.dbc.get_node_geom(p)
-            node_geodata = (float(node_geodata[0]) + 5 * 1e-6 * branch_deviation,
-                            float(node_geodata[1]) + 5 * 1e-6 * branch_deviation,)
-            line_geodata.append(node_geodata)
-        lvbus_geodata = (
-            net.bus_geodata.loc[pp.get_element_index(net, "bus", "LVbus 1"), "x"] + 5 * 1e-6 * branch_deviation,
-            net.bus_geodata.loc[pp.get_element_index(net, "bus", "LVbus 1"), "y"],)
-        line_geodata.append(lvbus_geodata)
-        line_geodata.reverse()
-
-        cost_km = vertices_dict[branch_start_node] * 1e-3
-        length = count * cost_km  # distance in m
-        pp.create_line(net, from_bus=pp.get_element_index(net, "bus", "LVbus 1"),
-            to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {branch_start_node}"), length_km=cost_km,
-            std_type=cable, name=f"Line to {branch_start_node}", geodata=line_geodata, parallel=count, )
-
-        line_name = f"L{branch_start_node}"[:15]  # Truncate to fit database column
-        self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
-                          std_type=cable, from_bus=pp.get_element_index(net, "bus", "LVbus 1"),
-                          to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {branch_start_node}"),
-                          length_km=cost_km)
-
-        return length
-
-
-
-
-    def deviate_bus_geodata(self, branch_node_list: list, branch_deviation: float, net: pp.pandapowerNet):
-        for node in branch_node_list:
-            net.bus_geodata.at[pp.get_element_index(net, "bus", f"Connection Nodebus {node}"), "x"] += (
-                        5 * 1e-6 * branch_deviation)
-            net.bus_geodata.at[pp.get_element_index(net, "bus", f"Connection Nodebus {node}"), "y"] += (
-                        5 * 1e-6 * branch_deviation)
 
     def find_furthest_node_path_list(self, connection_node_list: list, vertices_dict: dict, ont_vertice: int) -> list:
         connection_node_dict = {n: vertices_dict[n] for n in connection_node_list}
@@ -1242,11 +760,11 @@ class GridGenerator:
             branch_node_list.append(node)
             # Calculate simultaneous peak load for all nodes in current branch
             sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, branch_node_list)  # sim_peak load in kW
-            
+
             # Calculate maximum current using worst-case voltage (VN * V_BAND_LOW)
             # This ensures cables are sized for the lowest expected voltage (95% of nominal)
             Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))  # current in kA
-            
+
             # Check if current exceeds the capacity of the largest available cable
             # MAX_CABLE_CURRENT_KA is derived from the largest cable in equipment data
             if Imax >= MAX_CABLE_CURRENT_KA and len(branch_node_list) > 1:
@@ -1256,69 +774,232 @@ class GridGenerator:
             elif Imax >= MAX_CABLE_CURRENT_KA and len(branch_node_list) == 1:
                 # Even a single node exceeds capacity - keep it but break the loop
                 break
-                
+
         # Calculate final current for the selected branch
         sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, branch_node_list)
         Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
 
         return branch_node_list, Imax
 
-    def create_line_node_to_node(self, plz: int, kcid: int, bcid: int, branch_node_list: list, branch_deviation: float,
-            vertices_dict: dict, local_length_dict: dict, cable: str, ont_vertice: int, count: float,
-            net: pp.pandapowerNet) -> dict:
-        """creates the lines / cables from one Connection Nodebus to the next. Adds them to the pandapower network
-        and lines result table"""
-        for i in range(len(branch_node_list) - 1):
-            # to get the line geodata, we now need to consider all the nodes in database, not only connection points
-            node_path_list = self.dbc.get_path_to_bus(branch_node_list[i], ont_vertice)  # gets the path along ways_result
-            # end at next connection point
-            if branch_node_list[i + 1] not in node_path_list:  # if next node of branch node list not in node path list
-                self.logger.debug(f"creating line to node i + 1: {i + 1} node: {branch_node_list[i + 1]}")
-                node_path_list = self.dbc.get_path_to_bus(branch_node_list[i], branch_node_list[
-                    i + 1])  # node_path_list = [branch_node_list[i], branch_node_list[i + 1]]  # intermediate nodes up to next connection nodebus are neglected  # the cable will directly connect to next connection nodebus
-
-            node_path_list = node_path_list[: node_path_list.index(
-                branch_node_list[i + 1]) + 1]  # the node path list goes up to the index (branch_node_list[i + 1]) +1
-            node_path_list.reverse()  # to keep the correct direction
-
-            start_vid = node_path_list[0]
-            end_vid = node_path_list[-1]
-
-            line_geodata = []
-            for p in node_path_list:
-                node_geodata = self.dbc.get_node_geom(p)
-                node_geodata = (float(node_geodata[0]) + 5 * 1e-6 * branch_deviation,
-                                float(node_geodata[1]) + 5 * 1e-6 * branch_deviation,)
-                line_geodata.append(node_geodata)
-
-            cost_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
-
-            local_length_dict[cable] += count * cost_km
-            pp.create_line(net, from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
-                to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km,
-                std_type=cable, name=f"Line to {end_vid}", geodata=line_geodata, parallel=count, )
-
-            # Truncate line name to fit database column (15 characters max)
-            line_name = f"L{end_vid}"[:15]  # Use "L" prefix + truncated end_vid
-            self.dbc.insert_lines(geom=line_geodata, plz=plz, bcid=bcid, kcid=kcid, line_name=line_name,
-                std_type=cable, from_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {start_vid}"),
-                to_bus=pp.get_element_index(net, "bus", f"Connection Nodebus {end_vid}"), length_km=cost_km)
-        return local_length_dict
-
-    def save_net(self, net, kcid, bcid):
+    def install_cables(self):
         """
-        Save one grid to file and to database
+        Installs electrical cables using the electrical backend pattern.
+
+        The algorithm works as follows:
+        1. Retrieves all clusters (kcid, bcid) for the postal code area
+        2. For each cluster:
+           a. Prepares building and connection data
+           b. Creates an electrical network via backend
+           c. Adds buses, transformers, and loads using ComponentSpecs
+           d. Installs cables using the same branch-by-branch greedy algorithm
+        3. Tracks progress and saves the network configurations
+
+        Returns:
+            None
         """
+        # Get all clusters for the postal code area
+        cluster_list = self.dbc.get_list_from_plz(self.plz)
+        if TESTING:
+            cluster_list = cluster_list[:5]  # Limit to first 5 clusters for testing
+        ci_count = 0
+        ci_process = 0
+
+        for id in cluster_list:
+            kcid, bcid = id
+            self.logger.info(f"Start cable installation for PLZ {self.plz} kcid {kcid} bcid {bcid}")
+
+            # Get data for this cluster
+            vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes = (
+                self.prepare_vertices_list(self.plz, kcid, bcid)
+            )
+            sim_load_per_building, load_units, load_type = self.get_building_simultaneous_load_dict(consumer_list, buildings_df)
+
+            # Initialize backend using configuration
+            backend = create_backend(ELECTRICAL_BACKEND, logger=self.logger)
+            circuit_name = f"PLZ{self.plz}_kcid{kcid}_bcid{bcid}"
+            backend.initialize_circuit(name=circuit_name, source_bus="MVbus 1", primary_kv=20.0)
+            # Fetch cables once from database (single source of truth)
+            cables = self.dbc.fetch_cables()
+
+            # Register cable types from equipment data
+            backend.register_cable_types(cables)
+
+            # Get available cable
+            all_available_cables = backend.get_cable_types()
+            if not all_available_cables:
+                all_available_cables = [cable[0] for cable in cables]
+
+            local_length_dict = {c: 0 for c in all_available_cables}
+
+            # Create cable installer
+            installer = CableInstaller(backend, self.dbc, self.logger, cables)
+            
+            # Create network components
+            installer.create_lvmv_bus(self.plz, kcid, bcid)
+            installer.create_transformer(self.plz, kcid, bcid)
+            installer.create_connection_bus(connection_nodes)
+            installer.create_consumer_bus_and_load(consumer_list, sim_load_per_building, buildings_df, load_type)
+
+            trafo_power = self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)
+            self.logger.info(
+                f"Backend network initialized (buses={backend.get_component_count('buses')}, "
+                f"loads={backend.get_component_count('loads')}, transformer_rated_power={trafo_power} kVA)"
+            )
+
+            # Install cables branch by branch (same logic as original)
+            branch_deviation = 0
+            connection_node_list = connection_nodes
+            branch_index = 0
+
+            while connection_node_list:
+                # Handle single remaining node case
+                if len(connection_node_list) == 1:
+                    remaining = connection_node_list[0]
+                    self.logger.debug(
+                        f"Final remaining connection node {remaining} (kcid={kcid}, bcid={bcid}); installing direct connection."
+                    )
+                    sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, connection_node_list)
+                    Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
+
+                    # Install consumer cables
+                    local_length_dict = installer.install_consumer_cables(
+                        self.plz, bcid, kcid, branch_deviation, connection_node_list,
+                        ont_vertice, vertices_dict, sim_load_per_building, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict,
+                    )
+
+                    # Connect to transformer
+                    if connection_node_list[0] == ont_vertice:
+                        cable, count = installer.find_minimal_available_cable(Imax)
+                        installer.create_line_ont_to_lv_bus(
+                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation, cable, count, ont_vertice
+                        )
+                    else:
+                        cable, count = installer.find_minimal_available_cable(
+                            Imax, vertices_dict[connection_nodes[0]]
+                        )
+                        length = installer.create_line_start_to_lv_bus(
+                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation,
+                            vertices_dict, cable, count, ont_vertice
+                        )
+                        local_length_dict[cable] += length
+                        self.logger.info(
+                            f"Final branch backbone installed (PLZ={self.plz}, kcid={kcid}, bcid={bcid}, "
+                            f"start_node={connection_node_list[0]}, cable={cable}, parallels={count}, length_km={length:.4f})"
+                        )
+                    break
+                furthest_node_path_list = self.find_furthest_node_path_list(
+                    connection_node_list, vertices_dict, ont_vertice
+                )
+                branch_node_list, Imax = self.determine_maximum_load_branch(
+                    furthest_node_path_list, buildings_df, consumer_df
+                )
+                self.logger.debug(
+                    f"Selected branch {branch_index} (nodes={len(branch_node_list)}, first={branch_node_list[0]}, "
+                    f"last={branch_node_list[-1]}, Imax={Imax:.3f} kA)"
+                )
+
+                # Install cables for this branch
+                local_length_dict = installer.install_consumer_cables(
+                    self.plz, bcid, kcid, branch_deviation, branch_node_list,
+                    ont_vertice, vertices_dict, sim_load_per_building, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict
+                )
+
+                # Select appropriate cable and connect nodes
+                branch_distance = vertices_dict[branch_node_list[0]]
+                cable, count = installer.find_minimal_available_cable(
+                    Imax, branch_distance
+                )
+
+                if len(branch_node_list) >= 2:
+                    local_length_dict = installer.create_line_node_to_node(
+                        self.plz, kcid, bcid, branch_node_list, branch_deviation,
+                        vertices_dict, local_length_dict, cable, ont_vertice, count
+                    )
+
+                # Connect branch to transformer
+                branch_start_node = branch_node_list[-1]
+                if branch_start_node == ont_vertice:
+                    installer.create_line_ont_to_lv_bus(
+                        self.plz, bcid, kcid, branch_start_node, branch_deviation, cable, count, ont_vertice
+                    )
+                    self.logger.debug(
+                        f"Branch {branch_index} connected directly to transformer (cable={cable}, parallels={count})."
+                    )
+                else:
+                    length = installer.create_line_start_to_lv_bus(
+                        self.plz, bcid, kcid, branch_start_node, branch_deviation,
+                        vertices_dict, cable, count, ont_vertice
+                    )
+                    local_length_dict[cable] += length
+                    self.logger.debug(
+                        f"Branch {branch_index} connected to LV bus (cable={cable}, parallels={count}, length_km={length:.4f})."
+                    )
+
+                # Update processed nodes and visualization
+                for vertice in branch_node_list:
+                    connection_node_list.remove(vertice)
+
+                installer.deviate_bus_geodata(branch_node_list, branch_deviation)
+                branch_deviation += 1
+                branch_index += 1
+
+            # Cluster summary
+            total_length = sum(local_length_dict.values())
+            used_cables = {k: v for k, v in local_length_dict.items() if v > 0}
+            if used_cables:
+                cable_summary = ", ".join([f"{k}:{v:.3f} km" for k, v in sorted(used_cables.items(), key=lambda x: -x[1])])
+            else:
+                cable_summary = "no cables installed"
+
+            lines_count = backend.get_component_count('lines')
+            self.logger.info(
+                f"Finished cluster kcid={kcid}, bcid={bcid}: branches={branch_index}, lines={lines_count}, "
+                f"total_length={total_length:.3f} km ({cable_summary})"
+            )
+
+            # Track and report progress
+            ci_count += 1
+            progress_increment = 10  # Report progress in 10% increments
+            progress_threshold = max(1, len(cluster_list) / progress_increment)
+
+            if ci_count >= progress_threshold:
+                ci_process += progress_increment
+                ci_count = 0
+                self.logger.info(
+                    f"Cable installation: {min(ci_process, 100)}% complete ({ci_process // progress_increment}/{progress_increment})"
+                )
+
+            self.save_net(backend, kcid, bcid)
+
+    def save_net(self, backend: IElectricalBackend, kcid, bcid):
+        """
+        Validate and save grid to file and database using backend pattern.
+        """
+        # Validate grid with power flow before saving
+        try:
+            converged = backend.solve_power_flow()
+            if converged:
+                self.logger.info(f"✓ Power flow converged for kcid={kcid}, bcid={bcid}")
+            else:
+                self.logger.warning(f"⚠ Power flow did NOT converge for kcid={kcid}, bcid={bcid}")
+        except Exception as e:
+            self.logger.warning(f"⚠ Power flow failed for kcid={kcid}, bcid={bcid}: {e}")
+
         if SAVE_GRID_FOLDER:
             savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
             savepath_folder.mkdir(parents=True, exist_ok=True)
             filename = f"kcid{kcid}bcid{bcid}.json"
             savepath_file = Path(savepath_folder, filename)
-            pp.to_json(net, filename=savepath_file)
+            backend.export_to_format(filename=savepath_file)
 
-        json_string = pp.to_json(net, filename=None)
+        json_string = backend.export_to_format(filename=None)
 
-        self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string)
+        if ELECTRICAL_BACKEND == "pandapower":
+            transformer_description = backend.net.trafo.name[0]
+        else:
+            transformer_description = "N/A"
+
+        self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string, transformer_description)
 
         self.logger.info(f"Grid with kcid:{kcid} bcid:{bcid} is stored. ")
 

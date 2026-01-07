@@ -5,6 +5,7 @@ description = "Python tool for generating synthetic low-voltage distribution gri
 readme = "README.rst"
 requires-python = ">=3.12"
 dependencies = [
+    "altdss>=0.2.0",
     "contextily==1.6.2",
     "factor-analyzer==0.5.1",
     "flask>=3.1.2",
