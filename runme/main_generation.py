@@ -82,7 +82,7 @@ def create_grid_multiple_plz(plz_list: list, parallel: bool = True):
     gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS, parallel=parallel)
 
 
-def create_grid_single_ags(ags: int):
+def create_grid_single_ags(ags: int, parallel: bool = True):
     """
     Create grids for all PLZ codes within a single AGS.
 
@@ -101,10 +101,10 @@ def create_grid_single_ags(ags: int):
 
     # Initialize GridGenerator
     gg = GridGenerator()
-    gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS)
+    gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS, parallel=parallel)
 
 
-def create_grid_multiple_ags(ags_list: list):
+def create_grid_multiple_ags(ags_list: list, parallel: bool = True):
     """
     Create grids for all PLZ codes within multiple AGS.
 
@@ -123,7 +123,7 @@ def create_grid_multiple_ags(ags_list: list):
 
     # Initialize GridGenerator
     gg = GridGenerator()
-    gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS)
+    gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS, parallel=parallel)
 
 
 def main():
