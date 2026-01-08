@@ -59,21 +59,14 @@ def import_buildings_for_single_plz(gg):
     gg.logger.info(f"Buildings for AGS {ags_to_import} have been successfully added to the database.")
 
 
-
-def import_buildings_for_multiple_plz(df_plz_ags, dbc_client=None):
+def import_buildings_for_multiple_plz(df_plz_ags, dbc_client):
     """
     imports building data to db for multiple plz
 
     Args:
         df_plz_ags: DataFrame slice of municipal_register containing at least column 'ags'
-        dbc_client: optional DatabaseClient to reuse an existing DB connection
+        dbc_client: DatabaseClient to reuse an existing DB connection
     """
-    created_client = dbc_client is None
-    if created_client:
-        # local import to avoid circular deps on module import
-        import src.database.database_client as dbc
-
-        dbc_client = dbc.DatabaseClient()
 
     # Define the path for building shapefiles
     data_path = os.path.abspath(os.path.join(PROJECT_ROOT, "raw_data", "buildings"))
@@ -112,13 +105,6 @@ def import_buildings_for_multiple_plz(df_plz_ags, dbc_client=None):
         # adding the added ags to the log file
         for ags in ags_to_add:
             dbc_client.write_ags_log(int(ags))
-
-    # If we created the client in this function, close it to avoid leaked connections
-    if created_client:
-        try:
-            dbc_client.close()
-        except Exception:
-            pass
 
 def create_list_of_shp_files(files_to_add):
     """

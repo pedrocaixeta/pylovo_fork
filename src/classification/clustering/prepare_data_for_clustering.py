@@ -6,6 +6,8 @@ import os
 import sys
 import time
 
+import src.database.database_client as dbc
+
 from src.classification.clustering.filter_grids import apply_filter_to_grids
 from src.analysis.parameter_calculation import ParameterCalculator
 from src.data_import.import_buildings import import_buildings_for_multiple_plz
@@ -26,7 +28,8 @@ def prepare_data_for_clustering(additional_filtering: bool = False) -> None:
     # importing a single shape file takes a few minutes. Importing the buildings for a whole set will take a few hours
     start_time = time.time()
 
-    import_buildings_for_multiple_plz(samples)
+    with dbc.DatabaseClient() as dbc_client:
+        import_buildings_for_multiple_plz(samples, dbc_client)
     print("--- %s seconds for step 2: building import---" % (time.time() - start_time))
 
     # %% 3. generate the grids for your set
