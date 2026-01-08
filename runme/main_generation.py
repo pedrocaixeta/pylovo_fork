@@ -24,10 +24,11 @@ SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.classification.sampling.sample import get_municipal_register_as_dataframe
+import src.database.database_client as dbc
+from src.data_import.region_resolver import resolve_regions
 from src.data_import.import_buildings import import_buildings_for_single_plz, import_buildings_for_multiple_plz
 from src.grid_generator import GridGenerator
-from src.config_loader import ANALYZE_GRIDS, USE_INFDB, EXECUTION_MODE, PLZ, AGS, REGIONAL_SCALE
+from src.config_loader import ANALYZE_GRIDS, USE_INFDB, EXECUTION_MODE, PLZ, AGS
 from plotting.validation.statistics import plot_boxplot_plz, plot_pie_of_trafo_cables
 
 
@@ -71,36 +72,33 @@ def create_grid_multiple_plz(plz_list: list, parallel: bool = True):
     print(f"Creating grids for multiple PLZ: {plz_list}")
     
     if not USE_INFDB:
-        # Get ags info for plz areas
-        municipal_register = get_municipal_register_as_dataframe()
-        df_plz_ags = municipal_register[municipal_register['plz'].isin(plz_list)]
-        # Import buildings and generate grids
-        import_buildings_for_multiple_plz(sample_plz=df_plz_ags)
-    
+        with dbc.DatabaseClient() as dbc_client:
+            _, df_plz_ags = resolve_regions(dbc_client, plz=[int(p) for p in plz_list])
+            import_buildings_for_multiple_plz(df_plz_ags, dbc_client=dbc_client)
+
     # Initialize GridGenerator
     gg = GridGenerator()
-    df_plz = pd.DataFrame(list(map(str, plz_list)), columns=['plz'])
+    df_plz = pd.DataFrame({"plz": [int(p) for p in plz_list]})
     gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS, parallel=parallel)
 
 
 def create_grid_single_ags(ags: int):
     """
     Create grids for all PLZ codes within a single AGS.
-    
+
     Args:
         ags: Amtlicher Gemeindeschlüssel (municipality code)
     """
     print(f"Creating grids for single AGS: {ags}")
-    
-    # Get ags info for plz areas
-    municipal_register = get_municipal_register_as_dataframe()
-    df_plz_ags = municipal_register[municipal_register['ags'] == ags]
-    df_plz = df_plz_ags[['plz']]
-    
-    if not USE_INFDB:
-        # Import buildings and generate grids
-        import_buildings_for_multiple_plz(sample_plz=df_plz_ags)
-    
+
+    with dbc.DatabaseClient() as dbc_client:
+        plz_list, df_plz_ags = resolve_regions(dbc_client, ags=int(ags))
+        if not USE_INFDB:
+            # Import buildings and generate grids
+            import_buildings_for_multiple_plz(df_plz_ags, dbc_client=dbc_client)
+
+    df_plz = pd.DataFrame({"plz": plz_list})
+
     # Initialize GridGenerator
     gg = GridGenerator()
     gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS)
@@ -109,21 +107,20 @@ def create_grid_single_ags(ags: int):
 def create_grid_multiple_ags(ags_list: list):
     """
     Create grids for all PLZ codes within multiple AGS.
-    
+
     Args:
         ags_list: List of Amtlicher Gemeindeschlüssel (municipality codes)
     """
     print(f"Creating grids for multiple AGS: {ags_list}")
     
-    # Get ags info for plz areas
-    municipal_register = get_municipal_register_as_dataframe()
-    df_plz_ags = municipal_register[municipal_register['ags'].isin(ags_list)]
-    df_plz = df_plz_ags[['plz']]
-    
-    if not USE_INFDB:
-        # Import buildings and generate grids
-        import_buildings_for_multiple_plz(sample_plz=df_plz_ags)
-    
+    with dbc.DatabaseClient() as dbc_client:
+        plz_list, df_plz_ags = resolve_regions(dbc_client, ags=[int(a) for a in ags_list])
+        if not USE_INFDB:
+            # Import buildings and generate grids
+            import_buildings_for_multiple_plz(df_plz_ags, dbc_client=dbc_client)
+
+    df_plz = pd.DataFrame({"plz": plz_list})
+
     # Initialize GridGenerator
     gg = GridGenerator()
     gg.generate_grid_for_multiple_plz(df_plz=df_plz, analyze_grids=ANALYZE_GRIDS)
@@ -135,11 +132,11 @@ def main():
     print("=" * 60)
     # Start timing the script
     start_time = time.time()
-    
+
     try:
         if EXECUTION_MODE == "single_plz":
             create_grid_single_plz(PLZ)
-            
+
         elif EXECUTION_MODE == "multiple_plz":
             create_grid_multiple_plz(PLZ)
             

@@ -26,7 +26,7 @@ def prepare_data_for_clustering(additional_filtering: bool = False) -> None:
     # importing a single shape file takes a few minutes. Importing the buildings for a whole set will take a few hours
     start_time = time.time()
 
-    import_buildings_for_multiple_plz(sample_plz=samples)
+    import_buildings_for_multiple_plz(samples)
     print("--- %s seconds for step 2: building import---" % (time.time() - start_time))
 
     # %% 3. generate the grids for your set

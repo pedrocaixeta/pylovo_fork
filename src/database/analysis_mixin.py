@@ -243,24 +243,6 @@ class AnalysisMixin(BaseMixin, ABC):
 
         return gdf
 
-    def get_municipal_register_for_plz(self, plz: int) -> pd.DataFrame:
-        """get entry of table municipal register for given PLZ"""
-        query = """SELECT *
-                   FROM municipal_register
-                   WHERE plz = %(p)s;"""
-        self.cur.execute(query, {"p": plz})
-        register = self.cur.fetchall()
-        df_register = pd.DataFrame(register, columns=MUNICIPAL_REGISTER)
-        return df_register
-
-    def get_municipal_register(self) -> pd.DataFrame:
-        """get municipal register """
-        query = """SELECT *
-                   FROM municipal_register;"""
-        self.cur.execute(query)
-        register = self.cur.fetchall()
-        df_register = pd.DataFrame(register, columns=MUNICIPAL_REGISTER)
-        return df_register
 
     def read_trafo_dict(self, plz: int) -> dict:
         read_query = """SELECT trafo_num

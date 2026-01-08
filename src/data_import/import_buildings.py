@@ -1,8 +1,8 @@
 import glob
 
-from src.grid_generator import GridGenerator
 from src.database.database_constructor import DatabaseConstructor
 from src.config_loader import *
+from src.data_import.region_resolver import resolve_regions
 
 
 def import_buildings_for_single_plz(gg):
@@ -12,26 +12,24 @@ def import_buildings_for_single_plz(gg):
 
     :param gg: Grid generator object for querying relevant PLZ and AGS data
     """
-    # Retrieve AGS for the specified PLZ
     dbc_client = gg.dbc
-    ags_to_add = dbc_client.get_municipal_register_for_plz(plz=gg.plz)
+    _, df_plz_ags = resolve_regions(dbc_client, plz=int(gg.plz))
 
-    # Check if the PLZ exists
-    if ags_to_add.empty:
-        raise Exception("PLZ does not exist in the municipal register.")
-
-    # Extract name and AGS for the desired PLZ
-    gg.logger.info(f"LV grids will be generated for {ags_to_add.iloc[0]['plz']} {ags_to_add.iloc[0]['name_city']}")
-    ags = ags_to_add.iloc[0]["ags"]
-    gg.logger.info(f"It's AGS is: {ags}")
+    # Extract name and AGS for the desired PLZ (PLZ might map to multiple AGS)
+    gg.logger.info(
+        f"LV grids will be generated for PLZ {int(gg.plz)} - {len(df_plz_ags)} municipal register entries"
+    )
+    ags_list = sorted(set(df_plz_ags["ags"].tolist()))
+    gg.logger.info(f"AGS to import: {ags_list}")
 
     # Check if AGS is already in the database (avoid duplication)
     df_log = dbc_client.get_ags_log()
-    if ags in df_log["ags"].values:
-        gg.logger.info("Buildings of this AGS are already in the src database.")
+    already_imported = set(df_log["ags"].values.tolist())
+    ags_to_import = [a for a in ags_list if a not in already_imported]
+    if not ags_to_import:
+        gg.logger.info("Buildings for these AGS are already in the src database.")
         return
-    else:
-        gg.logger.info("Buildings for this AGS are not in the database and will be added.")
+    gg.logger.info(f"Buildings for these AGS are not in the database and will be added: {ags_to_import}")
 
     # Define the path for building shapefiles
     data_path = os.path.abspath(os.path.join(PROJECT_ROOT, "raw_data", "buildings"))
@@ -40,12 +38,12 @@ def import_buildings_for_single_plz(gg):
     # Retrieve all matching shapefiles
     files_list = glob.glob(shapefiles_pattern, recursive=True)
 
-    # Filter files containing the specific AGS in their filenames
-    files_to_add = [file for file in files_list if str(ags) in file]
+    # Filter files containing any AGS in their filenames
+    files_to_add = [file for file in files_list if any(str(a) in file for a in ags_to_import)]
 
     # Handle cases where no matching files are found
     if not files_to_add:
-        raise FileNotFoundError(f"No shapefiles found for AGS {ags} in {data_path}")
+        raise FileNotFoundError(f"No shapefiles found for AGS {ags_to_import} in {data_path}")
 
     # Create a list of dictionaries for ogr_to_db()
     ogr_ls_dict = create_list_of_shp_files(files_to_add)
@@ -55,31 +53,41 @@ def import_buildings_for_single_plz(gg):
     sgc.ogr_to_db(ogr_ls_dict)
 
     # Log the successfully added AGS to the log table in the database
-    dbc_client.write_ags_log(ags)
+    for a in ags_to_import:
+        dbc_client.write_ags_log(int(a))
 
-    gg.logger.info(f"Buildings for AGS {ags} have been successfully added to the database.")
+    gg.logger.info(f"Buildings for AGS {ags_to_import} have been successfully added to the database.")
 
 
 
-def import_buildings_for_multiple_plz(sample_plz):
+def import_buildings_for_multiple_plz(df_plz_ags, dbc_client=None):
     """
     imports building data to db for multiple plz
+
+    Args:
+        df_plz_ags: DataFrame slice of municipal_register containing at least column 'ags'
+        dbc_client: optional DatabaseClient to reuse an existing DB connection
     """
+    created_client = dbc_client is None
+    if created_client:
+        # local import to avoid circular deps on module import
+        import src.database.database_client as dbc
+
+        dbc_client = dbc.DatabaseClient()
+
     # Define the path for building shapefiles
     data_path = os.path.abspath(os.path.join(PROJECT_ROOT, "raw_data", "buildings"))
     shapefiles_pattern = os.path.join(data_path, "*.shp")  # Pattern for shapefiles
 
-    # retrieving all shape files
+    # retrieve all shape files
     files_list = glob.glob(shapefiles_pattern, recursive=True)
 
     # get all AGS that need to be imported for the classification
-    ags_to_add = sample_plz['ags']
+    ags_to_add = df_plz_ags['ags']
     ags_to_add = ags_to_add.tolist()
     ags_to_add = list(set(ags_to_add))  # dropping duplicates
 
     # check in ags_log if any ags are already on the database
-    gg = GridGenerator(plz='80639')
-    dbc_client = gg.dbc
     df_log = dbc_client.get_ags_log()
     log_ags_list = df_log['ags'].values.tolist()
     ags_to_add = list(set(ags_to_add).difference(log_ags_list))  # dropping already imported ags
@@ -98,12 +106,19 @@ def import_buildings_for_multiple_plz(sample_plz):
         ogr_ls_dict = create_list_of_shp_files(files_to_add)
 
         # adding the buildings to the database
-        sgc = DatabaseConstructor()
+        sgc = DatabaseConstructor(dbc_obj=dbc_client)
         sgc.ogr_to_db(ogr_ls_dict)
 
         # adding the added ags to the log file
         for ags in ags_to_add:
             dbc_client.write_ags_log(int(ags))
+
+    # If we created the client in this function, close it to avoid leaked connections
+    if created_client:
+        try:
+            dbc_client.close()
+        except Exception:
+            pass
 
 def create_list_of_shp_files(files_to_add):
     """

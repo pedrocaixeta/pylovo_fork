@@ -5,6 +5,8 @@ from config.config_table_structure import *
 from src.config_loader import *
 from src.database.base_mixin import BaseMixin
 
+import pandas as pd
+
 warnings.simplefilter(action='ignore', category=UserWarning)
 
 
@@ -77,3 +79,20 @@ class UtilsMixin(BaseMixin, ABC):
         cc_df.sort_index(inplace=True)
         self.logger.debug("Consumer categories fetched.")
         return cc_df
+
+    def get_municipal_register(self) -> pd.DataFrame:
+        """Return the complete municipal register as a DataFrame."""
+        query = """SELECT *
+                   FROM municipal_register;"""
+        self.cur.execute(query)
+        register = self.cur.fetchall()
+        return pd.DataFrame(register, columns=MUNICIPAL_REGISTER)
+
+    def get_municipal_register_for_plz(self, plz: int) -> pd.DataFrame:
+        """Return municipal register rows for a single PLZ."""
+        query = """SELECT *
+                   FROM municipal_register
+                   WHERE plz = %(p)s;"""
+        self.cur.execute(query, {"p": int(plz)})
+        register = self.cur.fetchall()
+        return pd.DataFrame(register, columns=MUNICIPAL_REGISTER)

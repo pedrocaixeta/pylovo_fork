@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import src.database.database_client as dbc
-
 from src.config_loader import *
+from src.database.utils_mixin import UtilsMixin
 
 # According to the population distribution and energy consumption
 # it is defined how many samples are to be choosen per class
@@ -155,7 +155,7 @@ def create_sample_set():
     """
 
     check_if_classification_version_exists()
-    regiostar_plz = get_municipal_register_as_dataframe()
+    regiostar_plz = UtilsMixin.get_municipal_register()
 
     # some PLZ might appear multiple times for small municipalities that share PLZ
     regiostar_plz = regiostar_plz.drop_duplicates(subset="plz")
