@@ -15,7 +15,7 @@ from sklearn import preprocessing
 from sklearn.cluster import KMeans
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
 from sklearn.mixture import GaussianMixture
-from sklearn_extra.cluster import KMedoids
+# from sklearn_extra.cluster import KMedoids
 
 from src.config_loader import TUMPalette, TUMPalette1, LIST_OF_CLUSTERING_PARAMETERS, REGIO7_REGIO5_GEM_DICT
 
@@ -116,7 +116,7 @@ def plot_ch_index_for_clustering_algos(
     # Test different algorithms
     algorithms = [
         ('kmeans', lambda n: KMeans(n_clusters=n, random_state=0)),
-        ('kmedoids', lambda n: KMedoids(n_clusters=n)),
+        # ('kmedoids', lambda n: KMedoids(n_clusters=n)),
         ('gmm_full', lambda n: GaussianMixture(n_components=n, covariance_type='full', random_state=1)),
         ('gmm_diag', lambda n: GaussianMixture(n_components=n, covariance_type='diag', random_state=1)),
         ('gmm_tied', lambda n: GaussianMixture(n_components=n, covariance_type='tied', random_state=1)),
@@ -141,7 +141,7 @@ def plot_ch_index_for_clustering_algos(
     ax = sns.lineplot(data=pd.melt(df_ch_index, ['no_clusters']),
                       y='value', x='no_clusters', hue='variable', palette=TUMPalette)
     handles, labels = ax.get_legend_handles_labels()
-    labels = ['kmeans', 'kmedoids', 'GMM full', 'GMM diagonal', 'GMM tied', 'GMM spherical']
+    labels = ['kmeans', 'GMM full', 'GMM diagonal', 'GMM tied', 'GMM spherical']
     ax.legend(handles, labels, title='Clustering Algorithmus')
     ax.set(xlabel='Anzahl Cluster', ylabel='CH Index')
     sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
@@ -176,7 +176,7 @@ def plot_db_index_for_clustering_algos(
 
     algorithms = [
         ('kmeans', lambda n: KMeans(n_clusters=n, random_state=0)),
-        ('kmedoids', lambda n: KMedoids(n_clusters=n)),
+        # ('kmedoids', lambda n: KMedoids(n_clusters=n)),
         ('gmm_full', lambda n: GaussianMixture(n_components=n, covariance_type='full')),
         ('gmm_diag', lambda n: GaussianMixture(n_components=n, covariance_type='diag')),
         ('gmm_tied', lambda n: GaussianMixture(n_components=n, covariance_type='tied')),
@@ -201,7 +201,7 @@ def plot_db_index_for_clustering_algos(
     ax = sns.lineplot(data=pd.melt(df_db_index, ['no_clusters']),
                       y='value', x='no_clusters', hue='variable', palette=TUMPalette)
     handles, labels = ax.get_legend_handles_labels()
-    labels = ['kmeans', 'kmedoids', 'GMM full', 'GMM diagonal', 'GMM tied', 'GMM spherical']
+    labels = ['kmeans', 'GMM full', 'GMM diagonal', 'GMM tied', 'GMM spherical']
     ax.legend(handles, labels, title='Clustering Algorithmus')
     ax.set(xlabel='Anzahl Cluster', ylabel='DB Index')
     sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))

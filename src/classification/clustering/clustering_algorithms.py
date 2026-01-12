@@ -3,7 +3,7 @@ from scipy.cluster.vq import vq
 from sklearn import preprocessing
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
-from sklearn_extra.cluster import KMedoids
+# from sklearn_extra.cluster import KMedoids
 
 
 def reindex_cluster_indices(df_parameters_of_grids: pd.DataFrame, representative_networks: pd.DataFrame) -> (
@@ -33,43 +33,43 @@ def reindex_cluster_indices(df_parameters_of_grids: pd.DataFrame, representative
     return df_parameters_of_grids, representative_networks
 
 
-def kmedoids_clustering(df_parameters_of_grids: pd.DataFrame, list_of_clustering_parameters: list, n_clusters: int) -> (
-        pd.DataFrame, pd.DataFrame):
-    """
-    Clustering the grids with kmedoids algorithm
-
-    Parameters
-    ----------
-    df_parameters_of_grids : DataFrame
-        Grids with parameters to be clustered
-    list_of_clustering_parameters : list of strings
-        Parameters used for clustering.
-    n_clusters: int
-        Number of clusters.
-
-    Returns
-    -------
-    Dataframe:
-        Grids that are attributed to a cluster.
-    Dataframe:
-        Grids that are medoids (cluster centers).
-    """
-    # scaling and clustering
-    X = df_parameters_of_grids[list_of_clustering_parameters]
-    X = preprocessing.scale(X)
-    kmedoids = KMedoids(n_clusters=n_clusters, random_state=0).fit(X)
-
-    # we store the cluster labels
-    df_parameters_of_grids['clusters'] = kmedoids.labels_
-
-    # find representative networks (medoids)
-    medoid_indices = kmedoids.medoid_indices_
-    representative_networks = df_parameters_of_grids.iloc[medoid_indices]
-
-    df_parameters_of_grids, representative_networks = reindex_cluster_indices(
-        df_parameters_of_grids=df_parameters_of_grids, representative_networks=representative_networks)
-
-    return df_parameters_of_grids, representative_networks
+# def kmedoids_clustering(df_parameters_of_grids: pd.DataFrame, list_of_clustering_parameters: list, n_clusters: int) -> (
+#         pd.DataFrame, pd.DataFrame):
+#     """
+#     Clustering the grids with kmedoids algorithm
+#
+#     Parameters
+#     ----------
+#     df_parameters_of_grids : DataFrame
+#         Grids with parameters to be clustered
+#     list_of_clustering_parameters : list of strings
+#         Parameters used for clustering.
+#     n_clusters: int
+#         Number of clusters.
+#
+#     Returns
+#     -------
+#     Dataframe:
+#         Grids that are attributed to a cluster.
+#     Dataframe:
+#         Grids that are medoids (cluster centers).
+#     """
+#     # scaling and clustering
+#     X = df_parameters_of_grids[list_of_clustering_parameters]
+#     X = preprocessing.scale(X)
+#     kmedoids = KMedoids(n_clusters=n_clusters, random_state=0).fit(X)
+#
+#     # we store the cluster labels
+#     df_parameters_of_grids['clusters'] = kmedoids.labels_
+#
+#     # find representative networks (medoids)
+#     medoid_indices = kmedoids.medoid_indices_
+#     representative_networks = df_parameters_of_grids.iloc[medoid_indices]
+#
+#     df_parameters_of_grids, representative_networks = reindex_cluster_indices(
+#         df_parameters_of_grids=df_parameters_of_grids, representative_networks=representative_networks)
+#
+#     return df_parameters_of_grids, representative_networks
 
 
 def gmm_tied_clustering(df_parameters_of_grids: pd.DataFrame, list_of_clustering_parameters: list, n_clusters: int) -> (
