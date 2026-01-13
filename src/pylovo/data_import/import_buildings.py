@@ -3,6 +3,7 @@ import glob
 from pylovo.database.database_constructor import DatabaseConstructor
 from pylovo.config_loader import *
 from pylovo.data_import.region_resolver import resolve_regions
+from pylovo.utils import get_user_data_dir
 
 
 def import_buildings_for_single_plz(gg):
@@ -32,8 +33,8 @@ def import_buildings_for_single_plz(gg):
     gg.logger.info(f"Buildings for these AGS are not in the database and will be added: {ags_to_import}")
 
     # Define the path for building shapefiles
-    data_path = os.path.abspath(os.path.join(PROJECT_ROOT, "raw_data", "buildings"))
-    shapefiles_pattern = os.path.join(data_path, "*.shp")  # Pattern for shapefiles
+    data_path = get_user_data_dir() / "buildings"
+    shapefiles_pattern = str(data_path / "*.shp")  # Pattern for shapefiles
 
     # Retrieve all matching shapefiles
     files_list = glob.glob(shapefiles_pattern, recursive=True)
@@ -69,8 +70,8 @@ def import_buildings_for_multiple_plz(df_plz_ags, dbc_client):
     """
 
     # Define the path for building shapefiles
-    data_path = os.path.abspath(os.path.join(PROJECT_ROOT, "raw_data", "buildings"))
-    shapefiles_pattern = os.path.join(data_path, "*.shp")  # Pattern for shapefiles
+    data_path = get_user_data_dir() / "buildings"
+    shapefiles_pattern = str(data_path / "*.shp")  # Pattern for shapefiles
 
     # retrieve all shape files
     files_list = glob.glob(shapefiles_pattern, recursive=True)

@@ -31,7 +31,7 @@ import pandapower.topology as top
 from sklearn.metrics.pairwise import haversine_distances
 
 import pylovo.database.database_client as dbc
-from src import utils
+from pylovo import utils
 from pylovo.config_loader import *
 
 

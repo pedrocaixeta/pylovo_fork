@@ -2,7 +2,7 @@ from typing import Any
 
 import psycopg2 as psy
 
-from src import utils
+from pylovo import utils
 from pylovo.config_loader import *
 from pylovo.database.database_client import DatabaseClient
 

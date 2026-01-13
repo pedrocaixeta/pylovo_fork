@@ -59,20 +59,74 @@ Main processing steps for pylovo:
 * **Household Allocation**: Statistical assignment of households to buildings
 * **Street Graph Construction**: Network routing consistent with cadastral information for realistic grid topology
 
+**Installation**
+------------
+
+**Requirements**: Python 3.12+, Ubuntu WSL2 or Linux-based OS, Docker (for InfDB preprocessing)
+
+.. code-block:: bash
+
+   # Clone the repository
+   git clone https://github.com/tum-ens/pylovo.git
+   cd pylovo
+
+   # Install dependencies
+   uv sync
+   # OR
+   pip install -e .
+
+   # Configure environment
+   cp .env.example .env
+   nano .env  # Add your database credentials
+
+**Note:** The repository includes configuration templates in ``config/``, an ``.env.example`` file, and example data structures in ``raw_data/`` that are essential for running pylovo.
+
+**User Data Requirements**
+------------
+
+Pylovo requires user-provided geospatial data in the ``raw_data/`` directory:
+
+* **Building shapefiles**: Place building geometries (as ``.shp`` files) in ``raw_data/buildings/``. Files should be named with AGS codes (e.g., ``09162000.shp`` for a specific municipality). These are typically obtained from official cadastral sources or InfDB preprocessing.
+
+* **Street network SQL**: Place the OSM-derived street network SQL file (``ways_public_2po_4pgr.sql``) in ``raw_data/ways/``. This file is generated using the `osm2po <http://osm2po.de/>`_ tool from OpenStreetMap data.
+
+* **Transformer data** (optional): Automatically fetched from OpenStreetMap when running ``pylovo-setup``, or can be manually added to ``raw_data/transformer_data/``.
+
+**Note**: When using InfDB, building and household data are fetched directly from the database, reducing the need for local shapefiles.
+
 **Quick Start**
 ------------
 
-0. **Requirements**: Python 3.12+, Ubuntu WSL2 or Linux-based OS, Docker
-1. **Input data setup**
-1.1. **Setup InfDB**: Follow the `InfDB <https://github.com/tum-ens/InfDB>`_ "Getting Started" guide until "Start infDB" section to setup the database on your machine
-1.2. **Run preprocessing pipeline**: Start the data preprocessing docker required for pylovo by running ``docker compose -f tools/infdb-basedata/compose.yml up``
-2. **Pylovo setup**
-2.1. **Clone pylovo**: ``git clone https://github.com/tum-ens/pylovo.git``
-2.2 **Install dependencies**: ``uv sync`` (see `documentation <https://pylovo.readthedocs.io/en/main/installation.html>`_ for more options)
-2.3. **Configure connection**: Set up your pylovo ``.env`` file by using the .env.example. Use the previously defined connection settings from InfDB ``.env`` from the recently created InfDB instance.
-2.4. **Build pylovo database**: Run ``main_constructor.py`` to set up the pylovo database
-2.5 **Generate grids**: Configure ``config_generation.yaml`` and run ``main_generation.py`` to create synthetic LV grids.
-3. **Optional: Analyze results**: Use provided visualization tools and statistical analysis features.
+1. **Setup InfDB** (preprocessing pipeline): Follow the `InfDB <https://github.com/tum-ens/InfDB>`_ "Getting Started" guide to set up the database on your machine. Start the preprocessing docker: ``docker compose -f tools/infdb-basedata/compose.yml up``
+
+2. **Configure pylovo**: Copy ``.env.example`` to ``.env`` and add your database credentials from InfDB setup. Update ``config/config_generation.yaml`` with your target region (PLZ or AGS).
+
+.. code-block:: bash
+
+   cp .env.example .env
+   nano .env  # Add your database credentials
+   nano config/config_generation.yaml  # Set your region
+
+3. **Setup pylovo database**: Run ``pylovo-setup`` to create database schema and import municipal register data.
+
+4. **Generate grids**: Run ``pylovo-generate`` to create synthetic LV distribution grids for your configured region.
+
+5. **Analyze results** (optional): Use ``pylovo-analyze`` for grid statistics and ``pylovo-export`` for QGIS visualization.
+
+**Available Commands**
+
+.. code-block:: bash
+
+   pylovo-setup      # Create and populate database
+   pylovo-generate   # Generate synthetic grids
+   pylovo-classify   # Run grid classification (experimental)
+   pylovo-analyze    # Analyze generated grids
+   pylovo-delete     # Delete grids or data from database
+   pylovo-export     # Export grids to QGIS format
+   pylovo-import     # Import transformers from OSM
+   pylovo-validate   # Validate configuration
+
+For detailed usage: ``pylovo-<command> --help``
 
 This setup ensures access to the full preprocessing pipeline with 3D building models, census data, and cadastral information for enhanced accuracy in grid generation.
 

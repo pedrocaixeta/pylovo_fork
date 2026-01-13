@@ -8,7 +8,7 @@ from typing import *
 import numpy as np
 from scipy.cluster.hierarchy import cut_tree
 
-from src import utils
+from pylovo import utils
 from pylovo.config_loader import *
 from pylovo.database.base_mixin import BaseMixin
 

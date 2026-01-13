@@ -1,8 +1,31 @@
 import osm2geojson
 import requests
 import shutil
+import os
 from pathlib import Path
 import logging
+
+
+def get_user_data_dir() -> Path:
+    """
+    Get the user data directory for pylovo.
+
+    This directory contains user-provided data like building shapefiles,
+    street network SQL files, and processed transformer GeoJSON files.
+
+    Priority order:
+    1. PYLOVO_DATA_DIR environment variable
+    2. Current working directory / raw_data
+
+    Returns
+    -------
+    Path
+        Path to the user data directory
+    """
+    data_dir = os.getenv("PYLOVO_DATA_DIR")
+    if data_dir:
+        return Path(data_dir)
+    return Path.cwd() / "raw_data"
 
 
 def reset_log_directory():

@@ -3,7 +3,6 @@ import os
 import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv, find_dotenv
-from importlib import resources
 
 
 def get_config_search_paths():
@@ -42,13 +41,12 @@ def get_config_search_paths():
 
 def load_yaml_config(filename: str):
     """
-    Loads a YAML configuration file from user config or package templates.
+    Loads a YAML configuration file from user directories.
 
     Search order:
     1. Current working directory config/
     2. User config directory (~/.config/pylovo/ or PYLOVO_CONFIG_DIR)
     3. Project-local .pylovo/ directory
-    4. Package template (read-only, from package data)
 
     Args:
         filename: Name of the config file (e.g., "config_database.yaml")
@@ -56,33 +54,23 @@ def load_yaml_config(filename: str):
     Returns:
         Loaded configuration dictionary
     """
-    # Try user-defined locations first
+    # Try user-defined locations
     for search_path in get_config_search_paths():
         config_file = search_path / filename
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as file:
                 return yaml.safe_load(file)
 
-    # Fall back to package template
-    try:
-        # For Python 3.9+, use files() API
-        if hasattr(resources, 'files'):
-            template_dir = resources.files('pylovo') / 'config_templates'
-            config_file = template_dir / filename
-            if config_file.is_file():
-                with config_file.open('r', encoding='utf-8') as file:
-                    return yaml.safe_load(file)
-        else:
-            # For Python 3.7-3.8, use read_text
-            template_text = resources.read_text('pylovo.config_templates', filename)
-            return yaml.safe_load(template_text)
-    except (FileNotFoundError, ModuleNotFoundError):
-        pass
-
+    # Config not found - provide helpful error message
     raise FileNotFoundError(
         f"Config file '{filename}' not found in any search location.\n"
-        f"Searched: {[str(p) for p in get_config_search_paths()]}\n"
-        f"Tip: Copy config templates from package or repository to your working directory."
+        f"Searched: {[str(p) for p in get_config_search_paths()]}\n\n"
+        f"To get started:\n"
+        f"1. Clone the repository: git clone https://github.com/tum-ens/pylovo.git\n"
+        f"2. Navigate to the repo: cd pylovo\n"
+        f"3. Install: pip install -e . (or uv sync)\n"
+        f"4. Edit configs in config/ directory\n"
+        f"5. Run: pylovo-setup\n"
     )
 
 

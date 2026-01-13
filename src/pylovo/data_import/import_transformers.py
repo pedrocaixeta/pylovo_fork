@@ -141,5 +141,10 @@ def process_trafos(relation_id: int) -> None:
     if "@id" in gdf_substations:
         gdf_substations.drop('@id', axis=1, inplace=True)
 
+    # Ensure output directory exists
+    user_data = get_user_data_dir()
+    processed_dir = user_data / "transformer_data" / "processed_trafos"
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
     # gis_preparation geojson
     gdf_substations.to_file(get_trafos_processed_geojson_path(relation_id), driver='GeoJSON')

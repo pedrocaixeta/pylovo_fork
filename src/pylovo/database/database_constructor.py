@@ -13,10 +13,7 @@ import pylovo.database.database_client as dbc
 from pylovo.infdb.infdb_client import InfdbClient
 from pylovo.data_import.import_transformers import process_trafos, get_trafos_processed_3035_geojson_path, \
     fetch_trafos, RELATION_ID, EPSG, get_trafos_processed_geojson_path
-
-
-# uncomment for automated building import of buildings in regiostar_samples
-# from raw_data.import_building_data import OGR_FILE_LIST
+from pylovo.utils import get_user_data_dir
 
 
 class DatabaseConstructor:
@@ -269,7 +266,8 @@ class DatabaseConstructor:
         cur = self.dbc.conn.cursor()
 
         # Path to your SQL file, which includes creation of the table
-        sc_path = os.path.join(os.getcwd(), "raw_data", "ways", "ways_public_2po_4pgr.sql")
+        user_data = get_user_data_dir()
+        sc_path = str(user_data / "ways" / "ways_public_2po_4pgr.sql")
         file_size = os.path.getsize(sc_path)
 
         # We read 10% at a time.  (Or pick a chunk size in bytes that works for your environment.)
@@ -390,6 +388,7 @@ class DatabaseConstructor:
         try:
             for path in function_paths:
                 abs_path = os.path.join(os.getcwd(), path)
+                filename = None  # Initialize to avoid potential reference before assignment
 
                 for filename in sorted(os.listdir(abs_path)):
                     if filename.endswith(".sql"):
@@ -401,7 +400,11 @@ class DatabaseConstructor:
             self.dbc.conn.commit()
 
         except Exception as e:
-            print(f"[ERROR] Failed while executing SQL function from file '{filename}': {e}")
+            error_msg = f"[ERROR] Failed while loading SQL functions"
+            if filename:
+                error_msg += f" from file '{filename}'"
+            error_msg += f": {e}"
+            print(error_msg)
             self.dbc.conn.rollback()
             raise
 

@@ -13,7 +13,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed  # lightweight 
 import pylovo.database.database_client as dbc
 from pylovo.infdb.infdb_client import InfdbClient
 from pylovo.analysis.parameter_calculation import ParameterCalculator
-from src import utils
+from pylovo import utils
 from pylovo.config_loader import *
 
 # Import electrical backend components

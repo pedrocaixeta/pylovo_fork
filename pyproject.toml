@@ -88,10 +88,14 @@ pylovo-delete = "pylovo.cli.delete:main"
 pylovo-export = "pylovo.cli.export:main"
 pylovo-import = "pylovo.cli.import_data:main"
 pylovo-validate = "pylovo.cli.validate:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pylovo"]
-[tool.hatch.build.targets.wheel.force-include]
-"config" = "pylovo/config_templates"
+
+[tool.hatch.build]
+include = [
+    "src/pylovo/**/*.py",
+]
 
 [project.urls]
 Homepage = "https://github.com/tum-ens/pylovo"

@@ -3,7 +3,7 @@ import psycopg2 as psy
 from sqlalchemy import create_engine
 from typing import override
 
-from src import utils
+from pylovo import utils
 from pylovo.config_loader import *
 from pylovo.database.preprocessing_mixin import PreprocessingMixin
 from pylovo.database.clustering_mixin import ClusteringMixin

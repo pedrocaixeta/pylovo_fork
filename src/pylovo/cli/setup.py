@@ -3,7 +3,7 @@ This script creates a pylovo database and fills with raw data from referenced fi
 Do not use DatabaseConstructor class unless you want to create a new database.
 """
 
-from raw_data.municipal_register.join_regiostar_gemeindeverz import create_municipal_register
+from pylovo.data_import.municipal_register import create_municipal_register
 from pylovo.database.database_constructor import DatabaseConstructor
 from pylovo import utils
 from pylovo.config_loader import *

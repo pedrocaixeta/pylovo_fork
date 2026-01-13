@@ -4,7 +4,7 @@ from geoalchemy2 import Geometry, WKTElement
 import pylovo.database.database_client as dbc
 
 from pylovo.config_loader import *
-from pylovo.classification.clustering.clustering_algorithms import gmm_tied_clustering, kmeans_clustering, kmedoids_clustering
+from pylovo.classification.clustering.clustering_algorithms import gmm_tied_clustering, kmeans_clustering#, kmedoids_clustering
 
 
 class DatabaseCommunication:
@@ -105,17 +105,17 @@ class DatabaseCommunication:
         df_transformer_positions['geom'] = df_transformer_positions['geom'].apply(self.create_wkt_element)
 
         # calculate the clusters
-        # KMEDOIDS
-        df_parameters_of_grids, representative_networks_kmedoid = kmedoids_clustering(
-            df_parameters_of_grids=df_parameters_of_grids,
-            list_of_clustering_parameters=LIST_OF_CLUSTERING_PARAMETERS,
-            n_clusters=N_CLUSTERS_KMEDOID)
-        df_parameters_of_grids.rename(mapper={'clusters': 'kmedoid_clusters'}, axis=1, inplace=True)
-        df_parameters_of_grids['kmedoid_representative_grid'] = False
-        for i in list(representative_networks_kmedoid['index']):
-            df_parameters_of_grids.at[i, 'kmedoid_representative_grid'] = True
-        df_parameters_of_grids['kmedoid_clusters'] = df_parameters_of_grids[
-            'kmedoid_clusters'].astype('int')
+        # # KMEDOIDS
+        # df_parameters_of_grids, representative_networks_kmedoid = kmedoids_clustering(
+        #     df_parameters_of_grids=df_parameters_of_grids,
+        #     list_of_clustering_parameters=LIST_OF_CLUSTERING_PARAMETERS,
+        #     n_clusters=N_CLUSTERS_KMEDOID)
+        # df_parameters_of_grids.rename(mapper={'clusters': 'kmedoid_clusters'}, axis=1, inplace=True)
+        # df_parameters_of_grids['kmedoid_representative_grid'] = False
+        # for i in list(representative_networks_kmedoid['index']):
+        #     df_parameters_of_grids.at[i, 'kmedoid_representative_grid'] = True
+        # df_parameters_of_grids['kmedoid_clusters'] = df_parameters_of_grids[
+        #     'kmedoid_clusters'].astype('int')
 
         # KMEANS
         df_parameters_of_grids, representative_networks_kmeans = kmeans_clustering(
