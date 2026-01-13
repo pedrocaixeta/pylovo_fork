@@ -19,25 +19,35 @@ MIN_DISTANCE_BETWEEN_TRAFOS = 8
 VOLTAGE_THRESHOLD = 110000
 EPSG = 32633
 
-SUBSTATIONS_QUERY_PATH = os.path.join("", "raw_data", "transformer_data", "overpass_queries", "substations_query.txt")
-SHOPPING_MALL_QUERY_PATH = os.path.join("", "raw_data", "transformer_data", "overpass_queries", "shopping_mall_query.txt")
+# Get project root (supports Docker/pip install via PYLOVO_ROOT env var)
+def _get_project_root():
+    """Get project root directory, supporting Docker and pip install scenarios."""
+    pylovo_root = os.getenv("PYLOVO_ROOT")
+    if pylovo_root:
+        return pylovo_root
+    # Fallback to current working directory
+    return os.getcwd()
+
+PROJECT_ROOT = _get_project_root()
+SUBSTATIONS_QUERY_PATH = os.path.join(PROJECT_ROOT, "raw_data", "transformer_data", "overpass_queries", "substations_query.txt")
+SHOPPING_MALL_QUERY_PATH = os.path.join(PROJECT_ROOT, "raw_data", "transformer_data", "overpass_queries", "shopping_mall_query.txt")
 
 
 
 def get_substations_geojson_path(relation_id: int) -> str:
-    return os.path.join("", "raw_data", "transformer_data", "fetched_trafos", f"{relation_id}_substations.geojson")
+    return os.path.join(PROJECT_ROOT, "raw_data", "transformer_data", "fetched_trafos", f"{relation_id}_substations.geojson")
 
 
 def get_shopping_mall_geojson_path(relation_id: int) -> str:
-    return os.path.join("", "raw_data", "transformer_data", "fetched_trafos", f"{relation_id}_shopping_mall.geojson")
+    return os.path.join(PROJECT_ROOT, "raw_data", "transformer_data", "fetched_trafos", f"{relation_id}_shopping_mall.geojson")
 
 
 def get_trafos_processed_geojson_path(relation_id: int) -> str:
-    return os.path.join("", "raw_data", "transformer_data", "processed_trafos", f"{relation_id}_trafos_processed.geojson")
+    return os.path.join(PROJECT_ROOT, "raw_data", "transformer_data", "processed_trafos", f"{relation_id}_trafos_processed.geojson")
 
 
 def get_trafos_processed_3035_geojson_path(relation_id: int) -> str:
-    return os.path.join("", "raw_data", "transformer_data", "processed_trafos", f"{relation_id}_trafos_processed_3035.geojson")
+    return os.path.join(PROJECT_ROOT, "raw_data", "transformer_data", "processed_trafos", f"{relation_id}_trafos_processed_3035.geojson")
 
 
 def fetch_trafos(relation_id: int) -> None:

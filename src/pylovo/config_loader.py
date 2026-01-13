@@ -17,7 +17,12 @@ def get_config_search_paths():
     # 1. Current working directory (highest priority for development)
     search_paths.append(Path.cwd() / "config")
 
-    # 2. User config directory
+    # 2. PYLOVO_ROOT/config (Docker/pip install scenario)
+    pylovo_root = os.getenv("PYLOVO_ROOT")
+    if pylovo_root:
+        search_paths.append(Path(pylovo_root) / "config")
+
+    # 3. User config directory
     user_config_dir = os.getenv("PYLOVO_CONFIG_DIR")
     if user_config_dir:
         search_paths.append(Path(user_config_dir))
@@ -27,7 +32,7 @@ def get_config_search_paths():
             search_paths.append(Path.home() / ".config" / "pylovo")
         search_paths.append(Path.cwd() / ".pylovo")  # Project-local config
 
-    # 3. Legacy location (for backward compatibility during migration)
+    # 4. Legacy location (for backward compatibility during migration)
     try:
         # Check if we're in development mode (src layout exists)
         legacy_path = Path(__file__).parent.parent.parent / "config"

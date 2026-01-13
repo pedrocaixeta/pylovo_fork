@@ -14,17 +14,26 @@ def get_user_data_dir() -> Path:
     street network SQL files, and processed transformer GeoJSON files.
 
     Priority order:
-    1. PYLOVO_DATA_DIR environment variable
-    2. Current working directory / raw_data
+    1. PYLOVO_DATA_DIR environment variable (explicit data directory)
+    2. PYLOVO_ROOT environment variable + /raw_data (Docker-friendly)
+    3. Current working directory / raw_data (development)
 
     Returns
     -------
     Path
         Path to the user data directory
     """
+    # Explicit data directory
     data_dir = os.getenv("PYLOVO_DATA_DIR")
     if data_dir:
         return Path(data_dir)
+
+    # Project root + raw_data (Docker-friendly)
+    pylovo_root = os.getenv("PYLOVO_ROOT")
+    if pylovo_root:
+        return Path(pylovo_root) / "raw_data"
+
+    # Fallback to current working directory
     return Path.cwd() / "raw_data"
 
 

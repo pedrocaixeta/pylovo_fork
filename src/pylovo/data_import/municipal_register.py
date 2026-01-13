@@ -9,13 +9,28 @@ from pathlib import Path
 from openpyxl import load_workbook
 import pylovo.database.database_client as dbc
 def _get_repo_root() -> Path:
-    """Get the repository root directory."""
-    # Start from this file and go up to find the repo root
+    """
+    Get the repository/project root directory.
+
+    Priority:
+    1. PYLOVO_ROOT environment variable (for Docker/pip installs)
+    2. Walk up from package location looking for raw_data/
+    3. Current working directory
+    """
+    # Check environment variable first (Docker-friendly)
+    env_root = os.getenv("PYLOVO_ROOT")
+    if env_root:
+        root_path = Path(env_root)
+        if root_path.exists():
+            return root_path
+
+    # Try to find raw_data/ by walking up from package location
     current = Path(__file__).parent
     while current != current.parent:
         if (current / "raw_data").exists():
             return current
         current = current.parent
+
     # Fallback to current working directory
     return Path.cwd()
 def _get_data_file_path(relative_path: str) -> str:
@@ -24,9 +39,12 @@ def _get_data_file_path(relative_path: str) -> str:
     file_path = repo_root / "raw_data" / "municipal_register" / relative_path
     if not file_path.exists():
         raise FileNotFoundError(
-            f"Municipal data file not found: {file_path}\n"
-            f"Make sure you have cloned the full repository with data files in raw_data/municipal_register/\n"
-            f"Run: git clone https://github.com/tum-ens/pylovo.git"
+            f"Municipal data file not found: {file_path}\n\n"
+            f"Setup options:\n"
+            f"1. Clone full repo: git clone https://github.com/tum-ens/pylovo.git\n"
+            f"2. Docker/pip install: Set PYLOVO_ROOT environment variable to your project directory\n"
+            f"   Example: export PYLOVO_ROOT=/app\n"
+            f"   Then ensure raw_data/ directory exists at $PYLOVO_ROOT/raw_data/"
         )
     return str(file_path)
 def import_regiostar() -> tuple[pd.DataFrame, pd.DataFrame]:
