@@ -1,48 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 [project]
 name = "pylovo"
 version = "0.6.0"
 description = "Python tool for generating synthetic low-voltage distribution grids"
 readme = "README.rst"
 requires-python = ">=3.12"
+authors = [
+    {name = "Beneharo Reveron Baecker", email = "beneharo.reveron-baecker@tum.de"},
+]
+maintainers = [
+    {name = "Beneharo Reveron Baecker", email = "beneharo.reveron-baecker@tum.de"},
+]
+keywords = [
+    "power-grid",
+    "synthetic-grid", 
+    "low-voltage",
+    "energy-systems",
+    "distribution-grid",
+    "grid-generation",
+    "pandapower",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+]
 dependencies = [
     # Data manipulation & analysis
     "pandas==2.2.3",
     "numpy==1.26.4",
     "scipy==1.13.1",
-
     # GIS & Geospatial
     "geopandas==1.0.1",
     "geoalchemy2==0.17.1",
     "pyproj==3.6.1",
     "osm2geojson==0.2.6",
-
     # Database
     "sqlalchemy==2.0.36",
     "psycopg2-binary==2.9.10",
     "sqlparse==0.5.3",
-
     # Core electrical grid generation
     "pandapower==2.14.11",
     # "altdss>=0.2.0",
-
-    # Machine learning and clustering
-    "scikit-learn==1.6.1",
-    "factor-analyzer==0.5.1",
-
-    # UI
-    "flask>=3.1.2",
-    "flask-cors>=6.0.1",
-
     # Utilities
     "pyyaml==6.0.2",
     "python-dotenv==1.0.1",
     "requests==2.32.3",
     "openpyxl==3.1.5",
+    # Web UI components
+    "flask>=3.1.2",
+    "flask-cors>=6.0.1",
 ]
 
 [project.optional-dependencies]
-
-visualization = [
+classification = [
+    # Machine learning and clustering (preliminary/experimental)
+    "scikit-learn==1.6.1",
+    "factor-analyzer==0.5.1",
+]
+plots = [
     # Plotting and visualization tools
     "matplotlib==3.10.0",
     "plotly==5.24.1",
@@ -58,4 +80,21 @@ docs = [
 ]
 
 [project.scripts]
-constructor = "runme.main_constructor:main"
+pylovo-setup = "pylovo.cli.setup:main"
+pylovo-generate = "pylovo.cli.generate:main"
+pylovo-classify = "pylovo.cli.classify:main"
+pylovo-analyze = "pylovo.cli.analyze:main"
+pylovo-delete = "pylovo.cli.delete:main"
+pylovo-export = "pylovo.cli.export:main"
+pylovo-import = "pylovo.cli.import_data:main"
+pylovo-validate = "pylovo.cli.validate:main"
+[tool.hatch.build.targets.wheel]
+packages = ["src/pylovo"]
+[tool.hatch.build.targets.wheel.force-include]
+"config" = "pylovo/config_templates"
+
+[project.urls]
+Homepage = "https://github.com/tum-ens/pylovo"
+Documentation = "https://pylovo.readthedocs.io"
+Repository = "https://github.com/tum-ens/pylovo"
+Citation = "https://doi.org/10.1016/j.segan.2024.101617"

@@ -1,7 +1,8 @@
 from raw_data.municipal_register.regiostar.import_regiostar import import_regiostar
 from raw_data.municipal_register.gemeindeverzeichnis.import_functions import import_plz_einwohner, import_zuordnung_plz
-from src.config_loader import *
-import src.database.database_client as dbc
+from pylovo.config_loader import *
+import pylovo.database.database_client as dbc
+import pandas as pd
 
 
 def import_tables() -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
