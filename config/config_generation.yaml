@@ -1,10 +1,17 @@
 # =============================================================================
 # REGIONAL CONFIGURATION
 # =============================================================================
-PLZ: 80803
-# AGS: 9474126
-# PLZ: [86150, 86152] # Augsburg: [86150, 86152, 86153, 86154, 86156, 86157, 86159, 86161, 86163, 86165, 86167, 86169, 86179, 86199]
-# AGS: [9162000, 9163000, 9164000]
+# ⚠️ IMPORTANT: PLZ and AGS are NO LONGER specified in this config file!
+#
+# Region specification is now CLI-only via command-line arguments:
+#   pylovo-generate --plz 80803              # Single postal code
+#   pylovo-generate --plz 80803 80802        # Multiple postal codes
+#   pylovo-generate --ags 09162000           # Single municipality
+#   pylovo-generate --ags 09162000 09161000  # Multiple municipalities
+#
+# If you have PLZ or AGS in this file, remove them and use CLI arguments instead.
+# See README.rst for full documentation.
+
 TESTING: False # If True, only a small subset of data is used for faster testing
 
 # =============================================================================

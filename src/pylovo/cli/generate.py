@@ -27,7 +27,7 @@ import pylovo.database.database_client as dbc
 from pylovo.data_import.region_resolver import resolve_regions
 from pylovo.data_import.import_buildings import import_buildings_for_single_plz, import_buildings_for_multiple_plz
 from pylovo.grid_generator import GridGenerator
-from pylovo.config_loader import ANALYZE_GRIDS, USE_INFDB, EXECUTION_MODE, PLZ, AGS
+from pylovo.config_loader import ANALYZE_GRIDS, USE_INFDB
 
 
 def create_grid_single_plz(plz: int, plot_results: bool = False):
@@ -133,7 +133,7 @@ def create_grid_multiple_ags(ags_list: list, parallel: bool = True):
 
 
 def main():
-    """Main function to execute grid creation based on configuration or command-line arguments."""
+    """Main function to execute grid creation based on command-line arguments."""
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -141,17 +141,38 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  pylovo-generate                        # Use config file settings
-  pylovo-generate --plz 80803            # Generate for single PLZ
-  pylovo-generate --plz 80803 80802      # Generate for multiple PLZ
-  pylovo-generate --ags 09162000         # Generate for single AGS
-  pylovo-generate --ags 09162000 09161000 # Generate for multiple AGS
-  pylovo-generate --no-parallel          # Disable parallel processing
+  # Generate for single postal code (PLZ)
+  pylovo-generate --plz 80803
+
+  # Generate for multiple postal codes
+  pylovo-generate --plz 80803 80802 80801
+
+  # Generate for single municipality (AGS)
+  pylovo-generate --ags 09162000
+
+  # Generate for multiple municipalities
+  pylovo-generate --ags 09162000 09161000
+
+  # Disable parallel processing (useful for debugging)
+  pylovo-generate --plz 80803 --no-parallel
+
+Regional Identifiers:
+  PLZ: German postal codes (Postleitzahl) - 5-digit codes
+  AGS: Municipality codes (Amtlicher Gemeindeschlüssel) - 8-digit codes
+  
+  You can find PLZ and AGS codes in your database after running pylovo-setup:
+    SELECT plz, note FROM pylovo.postcode LIMIT 10;
+    SELECT ags, gen FROM pylovo.municipal_register LIMIT 10;
+
+For more information, see the README: https://github.com/tum-ens/pylovo
         '''
     )
-    parser.add_argument('--plz', type=int, nargs='+', help='Postal code(s) to generate grids for')
-    parser.add_argument('--ags', type=int, nargs='+', help='Municipality code(s) (AGS) to generate grids for')
-    parser.add_argument('--no-parallel', action='store_true', help='Disable parallel processing for multiple regions')
+    parser.add_argument('--plz', type=int, nargs='+',
+                       help='Postal code(s) to generate grids for (e.g., 80803 or 80803 80802)')
+    parser.add_argument('--ags', type=int, nargs='+',
+                       help='Municipality code(s) (AGS) to generate grids for (e.g., 09162000)')
+    parser.add_argument('--no-parallel', action='store_true',
+                       help='Disable parallel processing for multiple regions')
 
     args = parser.parse_args()
 
@@ -161,7 +182,7 @@ Examples:
     start_time = time.time()
 
     try:
-        # Determine what to do based on arguments or config
+        # Determine what to do based on CLI arguments
         if args.plz:
             # Command-line PLZ argument(s) provided
             if len(args.plz) == 1:
@@ -180,22 +201,19 @@ Examples:
                 print(f"Creating grids for multiple AGS: {args.ags}")
                 create_grid_multiple_ags(args.ags, parallel=not args.no_parallel)
 
-        # Fallback to config file if no arguments provided
-        elif EXECUTION_MODE == "single_plz":
-            create_grid_single_plz(PLZ)
-
-        elif EXECUTION_MODE == "multiple_plz":
-            create_grid_multiple_plz(PLZ)
-
-        elif EXECUTION_MODE == "single_ags":
-            create_grid_single_ags(AGS)
-
-        elif EXECUTION_MODE == "multiple_ags":
-            create_grid_multiple_ags(AGS)
-
         else:
-            raise ValueError(f"Invalid execution mode: {EXECUTION_MODE}. "
-                           f"Valid options are: single_plz, multiple_plz, single_ags, multiple_ags")
+            # No arguments provided - show helpful error
+            print()
+            print("❌ ERROR: No region specified")
+            print("=" * 60)
+            print("Please specify a region using --plz or --ags arguments:")
+            print()
+            print("  pylovo-generate --plz 80803         # Single postal code")
+            print("  pylovo-generate --ags 09162000      # Single municipality")
+            print()
+            print("For more examples, run: pylovo-generate --help")
+            print("=" * 60)
+            sys.exit(1)
 
         # End timing and print results
         elapsed_time = time.time() - start_time

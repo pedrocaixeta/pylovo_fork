@@ -108,13 +108,13 @@ Pylovo requires user-provided geospatial data in the ``raw_data/`` directory:
    uv sync
    source .venv/bin/activate  # Activate virtual environment
 
-3. **Configure pylovo**: Copy ``.env.example`` to ``.env`` and add your database credentials from InfDB setup. Update ``config/config_generation.yaml`` with your target region (PLZ or AGS).
+3. **Configure pylovo**: Copy ``.env.example`` to ``.env`` and add your database credentials from InfDB setup. Optionally adjust grid generation parameters in ``config/config_generation.yaml`` if needed.
 
 .. code-block:: bash
 
    cp .env.example .env
    nano .env  # Add your database credentials
-   nano config/config_generation.yaml  # Set your region
+   # Optional: nano config/config_generation.yaml  # Adjust grid parameters if needed
 
 4. **Setup pylovo database**: Run ``pylovo-setup`` to create database schema and import municipal register data.
 
@@ -122,44 +122,100 @@ Pylovo requires user-provided geospatial data in the ``raw_data/`` directory:
 
    pylovo-setup
 
-5. **Generate grids**: Run ``pylovo-generate`` to create synthetic LV distribution grids for your configured region.
-examples
+5. **Generate grids**: Use ``pylovo-generate`` with region arguments to create synthetic LV distribution grids.
 
 .. code-block:: bash
 
-    # Using config file (default)
-    pylovo-generate
-
-    # Single postal code
+    # Single postal code (PLZ)
     pylovo-generate --plz 80803
 
     # Multiple postal codes
-    pylovo-generate --plz 80803 80802
+    pylovo-generate --plz 80803 80802 80801
 
-    # Municipality (AGS)
+    # Single municipality (AGS - Amtlicher Gemeindeschlüssel)
     pylovo-generate --ags 09162000
 
     # Multiple municipalities
     pylovo-generate --ags 09162000 09161000
+
+    # Disable parallel processing (useful for debugging)
+    pylovo-generate --plz 80803 --no-parallel
+
+**Finding Region Identifiers:**
+
+After running ``pylovo-setup``, you can query available regions:
+
+.. code-block:: sql
+
+    -- Find postal codes (PLZ)
+    SELECT plz, note, population FROM pylovo.postcode LIMIT 10;
+
+    -- Find municipalities (AGS)
+    SELECT ags, gen, population FROM pylovo.municipal_register LIMIT 10;
 
 **Note**: All ``pylovo-*`` commands must be run with the virtual environment activated (``source .venv/bin/activate``).
 
 6. **Analyze results** (optional): Use ``pylovo-analyze`` for grid statistics and ``pylovo-export`` for QGIS visualization.
 
 **Available Commands**
+------------
+
+All commands must be run with the virtual environment activated (``source .venv/bin/activate``).
+
+**Core Commands:**
 
 .. code-block:: bash
 
-   pylovo-setup      # Create and populate database
-   pylovo-generate   # Generate synthetic grids
-   pylovo-classify   # Run grid classification (experimental)
-   pylovo-analyze    # Analyze generated grids
-   pylovo-delete     # Delete grids or data from database
-   pylovo-export     # Export grids to QGIS format
-   pylovo-import     # Import transformers from OSM
-   pylovo-validate   # Validate configuration
+   # Setup database and import initial data
+   pylovo-setup
 
-For detailed usage: ``pylovo-<command> --help``
+   # Generate synthetic grids for regions
+   pylovo-generate --plz 80803                    # Single postal code
+   pylovo-generate --plz 80803 80802              # Multiple postal codes
+   pylovo-generate --ags 09162000                 # Single municipality
+   pylovo-generate --ags 09162000 09161000        # Multiple municipalities
+   pylovo-generate --plz 80803 --no-parallel      # Disable parallel processing
+
+   # Analyze generated grids
+   pylovo-analyze --plz 80803                     # Calculate PLZ parameters
+   pylovo-analyze --plz 80803 --per-grid          # Calculate per-grid parameters
+   pylovo-analyze --plz 80803 --all               # Run both analyses
+
+**Data Management:**
+
+.. code-block:: bash
+
+   # Export grids to QGIS format
+   pylovo-export --plz 80803                      # Export single PLZ
+   pylovo-export --plz 80803 80802                # Export multiple PLZ
+   pylovo-export --grid --plz 80803 --kcid 4 --bcid 30  # Export specific grid
+
+   # Import data
+   pylovo-import transformers-osm --relation-id 62464  # Import transformers from OSM
+
+   # Delete data
+   pylovo-delete networks --plz 80803 --version 1      # Delete specific PLZ networks
+   pylovo-delete version --version 1                   # Delete all networks for version
+
+**Advanced:**
+
+.. code-block:: bash
+
+   # Validate configuration
+   pylovo-validate
+
+   # Run classification (experimental)
+   pylovo-classify
+
+**Get Help:**
+
+Add ``--help`` to any command for detailed usage information:
+
+.. code-block:: bash
+
+   pylovo-generate --help
+   pylovo-delete --help
+   pylovo-export --help
 
 This setup ensures access to the full preprocessing pipeline with 3D building models, census data, and cadastral information for enhanced accuracy in grid generation.
 
