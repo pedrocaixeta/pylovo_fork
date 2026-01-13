@@ -388,19 +388,20 @@ class DatabaseConstructor:
         # Print once at the beginning
         print(f"Loading ways preprocessing functions into schema '{TARGET_SCHEMA}'.")
 
+        # Get the path to the ways_preprocessing_functions directory within the package
+        package_dir = Path(__file__).parent.parent  # Go up to pylovo package directory
         function_paths = [
-            os.path.join("src", "ways_preprocessing_functions", "utils"),
-            os.path.join("src", "ways_preprocessing_functions", "core")
+            package_dir / "ways_preprocessing_functions" / "utils",
+            package_dir / "ways_preprocessing_functions" / "core"
         ]
 
         try:
             for path in function_paths:
-                abs_path = os.path.join(os.getcwd(), path)
                 filename = None  # Initialize to avoid potential reference before assignment
 
-                for filename in sorted(os.listdir(abs_path)):
+                for filename in sorted(os.listdir(path)):
                     if filename.endswith(".sql"):
-                        full_file_path = os.path.join(abs_path, filename)
+                        full_file_path = path / filename
                         with open(full_file_path, 'r') as f:
                             sql = f.read()
                             cur.execute(sql)
