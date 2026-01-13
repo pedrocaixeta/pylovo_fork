@@ -5,37 +5,56 @@ description = "Python tool for generating synthetic low-voltage distribution gri
 readme = "README.rst"
 requires-python = ">=3.12"
 dependencies = [
-    "altdss>=0.2.0",
-    "contextily==1.6.2",
+    # Data manipulation & analysis
+    "pandas==2.2.3",
+    "numpy==1.26.4",
+    "scipy==1.13.1",
+
+    # GIS & Geospatial
+    "geopandas==1.0.1",
+    "geoalchemy2==0.17.1",
+    "pyproj==3.6.1",
+    "osm2geojson==0.2.6",
+
+    # Database
+    "sqlalchemy==2.0.36",
+    "psycopg2-binary==2.9.10",
+    "sqlparse==0.5.3",
+
+    # Core electrical grid generation
+    "pandapower==2.14.11",
+    # "altdss>=0.2.0",
+
+    # Machine learning and clustering
+    "scikit-learn==1.6.1",
     "factor-analyzer==0.5.1",
+
+    # UI
     "flask>=3.1.2",
     "flask-cors>=6.0.1",
-    "geoalchemy2==0.17.1",
-    "geopandas==1.0.1",
-    "igraph==0.11.8",
-    "matplotlib==3.10.0",
-    "numpy==1.26.4",
-    "numba==0.62.1",
-    "openpyxl==3.1.5",
-    "osm2geojson==0.2.6",
-    "pandapower==2.14.11",
-    "pandas==2.2.3",
-    "plotly==5.24.1",
-    "psycopg2-binary==2.9.10",
-    "python-dotenv==1.0.1",
-    "pyproj==3.6.1",
+
+    # Utilities
     "pyyaml==6.0.2",
+    "python-dotenv==1.0.1",
     "requests==2.32.3",
-    "scikit-learn==1.6.1",
-    "scipy==1.13.1",
+    "openpyxl==3.1.5",
+]
+
+[project.optional-dependencies]
+
+visualization = [
+    # Plotting and visualization tools
+    "matplotlib==3.10.0",
+    "plotly==5.24.1",
     "seaborn==0.13.2",
-    "setuptools==78.1.1",
+    "contextily==1.6.2",
+]
+
+docs = [
+    # Documentation generation
     "sphinx-autoapi==3.4.0",
     "sphinx-js==4.0.0",
     "sphinx-rtd-theme==3.0.2",
-    "sqlalchemy==2.0.36",
-    "sqlparse==0.5.3",
-    "xlrd==2.0.1",
 ]
 
 [project.scripts]
