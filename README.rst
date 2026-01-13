@@ -86,20 +86,29 @@ Main processing steps for pylovo:
 
 Pylovo requires user-provided geospatial data in the ``raw_data/`` directory:
 
+**Note**: When using InfDB, building and street data are fetched directly from the database, reducing the need for local shapefiles.
+
 * **Building shapefiles**: Place building geometries (as ``.shp`` files) in ``raw_data/buildings/``. Files should be named with AGS codes (e.g., ``09162000.shp`` for a specific municipality). These are typically obtained from official cadastral sources or InfDB preprocessing.
 
 * **Street network SQL**: Place the OSM-derived street network SQL file (``ways_public_2po_4pgr.sql``) in ``raw_data/ways/``. This file is generated using the `osm2po <http://osm2po.de/>`_ tool from OpenStreetMap data.
 
-* **Transformer data** (optional): Automatically fetched from OpenStreetMap when running ``pylovo-setup``, or can be manually added to ``raw_data/transformer_data/``.
-
-**Note**: When using InfDB, building and household data are fetched directly from the database, reducing the need for local shapefiles.
+* **Transformer data** (optional): Import from OpenStreetMap with ``pylovo-import transformers-osm --relation-id <99999>`` (or use prebuilt raw_data files for bavaria).
 
 **Quick Start**
 ------------
 
 1. **Setup InfDB** (preprocessing pipeline): Follow the `InfDB <https://github.com/tum-ens/InfDB>`_ "Getting Started" guide to set up the database on your machine. Start the preprocessing docker: ``docker compose -f tools/infdb-basedata/compose.yml up``
 
-2. **Configure pylovo**: Copy ``.env.example`` to ``.env`` and add your database credentials from InfDB setup. Update ``config/config_generation.yaml`` with your target region (PLZ or AGS).
+2. **Install and activate pylovo**:
+
+.. code-block:: bash
+
+   git clone https://github.com/tum-ens/pylovo.git
+   cd pylovo
+   uv sync
+   source .venv/bin/activate  # Activate virtual environment
+
+3. **Configure pylovo**: Copy ``.env.example`` to ``.env`` and add your database credentials from InfDB setup. Update ``config/config_generation.yaml`` with your target region (PLZ or AGS).
 
 .. code-block:: bash
 
@@ -107,11 +116,35 @@ Pylovo requires user-provided geospatial data in the ``raw_data/`` directory:
    nano .env  # Add your database credentials
    nano config/config_generation.yaml  # Set your region
 
-3. **Setup pylovo database**: Run ``pylovo-setup`` to create database schema and import municipal register data.
+4. **Setup pylovo database**: Run ``pylovo-setup`` to create database schema and import municipal register data.
 
-4. **Generate grids**: Run ``pylovo-generate`` to create synthetic LV distribution grids for your configured region.
+.. code-block:: bash
 
-5. **Analyze results** (optional): Use ``pylovo-analyze`` for grid statistics and ``pylovo-export`` for QGIS visualization.
+   pylovo-setup
+
+5. **Generate grids**: Run ``pylovo-generate`` to create synthetic LV distribution grids for your configured region.
+examples
+
+.. code-block:: bash
+
+    # Using config file (default)
+    pylovo-generate
+
+    # Single postal code
+    pylovo-generate --plz 80803
+
+    # Multiple postal codes
+    pylovo-generate --plz 80803 80802
+
+    # Municipality (AGS)
+    pylovo-generate --ags 09162000
+
+    # Multiple municipalities
+    pylovo-generate --ags 09162000 09161000
+
+**Note**: All ``pylovo-*`` commands must be run with the virtual environment activated (``source .venv/bin/activate``).
+
+6. **Analyze results** (optional): Use ``pylovo-analyze`` for grid statistics and ``pylovo-export`` for QGIS visualization.
 
 **Available Commands**
 

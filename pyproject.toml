@@ -45,6 +45,9 @@ dependencies = [
     "sqlalchemy==2.0.36",
     "psycopg2-binary==2.9.10",
     "sqlparse==0.5.3",
+    # Clustering & classification
+    "scikit-learn==1.6.1",
+    "factor-analyzer==0.5.1",
     # Core electrical grid generation
     "pandapower==2.14.11",
     # "altdss>=0.2.0",
@@ -56,14 +59,9 @@ dependencies = [
     # Web UI components
     "flask>=3.1.2",
     "flask-cors>=6.0.1",
+
 ]
 
-[project.optional-dependencies]
-classification = [
-    # Machine learning and clustering (preliminary/experimental)
-    "scikit-learn==1.6.1",
-    "factor-analyzer==0.5.1",
-]
 plots = [
     # Plotting and visualization tools
     "matplotlib==3.10.0",

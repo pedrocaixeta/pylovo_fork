@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -8,7 +9,14 @@ import sqlparse
 import pandas as pd
 
 from pylovo.config_loader import *
-from config.config_table_structure import *
+
+# Import table structure from config directory
+config_dir = Path(__file__).parent.parent.parent.parent / "config"
+if str(config_dir) not in sys.path:
+    sys.path.insert(0, str(config_dir))
+
+from config_table_structure import *
+
 import pylovo.database.database_client as dbc
 from pylovo.infdb.infdb_client import InfdbClient
 from pylovo.data_import.import_transformers import process_trafos, get_trafos_processed_3035_geojson_path, \

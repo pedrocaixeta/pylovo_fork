@@ -1,7 +1,16 @@
 import warnings
+import sys
+from pathlib import Path
 from abc import ABC
 
-from config.config_table_structure import *
+# Import table structure from config directory
+# Add config directory to path to import config_table_structure
+config_dir = Path(__file__).parent.parent.parent.parent / "config"
+if str(config_dir) not in sys.path:
+    sys.path.insert(0, str(config_dir))
+
+from config_table_structure import *
+
 from pylovo.config_loader import *
 from pylovo.database.base_mixin import BaseMixin
 
