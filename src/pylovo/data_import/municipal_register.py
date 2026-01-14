@@ -91,7 +91,7 @@ def import_plz_einwohner() -> pd.DataFrame:
     pd.DataFrame
         Table with population data per postal code
     """
-    data_path = _get_data_file_path('gemeindeverzeichnis/plz_einwohner.xls')
+    data_path = _get_data_file_path('gemeindeverzeichnis/plz_einwohner.xlsx')
     plz_einwohner = pd.read_excel(data_path)
     return plz_einwohner
 def import_zuordnung_plz() -> pd.DataFrame:
@@ -103,7 +103,7 @@ def import_zuordnung_plz() -> pd.DataFrame:
     pd.DataFrame
         Table with PLZ and AGS data
     """
-    data_path = _get_data_file_path('gemeindeverzeichnis/zuordnung_plz_ort.xls')
+    data_path = _get_data_file_path('gemeindeverzeichnis/zuordnung_plz_ort.xlsx')
     plz_zuordnung = pd.read_excel(data_path)
     plz_zuordnung = plz_zuordnung.drop(columns=["osm_id"])
     return plz_zuordnung
