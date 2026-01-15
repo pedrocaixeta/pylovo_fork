@@ -95,8 +95,6 @@ def create_grid_single_ags(ags: int, parallel: bool = True):
     Args:
         ags: Amtlicher Gemeindeschlüssel (municipality code)
     """
-    print(f"Creating grids for single AGS: {ags}")
-
     with dbc.DatabaseClient() as dbc_client:
         plz_list, df_plz_ags = resolve_regions(dbc_client, ags=int(ags))
         if not USE_INFDB:
@@ -117,8 +115,6 @@ def create_grid_multiple_ags(ags_list: list, parallel: bool = True):
     Args:
         ags_list: List of Amtlicher Gemeindeschlüssel (municipality codes)
     """
-    print(f"Creating grids for multiple AGS: {ags_list}")
-
     with dbc.DatabaseClient() as dbc_client:
         plz_list, df_plz_ags = resolve_regions(dbc_client, ags=[int(a) for a in ags_list])
         if not USE_INFDB:

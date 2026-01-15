@@ -1,18 +1,8 @@
 # =============================================================================
-# REGIONAL CONFIGURATION
+# Version CONFIGURATION
 # =============================================================================
-# ⚠️ IMPORTANT: PLZ and AGS are NO LONGER specified in this config file!
-#
-# Region specification is now CLI-only via command-line arguments:
-#   pylovo-generate --plz 80803              # Single postal code
-#   pylovo-generate --plz 80803 80802        # Multiple postal codes
-#   pylovo-generate --ags 09162000           # Single municipality
-#   pylovo-generate --ags 09162000 09161000  # Multiple municipalities
-#
-# If you have PLZ or AGS in this file, remove them and use CLI arguments instead.
-# See README.rst for full documentation.
-
-TESTING: False # If True, only a small subset of data is used for faster testing
+VERSION_ID: "1" # Change version if you changed any grid parameters or queries (e.g. transformer query)
+VERSION_COMMENT: base version # State here which parameters, queries are used to compute the grids with current VERSION_ID
 
 # =============================================================================
 # EXECUTION CONFIGURATION
@@ -20,24 +10,21 @@ TESTING: False # If True, only a small subset of data is used for faster testing
 PARALLEL: False # Toggles whether the grid generation uses multiple workers in parallel
 N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generation
 ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
-SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
 LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
+SAVE_GRID_FOLDER: False # Toggles whether the grid json files will be saved in a folder or just in the db
 RESULT_DIR: results # Directory for storing analysis results and outputs
-
-# Electrical backend configuration
-# Options: 'pandapower', 'opendss'
-ELECTRICAL_BACKEND: pandapower
+TESTING: False # If True, only a small subset of data is used for faster testing
 
 # =============================================================================
 # GRID GENERATION CONFIGURATION
 # =============================================================================
-VERSION_ID: "1" # Change version if you changed any grid parameters or queries (e.g. transformer query)
-VERSION_COMMENT: base version # State here which parameters, queries are used to compute the grids with current VERSION_ID
+ELECTRICAL_BACKEND: pandapower # Electrical backend configuration - Options: 'pandapower', 'opendss'
+### Electrical load calculation parameters
 PEAK_LOAD_HOUSEHOLD: 14.50 # default: 14.5kW, 30 kW if electric hot water supply is included
 SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5} # Simultaneous load factor - formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
 DEFAULT_POWER_FACTOR: 0.95  # cos(phi) for residential loads
 
-# Consumer categories for load calculation
+### Consumer categories for load calculation
 CONSUMER_CATEGORIES:
   - {consumer_category_id: 1, definition: Commercial, peak_load: null, yearly_consumption: null, peak_load_per_m2: 79.00, yearly_consumption_per_m2: 245.70, sim_factor: 0.50}
   - {consumer_category_id: 2, definition: Public, peak_load: null, yearly_consumption: null, peak_load_per_m2: 29.00, yearly_consumption_per_m2: 155.70, sim_factor: 0.60}
@@ -46,7 +33,7 @@ CONSUMER_CATEGORIES:
   - {consumer_category_id: 5, definition: TH, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
   - {consumer_category_id: 6, definition: AB, peak_load: PEAK_LOAD_HOUSEHOLD, yearly_consumption: 0.00, peak_load_per_m2: null, yearly_consumption_per_m2: null, sim_factor: 0.07}
 
-# Equipment data for transformers and cables
+### Equipment data for transformers and cables
 EQUIPMENT_DATA:
 #  - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer} Not included in pandapower standard trafo types
 #  - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer} Not included in pandapower standard trafo types
@@ -74,32 +61,12 @@ CONSUMER_CONNECTION_AVAILABLE_CABLES:
   - NAYY_4_50   # NAYY_4_50
   - NYY_4_35    # NYY_4_35
   - NYY_4_16    # NYY_4_16
-# Thresholds to derive settlement_types
-RURAL_MAX_HOUSEHOLDS: 1.25 # Maximum average number of households per building for rural settlements
-URBAN_MIN_HOUSEHOLDS: 5 # Minimum average number of households per building for urban settlements
-RURAL_MIN_BUILDING_DISTANCE: 50 # Minimum average distance between buildings for rural settlements
-URBAN_MAX_BUILDING_DISTANCE: 25 # Maximum average distance between buildings for urban settlements
 
-# Transformer mapping: Settlement Type -> Allowed Transformer Capacities (s_max_kva)
-TRANSFORMER_MAPPING:
-  1: [100, 160, 250] # 1=Rural
-  2: [160, 250, 400, 630] # 2=Semi-urban
-  3: [400, 630] # 3=Urban
 
-# Transformer placement parameters
-MAX_BROWNFIELD_TRAFO_DISTANCE: 800 # Maximum connection distance from brownfield transformer
-# Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
-LARGE_COMPONENT_LOWER_BOUND: 2000 # Threshold for number of buildings in a component to apply k-means clustering
-LARGE_COMPONENT_DIVIDER: 1000 # Divider to derive the target number of clusters for k-means clustering
-# Seed for the initialization of the k-means clustering for transformer placement - keeping the same ensures deterministic behavior
-K_MEANS_SEED: 3329829316 # Has to be an integer between 0 and 4294967295
-
-# =============================================================================
-# CABLE DIMENSIONING PARAMETERS
-# =============================================================================
+### CABLE DIMENSIONING PARAMETERS
 VN: 400  # Nominal voltage in the low voltage grid
-V_BAND_LOW: 0.95  # Relevant for worst case condition
-V_BAND_HIGH: 1.05 # Only for pandapower - not for dimensioning
+V_BAND_LOW: 0.95  # Relevant for worst case condition - Only for pandapower - not for dimensioning
+V_BAND_HIGH: 1.05
 ### Load thresholds for different voltage drop limits
 SMALL_LOAD_THRESHOLD_KW: 100  # Threshold below which stricter voltage drop limits apply
 # Voltage drop limits for consumer connections (as percentage of nominal voltage per km)
@@ -107,3 +74,27 @@ VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM: 0.05  # 0.05% per km: Maximum voltage dr
 VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM: 0.1   # 0.1% per km: Maximum voltage drop for loads > 100kW (0.004V per km)
 # Voltage drop limit for feeder cables (total voltage drop as percentage of nominal voltage)
 VOLTAGE_DROP_DISTRIBUTION_PERCENT: 4.5  # 4.5% of 400V = 18V total voltage drop for distribution
+
+# =============================================================================
+# TRANSFORMER PLACEMENT PARAMETERS
+# =============================================================================
+# Settlement_types thresholds
+RURAL_MAX_HOUSEHOLDS: 1.25 # Maximum average number of households per building for rural settlements
+URBAN_MIN_HOUSEHOLDS: 5 # Minimum average number of households per building for urban settlements
+RURAL_MIN_BUILDING_DISTANCE: 50 # Minimum average distance between buildings for rural settlements
+URBAN_MAX_BUILDING_DISTANCE: 25 # Maximum average distance between buildings for urban settlements
+
+### Transformer mapping: Settlement Type (1=low/rural,2=medium/semi-urban,3=high/urban) -> Allowed Transformer Capacities (s_max_kva)
+TRANSFORMER_MAPPING:
+  1: [100, 160, 250]
+  2: [160, 250, 400, 630]
+  3: [400, 630]
+
+### Clustering
+# Transformer placement parameters
+MAX_BROWNFIELD_TRAFO_DISTANCE: 800 # Maximum connection distance from brownfield transformer
+# Larger components are divided by k-means clustering in roughly LARGE_COMPONENT_DIVIDER sizes
+LARGE_COMPONENT_LOWER_BOUND: 2000 # Threshold for number of buildings in a component to apply k-means clustering
+LARGE_COMPONENT_DIVIDER: 1000 # Divider to derive the target number of clusters for k-means clustering
+# Seed for the initialization of the k-means clustering for transformer placement - keeping the same ensures deterministic behavior
+K_MEANS_SEED: 3329829316 # Has to be an integer between 0 and 4294967295

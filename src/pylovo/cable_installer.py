@@ -5,6 +5,7 @@ import pandas as pd
 from pylovo.electrical_backend import IElectricalBackend, BusSpec, TransformerSpec, LineSpec, LoadSpec, ExtGridSpec
 from pylovo.config_loader import VN, V_BAND_LOW, VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM, VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM, SMALL_LOAD_THRESHOLD_KW, VOLTAGE_DROP_DISTRIBUTION_PERCENT, DEFAULT_POWER_FACTOR
 from pylovo.utils import oneSimultaneousLoad
+from pylovo.electrical_backend import normalize_cable_name
 
 
 class CableInstaller:
@@ -39,7 +40,6 @@ class CableInstaller:
         Returns:
             DataFrame indexed by normalized cable name with electrical properties
         """
-        from pylovo.electrical_backend import normalize_cable_name
         cable_data = {}
         for name, r_ohm, x_ohm, max_i_ka in cables:
             normalized_name = normalize_cable_name(name)
@@ -177,7 +177,6 @@ class CableInstaller:
                                 local_length_dict: dict) -> dict:
         """Install consumer connection cables."""
         # Normalize cable names from config to match internal format
-        from pylovo.electrical_backend import normalize_cable_name
         connection_available_cables = [normalize_cable_name(c) for c in connection_available_cables]
 
         consumer_list = self.dbc.get_vertices_from_connection_points(branch_node_list)
