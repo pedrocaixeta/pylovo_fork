@@ -148,21 +148,36 @@ def join_regiostar_plz(plz_pop: pd.DataFrame, plz_ags: pd.DataFrame, regiostar: 
 def municipal_register_to_db(regiostar_plz: pd.DataFrame) -> None:
     """
     Write municipal register to database.
+
+    Only inserts data if the table is empty to prevent duplicate key violations.
+
     Parameters
     ----------
     regiostar_plz : pd.DataFrame
         Combined municipal register data
     """
     dbc_client = dbc.DatabaseClient()
+
+    # Check if table already has data
+    if not dbc_client.is_table_empty('municipal_register'):
+        print(f"Municipal register table already contains data, skipping import.")
+        dbc_client.close()
+        return
+
+    # Table is empty, proceed with import
+    print(f"Importing municipal register data ({len(regiostar_plz)} rows)...")
     try:
         regiostar_plz.to_sql(
             'municipal_register', 
             con=dbc_client.sqla_engine, 
-            if_exists='append', 
+            if_exists='append',
             index=False,
         )
+        print(f"Successfully imported {len(regiostar_plz)} rows to municipal_register table.")
     except Exception as e:
-        print(e)
+        print(f"Error importing municipal register: {e}")
+    finally:
+        dbc_client.close()
 def create_municipal_register() -> None:
     """
     Join gemeindeverzeichnis with regiostar.

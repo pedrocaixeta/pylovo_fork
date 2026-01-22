@@ -91,6 +91,29 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
     def get_sqla_engine(self):
         return self.sqla_engine
 
+    def is_table_empty(self, table_name: str) -> bool:
+        """
+        Check if a table is empty (has no rows).
+
+        Parameters
+        ----------
+        table_name : str
+            Name of the table to check
+
+        Returns
+        -------
+        bool
+            True if table is empty or doesn't exist, False if it has data
+        """
+        try:
+            query = f"SELECT COUNT(*) FROM {table_name};"
+            self.cur.execute(query)
+            count = self.cur.fetchone()[0]
+            return count == 0
+        except Exception as e:
+            self.logger.warning(f"Could not check if table {table_name} is empty: {e}")
+            return True  # Assume empty if we can't check
+
     def save_tables(self, plz: int):
 
         """Saves building and ways results from ZIP code-specific temporary tables to the permanent results tables.
