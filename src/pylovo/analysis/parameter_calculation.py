@@ -271,16 +271,30 @@ class ParameterCalculator:
         - Projected (e.g., EPSG:3035): Euclidean distance [km] assuming meters as CRS unit
         Returns 0.0 if fewer than 2 consumer buses or no geodata.
         """
-        bus_geo = pandapower_net.bus_geodata.copy()
+        bus = pandapower_net.bus.copy()
 
-        if len(bus_geo) == 0:
+        if len(bus["geo"]) == 0:
             return 0.0
 
-        bus_geo = gpd.GeoDataFrame(bus_geo, geometry=gpd.points_from_xy(bus_geo["x"], bus_geo["y"]))
-        bus = pandapower_net.bus.copy()
-        bus_geo = bus_geo.merge(bus, left_index=True, right_index=True)
-        bus_geo["consumer_bus"] = bus_geo["name"].str.contains(self.consumer_bus_keyword)
-        bus_geo = bus_geo[bus_geo["consumer_bus"]]
+        # Parse GeoJSON strings to geometries
+        geometries = []
+        valid_indices = []
+        for idx, geo_str in bus["geo"].items():
+            if pd.notna(geo_str):
+                try:
+                    geo_dict = json.loads(geo_str)
+                    coords = geo_dict["coordinates"]
+                    from shapely.geometry import Point
+                    geometries.append(Point(coords))
+                    valid_indices.append(idx)
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    continue
+
+        if len(geometries) == 0:
+            return 0.0
+
+        # Create GeoDataFrame with parsed geometries
+        bus_geo = gpd.GeoDataFrame(bus.loc[valid_indices], geometry=geometries)
 
         if len(bus_geo) < 2:
             return 0.0

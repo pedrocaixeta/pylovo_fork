@@ -5,11 +5,12 @@ This module contains functions for exporting grid data to GIS-compatible formats
 for visualization in QGIS and other geographic information systems.
 """
 
+import json
 from typing import Tuple
 
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 
 from pylovo.grid_generator import GridGenerator
 
@@ -39,23 +40,38 @@ def get_bus_line_geo_for_network(
     tuple of GeoDataFrame
         (line_geo, bus_geo) - GeoDataFrames containing line and bus geometries.
     """
-    # Line data
-    line_geo = pandapower_net.line_geodata
-    line_list = []
-    for line in line_geo['coords']:
-        line_list.append(LineString(line))
-    line_geo = gpd.GeoDataFrame(line_geo, geometry=line_list)
+    # Line data - parse GeoJSON from geo column
+    line_geometries = []
+    for idx, row in pandapower_net.line.iterrows():
+        if pd.notna(row.get("geo")):
+            try:
+                geo_dict = json.loads(row["geo"])
+                coords = geo_dict["coordinates"]
+                line_geometries.append(LineString(coords))
+            except (json.JSONDecodeError, KeyError, TypeError):
+                line_geometries.append(None)
+        else:
+            line_geometries.append(None)
+
+    line_geo = gpd.GeoDataFrame(pandapower_net.line.copy(), geometry=line_geometries)
     line_geo['net'] = net_index
-    line = pandapower_net.line
-    line_geo = line_geo.merge(line, left_index=True, right_index=True)
     line_geo['plz'] = plz
 
-    # Bus data
-    bus_geo = pandapower_net.bus_geodata
-    bus_geo = gpd.GeoDataFrame(bus_geo, geometry=gpd.points_from_xy(bus_geo['x'], bus_geo['y']))
+    # Bus data - parse GeoJSON from geo column
+    bus_geometries = []
+    for idx, row in pandapower_net.bus.iterrows():
+        if pd.notna(row.get("geo")):
+            try:
+                geo_dict = json.loads(row["geo"])
+                coords = geo_dict["coordinates"]
+                bus_geometries.append(Point(coords))
+            except (json.JSONDecodeError, KeyError, TypeError):
+                bus_geometries.append(None)
+        else:
+            bus_geometries.append(None)
+
+    bus_geo = gpd.GeoDataFrame(pandapower_net.bus.copy(), geometry=bus_geometries)
     bus_geo['net'] = net_index
-    bus = pandapower_net.bus
-    bus_geo = bus_geo.merge(bus, left_index=True, right_index=True)
     bus_geo['consumer_bus'] = bus_geo['name'].str.contains("Consumer Nodebus")
     bus_geo['plz'] = plz
 

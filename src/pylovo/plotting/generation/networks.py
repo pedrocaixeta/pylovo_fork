@@ -6,6 +6,7 @@ including geographic visualizations with contextily basemaps and generic
 network layouts.
 """
 
+import json
 import math
 import random
 from typing import Tuple, Optional
@@ -19,7 +20,7 @@ from matplotlib.figure import Figure
 from pandapower.plotting import create_generic_coordinates
 from pandapower.plotting.plotly import simple_plotly
 from pandapower.topology import create_nxgraph
-from shapely import linestrings
+from shapely.geometry import LineString
 
 from pylovo.config_loader import (NODE_COLOR_TRAFO, NODE_COLOR_CONSUMER, NODE_COLOR_CONNECTION_BUS)
 from pylovo.grid_generator import GridGenerator
@@ -142,8 +143,20 @@ def plot_contextily(plz: int, kcid: int, bcid: int, zoomfactor: int = 19, ax: Op
     buildings_8_gdf = buildings_gdf[buildings_gdf.bcid == bcid]
     buildings_8_gdf = buildings_8_gdf[buildings_8_gdf.kcid == kcid]
 
-    # Cables / lines
-    net.line_gdf = gpd.GeoDataFrame(net.line.copy(), geometry=net.line_geodata.coords.map(linestrings),
+    # Cables / lines - parse GeoJSON from geo column
+    line_geometries = []
+    for idx, row in net.line.iterrows():
+        if pd.notna(row.get("geo")):
+            try:
+                geo_dict = json.loads(row["geo"])
+                coords = geo_dict["coordinates"]
+                line_geometries.append(LineString(coords))
+            except (json.JSONDecodeError, KeyError, TypeError):
+                line_geometries.append(None)
+        else:
+            line_geometries.append(None)
+
+    net.line_gdf = gpd.GeoDataFrame(net.line.copy(), geometry=line_geometries,
         crs="EPSG:4326").to_crs(buildings_8_gdf.crs.to_string())
 
     ax = net.line_gdf.plot(ax=ax, edgecolor="black", linewidth=1, label="Lines")
@@ -179,16 +192,11 @@ def plot_with_generic_coordinates(plz: int, kcid: int, bcid: int) -> None:
     """
     net = read_net_with_grid_generator(plz, kcid, bcid)
 
-    # Clear geodata - handle both new and legacy formats
+    # Clear geodata
     if "geo" in net.bus.columns:
         net.bus["geo"] = None
-    if hasattr(net, 'bus_geodata') and not net.bus_geodata.empty:
-        net.bus_geodata.drop(net.bus_geodata.index, inplace=True)
-
     if "geo" in net.line.columns:
         net.line["geo"] = None
-    if hasattr(net, 'line_geodata') and not net.line_geodata.empty:
-        net.line_geodata.drop(net.line_geodata.index, inplace=True)
 
     generic_net = create_generic_coordinates(net, library='igraph', respect_switches=False, overwrite=True,
         geodata_table='bus_geodata')
