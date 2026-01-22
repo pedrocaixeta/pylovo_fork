@@ -75,9 +75,19 @@ Main processing steps for pylovo:
    # OR
    pip install -e .
 
+   # Install with optional dependencies
+   uv sync --extra plots --extra docs    # Install with plotting and documentation tools
+   # OR
+   pip install -e .[plots,docs]          # Install with plotting and documentation tools
+
    # Configure environment
    cp .env.example .env
    nano .env  # Add your database credentials
+
+**Optional Dependencies:**
+
+* **plots**: Includes matplotlib, plotly, seaborn, and contextily for visualization and plotting. Also required for classfication.
+* **docs**: Includes Sphinx and related tools for building documentation
 
 **Note:** The repository includes configuration templates in ``config/``, an ``.env.example`` file, and example data structures in ``raw_data/`` that are essential for running pylovo.
 
@@ -160,7 +170,7 @@ After running ``pylovo-setup``, you can query available regions:
 **Available Commands**
 ------------
 
-All commands must be run with the virtual environment activated (``source .venv/bin/activate``).
+All commands must be run with uv or the virtual environment activated (``source .venv/bin/activate``).
 
 **Core Commands:**
 
