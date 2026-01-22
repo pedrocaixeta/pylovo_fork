@@ -10,12 +10,8 @@ import pandas as pd
 
 from pylovo.config_loader import *
 
-# Import table structure from config directory
-config_dir = Path(__file__).parent.parent.parent.parent / "config"
-if str(config_dir) not in sys.path:
-    sys.path.insert(0, str(config_dir))
-
-from config_table_structure import *
+# Import table structure from packaged module (reliable for installed/editable usage)
+from pylovo.database.config_table_structure import CREATE_QUERIES
 
 import pylovo.database.database_client as dbc
 from pylovo.infdb.infdb_client import InfdbClient
@@ -46,7 +42,6 @@ class DatabaseConstructor:
             with self.dbc.conn.cursor() as cur:
                 cur.execute(f"CREATE SCHEMA IF NOT EXISTS {TARGET_SCHEMA}")
                 self.dbc.conn.commit()
-                print(f"Schema '{TARGET_SCHEMA}' created or already exists.")
         except (Exception, psy.DatabaseError) as error:
             print(f"Error creating schema: {error}")
             raise error
