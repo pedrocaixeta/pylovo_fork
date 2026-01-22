@@ -155,7 +155,7 @@ def create_sample_set():
     """
 
     check_if_classification_version_exists()
-    regiostar_plz = UtilsMixin.get_municipal_register()
+    regiostar_plz = db_client.get_municipal_register()
 
     # some PLZ might appear multiple times for small municipalities that share PLZ
     regiostar_plz = regiostar_plz.drop_duplicates(subset="plz")
