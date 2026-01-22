@@ -152,8 +152,7 @@ def process_trafos(relation_id: int) -> None:
         gdf_substations.drop('@id', axis=1, inplace=True)
 
     # Ensure output directory exists
-    user_data = get_user_data_dir()
-    processed_dir = user_data / "transformer_data" / "processed_trafos"
+    processed_dir = "data" / "transformer_data" / "processed_trafos"
     processed_dir.mkdir(parents=True, exist_ok=True)
 
     # gis_preparation geojson
