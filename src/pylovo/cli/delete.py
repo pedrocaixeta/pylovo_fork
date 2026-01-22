@@ -19,12 +19,12 @@ def delete_version(version_id: str):
     print(f"✓ Deleted all networks for version {version_id}")
 
 
-def delete_transformers(plz: str):
+def delete_transformers():
     """Delete transformers for a specific PLZ."""
-    gg = GridGenerator(plz=plz)
+    gg = GridGenerator(plz=99999)
     dbc_client = gg.dbc
     dbc_client.delete_transformers()
-    print(f"✓ Deleted transformers for PLZ {plz}")
+    print("✓ Deleted all transformers")
 
 
 def delete_classification_version(classification_version: str):
@@ -48,11 +48,11 @@ Examples:
   # Delete all networks for a version across all PLZ
   pylovo-delete version --version 1
 
-  # Delete transformers for a PLZ
-  pylovo-delete transformers --plz 80803
+  # Delete all transformers
+  pylovo-delete transformers
 
   # Delete classification version data
-  pylovo-delete classification --version v1.0
+  pylovo-delete classification --version 1
 
 For more information, see: https://github.com/tum-ens/pylovo
         '''
