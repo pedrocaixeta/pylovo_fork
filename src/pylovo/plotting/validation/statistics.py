@@ -6,6 +6,7 @@ postal codes (PLZ), including transformer distributions, cable types, and
 grid statistics.
 """
 
+import json
 from pathlib import Path
 from typing import Tuple
 
@@ -268,14 +269,36 @@ def plot_trafo_on_map(plz: int, save_plots: bool = False) -> None:
         net = dbc_client.read_net_db(plz, kcid, bcid)
         for row in net.trafo[["sn_mva", "lv_bus"]].itertuples():
             trafo_size = round(row.sn_mva * 1e3)
-            trafo_geom = np.array(net.bus_geodata.loc[row.lv_bus, ["x", "y"]])
-            pp.create_bus(
-                net_plot,
-                name=f"Distribution_grid_{grid_index}<br>transformer: {trafo_size}_kVA",
-                vn_kv=trafo_size,
-                geodata=trafo_geom,
-                type="b",
-            )
+            
+            # Extract bus coordinates - handle both new GeoJSON format and legacy DataFrame format
+            if "geo" in net.bus.columns and row.lv_bus in net.bus.index:
+                geo_str = net.bus.at[row.lv_bus, "geo"]
+                if geo_str and isinstance(geo_str, str):
+                    try:
+                        geo_data = json.loads(geo_str)
+                        coords = geo_data.get("coordinates", [])
+                        if len(coords) == 2:
+                            trafo_geom = np.array([coords[0], coords[1]])
+                        else:
+                            trafo_geom = None
+                    except (json.JSONDecodeError, ValueError):
+                        trafo_geom = None
+                else:
+                    trafo_geom = None
+            elif hasattr(net, 'bus_geodata') and row.lv_bus in net.bus_geodata.index:
+                # Legacy format
+                trafo_geom = np.array(net.bus_geodata.loc[row.lv_bus, ["x", "y"]])
+            else:
+                trafo_geom = None
+            
+            if trafo_geom is not None:
+                pp.create_bus(
+                    net_plot,
+                    name=f"Distribution_grid_{grid_index}<br>transformer: {trafo_size}_kVA",
+                    vn_kv=trafo_size,
+                    geodata=trafo_geom,
+                    type="b",
+                )
             grid_index += 1
 
     figure = vlevel_plotly(

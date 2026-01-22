@@ -178,8 +178,18 @@ def plot_with_generic_coordinates(plz: int, kcid: int, bcid: int) -> None:
         Buildings cluster ID.
     """
     net = read_net_with_grid_generator(plz, kcid, bcid)
-    net.bus_geodata.drop(net.bus_geodata.index, inplace=True)
-    net.line_geodata.drop(net.line_geodata.index, inplace=True)
+
+    # Clear geodata - handle both new and legacy formats
+    if "geo" in net.bus.columns:
+        net.bus["geo"] = None
+    if hasattr(net, 'bus_geodata') and not net.bus_geodata.empty:
+        net.bus_geodata.drop(net.bus_geodata.index, inplace=True)
+
+    if "geo" in net.line.columns:
+        net.line["geo"] = None
+    if hasattr(net, 'line_geodata') and not net.line_geodata.empty:
+        net.line_geodata.drop(net.line_geodata.index, inplace=True)
+
     generic_net = create_generic_coordinates(net, library='igraph', respect_switches=False, overwrite=True,
         geodata_table='bus_geodata')
     simple_plotly(generic_net, aspectratio=(1, 1))
