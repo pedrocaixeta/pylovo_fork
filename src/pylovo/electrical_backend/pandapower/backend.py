@@ -10,6 +10,7 @@ Key features:
     - Built-in power flow solvers (Newton-Raphson, etc.)
 """
 
+import json
 import logging
 from typing import Any, Dict, Optional
 
@@ -318,30 +319,32 @@ class PandapowerBackend(IElectricalBackend):
         return len(df) if df is not None else 0
 
     def get_bus_coordinates(self, bus_name: str) -> tuple[float, float] | None:
-        """Get bus geographic coordinates."""
-        if self.net is None or self.net.bus_geodata.empty:
+        """Get bus geographic coordinates from GeoJSON format."""
+        if self.net is None or self.net.bus.empty:
             return None
         try:
             bus_idx = self._get_bus_index(bus_name)
         except ValueError:
             return None
-        if bus_idx not in self.net.bus_geodata.index:
-            return None
-        row = self.net.bus_geodata.loc[bus_idx]
-        return (float(row["x"]), float(row["y"]))
+        geo_str = self.net.bus.at[bus_idx, "geo"]
+        if geo_str:
+            geo_data = json.loads(geo_str)
+            coords = geo_data["coordinates"]
+            return (float(coords[0]), float(coords[1]))
+        return None
 
     # =========================================================================
     # Update Methods
     # =========================================================================
 
     def set_bus_coordinates(self, bus_name: str, x: float, y: float) -> None:
-        """Set bus geographic coordinates."""
+        """Set bus geographic coordinates in GeoJSON format."""
         if self.net is None:
             return
         try:
             bus_idx = self._get_bus_index(bus_name)
-            self.net.bus_geodata.at[bus_idx, "x"] = x
-            self.net.bus_geodata.at[bus_idx, "y"] = y
+            geo_json = json.dumps({"coordinates": [x, y], "type": "Point"})
+            self.net.bus.at[bus_idx, "geo"] = geo_json
         except ValueError:
             pass
 
