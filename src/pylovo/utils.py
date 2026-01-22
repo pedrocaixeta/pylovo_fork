@@ -15,8 +15,8 @@ def get_user_data_dir() -> Path:
 
     Priority order:
     1. PYLOVO_DATA_DIR environment variable (explicit data directory)
-    2. PYLOVO_ROOT environment variable + /raw_data (Docker-friendly)
-    3. Current working directory / raw_data (development)
+    2. PYLOVO_ROOT environment variable + /data (Docker-friendly)
+    3. Current working directory / data (development)
 
     Returns
     -------
@@ -28,13 +28,13 @@ def get_user_data_dir() -> Path:
     if data_dir:
         return Path(data_dir)
 
-    # Project root + raw_data (Docker-friendly)
+    # Project root + data (Docker-friendly)
     pylovo_root = os.getenv("PYLOVO_ROOT")
     if pylovo_root:
-        return Path(pylovo_root) / "raw_data"
+        return Path(pylovo_root) / "data"
 
     # Fallback to current working directory
-    return Path.cwd() / "raw_data"
+    return Path.cwd() / "data"
 
 
 def reset_log_directory():

@@ -275,7 +275,7 @@ THRESHOLD_NO_HOUSEHOLDS = CONFIG_CLUSTERING["THRESHOLD_NO_HOUSEHOLDS"]
 # DATA IMPORT CONFIGURATION (only relevant without InfDB)
 # =============================================================================
 CSV_FILE_LIST = [
-    {"path": os.path.join("raw_data", "postcode.csv"), "table_name": "postcode"},
+    {"path": os.path.join("data", "postcode.csv"), "table_name": "postcode"},
 ]
 
 # =============================================================================

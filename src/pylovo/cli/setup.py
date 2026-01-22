@@ -29,7 +29,7 @@ def main():
     sgc.create_table(table_name="all")
 
     ### Add transformer data from geojson to the database
-    logger.info("### DELETE EXISTING TRANSFORMERS AND INSERT NEW ONES INTO DB (without geojson in raw_data/transformer_data this can take more than 30 min) ###")
+    logger.info("### DELETE EXISTING TRANSFORMERS AND INSERT NEW ONES INTO DB (without geojson in data/transformer_data this can take more than 30 min) ###")
     sgc.transformers_to_db(clear_existing=True)
 
     if USE_INFDB:

@@ -158,7 +158,7 @@ class DatabaseConstructor:
 
     def transformers_to_db(self, clear_existing: bool = True):
         """Call the overpass api for transformer data and populate the transformers table.
-        Delete raw_data/transformer_data/processed_trafos/*_trafos_processed.geojson to
+        Delete data/transformer_data/processed_trafos/*_trafos_processed.geojson to
         fetch fresh data from OSM.
 
         If clear_existing=True (default), all existing Transformer datasets are deleted before import

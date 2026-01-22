@@ -14,7 +14,7 @@ def _get_repo_root() -> Path:
 
     Priority:
     1. PYLOVO_ROOT environment variable (for Docker/pip installs)
-    2. Walk up from package location looking for raw_data/
+    2. Walk up from package location looking for data/
     3. Current working directory
     """
     # Check environment variable first (Docker-friendly)
@@ -24,19 +24,19 @@ def _get_repo_root() -> Path:
         if root_path.exists():
             return root_path
 
-    # Try to find raw_data/ by walking up from package location
+    # Try to find data/ by walking up from package location
     current = Path(__file__).parent
     while current != current.parent:
-        if (current / "raw_data").exists():
+        if (current / "data").exists():
             return current
         current = current.parent
 
     # Fallback to current working directory
     return Path.cwd()
 def _get_data_file_path(relative_path: str) -> str:
-    """Get path to municipal data file in raw_data directory."""
+    """Get path to municipal data file in data directory."""
     repo_root = _get_repo_root()
-    file_path = repo_root / "raw_data" / "municipal_register" / relative_path
+    file_path = repo_root / "data" / "municipal_register" / relative_path
     if not file_path.exists():
         raise FileNotFoundError(
             f"Municipal data file not found: {file_path}\n\n"
@@ -44,7 +44,7 @@ def _get_data_file_path(relative_path: str) -> str:
             f"1. Clone full repo: git clone https://github.com/tum-ens/pylovo.git\n"
             f"2. Docker/pip install: Set PYLOVO_ROOT environment variable to your project directory\n"
             f"   Example: export PYLOVO_ROOT=/app\n"
-            f"   Then ensure raw_data/ directory exists at $PYLOVO_ROOT/raw_data/"
+            f"   Then ensure data/ directory exists at $PYLOVO_ROOT/data/"
         )
     return str(file_path)
 def import_regiostar() -> tuple[pd.DataFrame, pd.DataFrame]:
