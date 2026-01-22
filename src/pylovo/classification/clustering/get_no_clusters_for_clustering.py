@@ -1,13 +1,23 @@
 import pandas as pd
-import warnings
 
-from pylovo.classification.clustering.cluster_settings import get_best_no_of_clusters_ch_index_for_classification_version
+from pylovo.config_loader import NO_OF_CLUSTERS_ALLOWED
+from pylovo.classification.database_communication.database_communication import DatabaseCommunication
+from pylovo.plotting.classification import plot_ch_index_for_clustering_algos
+import warnings
 
 warnings.filterwarnings('ignore')
 
 
 def get_no_clusters_for_clustering() -> pd.DataFrame:
-    return get_best_no_of_clusters_ch_index_for_classification_version()
+    """print and plot best number of clusters for cluster algorithms determined with CH index"""
+    # import the dateset of grid parameters
+    dc = DatabaseCommunication()
+    df_parameters_of_grids = dc.get_clustering_parameters_for_classification_version()
+
+    df_ch_comparison = plot_ch_index_for_clustering_algos(df_plz_parameters=df_parameters_of_grids,
+                                                          no_of_clusters_allowed=NO_OF_CLUSTERS_ALLOWED)
+
+    return df_ch_comparison
 
 
 def main() -> None:
