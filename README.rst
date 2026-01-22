@@ -197,14 +197,14 @@ All commands must be run with the virtual environment activated (``source .venv/
    pylovo-delete networks --plz 80803 --version 1      # Delete specific PLZ networks
    pylovo-delete version --version 1                   # Delete all networks for version
 
-**Advanced:**
+**Developer Commands (wip):**
 
 .. code-block:: bash
 
    # Validate configuration
    pylovo-validate
 
-   # Run classification (experimental)
+   # Run classification
    pylovo-classify
 
 **Get Help:**
