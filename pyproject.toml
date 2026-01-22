@@ -10,9 +10,7 @@ requires-python = ">=3.12"
 authors = [
     {name = "Beneharo Reveron Baecker", email = "beneharo.reveron-baecker@tum.de"},
 ]
-maintainers = [
-    {name = "Beneharo Reveron Baecker", email = "beneharo.reveron-baecker@tum.de"},
-]
+
 keywords = [
     "power-grid",
     "synthetic-grid", 
@@ -22,12 +20,14 @@ keywords = [
     "grid-generation",
     "pandapower",
 ]
+
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.12",
 ]
+
 dependencies = [
     # Data manipulation & analysis
     "pandas>=2.2.3",
@@ -61,6 +61,7 @@ dependencies = [
 
 ]
 
+[project.optional-dependencies]
 plots = [
     # Plotting and visualization tools
     "matplotlib>=3.10.0",
@@ -68,7 +69,6 @@ plots = [
     "seaborn==0.13.2",
     "contextily>=1.6.2",
 ]
-
 docs = [
     # Documentation generation
     "sphinx-autoapi>=3.4.0",
