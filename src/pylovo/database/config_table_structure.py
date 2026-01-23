@@ -79,274 +79,406 @@ CREATE_QUERIES = {
         transformer_equipment_name varchar(100),
         transformer_description varchar(100),
         model_status integer,
-
-        CONSTRAINT fk_grid_result_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
-            ON DELETE CASCADE
-    )
-    """,
-    "buildings" : """CREATE TABLE IF NOT EXISTS buildings (
-        osm_id bigint PRIMARY KEY,
-        plz integer,
-        type varchar,
-        area double precision,
-        households_per_building double precision,
-        peak_load_in_kw double precision,
-        floors integer,
-        center geometry(Point,3035),
-        geom geometry(Polygon,3035)
-    )
-    """,
-    "transformers": """CREATE TABLE IF NOT EXISTS transformers (
-        osm_id bigint PRIMARY KEY,
-        plz integer,
-        power double precision,
-        geom geometry(Point,3035)
-    )
-    """,
-    "ways": """CREATE TABLE IF NOT EXISTS ways (
-        gid SERIAL PRIMARY KEY,
-        osm_id bigint,
-        plz integer,
-        name varchar,
-        fclass varchar,
-        geom geometry(LineString,3035)
-    )
-    """,
-    "ways_nodes": """CREATE TABLE IF NOT EXISTS ways_nodes (
-        id bigint PRIMARY KEY,
-        plz integer,
-        geom geometry(Point,3035)
-    )
-    """,
-    "buildings_result": """CREATE TABLE IF NOT EXISTS buildings_result (
-        version_id varchar(10) NOT NULL,
-        osm_id bigint NOT NULL,
-        grid_result_id integer,
-        plz integer,
-        area double precision,
-        type varchar,
-        households_per_building double precision,
-        peak_load_in_kw double precision,
-        floors integer,
-        vertice_id integer,
-        connection_point geometry(Point,3035),
-        center geometry(Point,3035),
-        geom geometry(Polygon,3035),
-
-        CONSTRAINT buildings_result_pkey PRIMARY KEY (version_id, osm_id, plz),
-        CONSTRAINT fk_buildings_result_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
+        ont_vertice_id bigint,
+        grid json,
+        CONSTRAINT cluster_identifier UNIQUE (version_id, kcid, bcid, plz),
+        CONSTRAINT unique_grid_result_id_version_id UNIQUE (version_id, grid_result_id),
+        CONSTRAINT fk_grid_result_version_id_plz
+            FOREIGN KEY (version_id, plz)
+            REFERENCES postcode_result (version_id, postcode_result_plz)
             ON DELETE CASCADE,
-        CONSTRAINT fk_buildings_result_grid_result_id
-            FOREIGN KEY (grid_result_id)
-            REFERENCES grid_result (grid_result_id)
+        CONSTRAINT fk_grid_result_transformer_equipment
+            FOREIGN KEY (version_id, transformer_equipment_name)
+            REFERENCES equipment_data(version_id, name)
             ON DELETE SET NULL
-    )
+    );
+    CREATE INDEX IF NOT EXISTS idx_grid_result_version_id_plz_bcid_kcid
+    ON grid_result (version_id, plz, bcid, kcid);
     """,
-    "grids": """CREATE TABLE IF NOT EXISTS grids (
-        grid_id SERIAL PRIMARY KEY,
-        version_id varchar(10) NOT NULL,
-        plz integer,
-        kcid integer,
-        bcid integer,
-        grid jsonb,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-        CONSTRAINT fk_grids_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
-            ON DELETE CASCADE
-    )
-    """,
-    "lines_result": """CREATE TABLE IF NOT EXISTS lines_result (
-        version_id varchar(10) NOT NULL,
-        grid_result_id integer,
-        from_bus integer,
-        to_bus integer,
-        cable_equipment_name varchar(100),
-        r_ohm_per_km double precision,
-        x_ohm_per_km double precision,
-        c_nf_per_km double precision,
-        length_km double precision,
-        max_i_ka double precision,
-        parallel integer,
+    "lines_result": """
+    CREATE TABLE IF NOT EXISTS lines_result (
+        lines_result_id SERIAL PRIMARY KEY,
+        grid_result_id bigint NOT NULL,
         geom geometry(LineString,3035),
-
-        CONSTRAINT fk_lines_result_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_lines_result_grid_result_id
-            FOREIGN KEY (grid_result_id)
-            REFERENCES grid_result (grid_result_id)
-            ON DELETE CASCADE
-    )
-    """,
-    "buses_result": """CREATE TABLE IF NOT EXISTS buses_result (
-        version_id varchar(10) NOT NULL,
-        grid_result_id integer,
-        bus_id integer,
-        name varchar,
-        vn_kv double precision,
-        type varchar,
-        zone varchar,
-        in_service boolean,
-        geom geometry(Point,3035),
-
-        CONSTRAINT fk_buses_result_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_buses_result_grid_result_id
-            FOREIGN KEY (grid_result_id)
-            REFERENCES grid_result (grid_result_id)
-            ON DELETE CASCADE
-    )
-    """,
-    "loads_result": """CREATE TABLE IF NOT EXISTS loads_result (
-        version_id varchar(10) NOT NULL,
-        grid_result_id integer,
-        load_id integer,
-        bus integer,
-        p_mw double precision,
-        q_mvar double precision,
-        geom geometry(Point,3035),
-
-        CONSTRAINT fk_loads_result_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_loads_result_grid_result_id
-            FOREIGN KEY (grid_result_id)
-            REFERENCES grid_result (grid_result_id)
-            ON DELETE CASCADE
-    )
-    """,
-    "transformers_result": """CREATE TABLE IF NOT EXISTS transformers_result (
-        version_id varchar(10) NOT NULL,
-        grid_result_id integer,
-        trafo_id integer,
+        line_name varchar(50),
+        std_type varchar(50),
         from_bus integer,
         to_bus integer,
-        std_type varchar,
-        sn_mva double precision,
-        vn_hv_kv double precision,
-        vn_lv_kv double precision,
-        vk_percent double precision,
-        vkr_percent double precision,
-        pfe_kw double precision,
-        i0_percent double precision,
-        geom geometry(Point,3035),
-
-        CONSTRAINT fk_transformers_result_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_transformers_result_grid_result_id
+        length_km double precision,
+        CONSTRAINT fk_lines_result_grid_result
             FOREIGN KEY (grid_result_id)
             REFERENCES grid_result (grid_result_id)
             ON DELETE CASCADE
     )
     """,
-    "ext_grids_result": """CREATE TABLE IF NOT EXISTS ext_grids_result (
-        version_id varchar(10) NOT NULL,
-        grid_result_id integer,
-        ext_grid_id integer,
-        bus integer,
-        vm_pu double precision,
-        va_degree double precision,
-        geom geometry(Point,3035),
-
-        CONSTRAINT fk_ext_grids_result_version_id
-            FOREIGN KEY (version_id)
-            REFERENCES version (version_id)
-            ON DELETE CASCADE,
-        CONSTRAINT fk_ext_grids_result_grid_result_id
-            FOREIGN KEY (grid_result_id)
-            REFERENCES grid_result (grid_result_id)
-            ON DELETE CASCADE
+    "consumer_categories": """
+    CREATE TABLE IF NOT EXISTS consumer_categories (
+        consumer_category_id integer PRIMARY KEY,
+        definition varchar(30) UNIQUE NOT NULL,
+        peak_load double precision,
+        yearly_consumption double precision,
+        peak_load_per_m2 double precision,
+        yearly_consumption_per_m2 double precision,
+        sim_factor double precision NOT NULL
     )
+    """,
+    "buildings_result": """
+    CREATE TABLE IF NOT EXISTS buildings_result (
+        version_id varchar(10) NOT NULL,
+        osm_id varchar NOT NULL,
+        grid_result_id bigint NOT NULL,
+        area double precision,
+        type varchar(30),
+        geom geometry(MultiPolygon,3035),
+        households_per_building integer,
+        center geometry(Point,3035),
+        peak_load_in_kw double precision,
+        vertice_id integer,
+        floors integer,
+        construction_year text,
+        connection_point integer,
+        CONSTRAINT buildings_result_pkey PRIMARY KEY (version_id, osm_id),
+        CONSTRAINT fk_buildings_result_grid_result
+            FOREIGN KEY (version_id, grid_result_id)
+            REFERENCES grid_result (version_id, grid_result_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_buildings_result_type
+            FOREIGN KEY (type)
+            REFERENCES consumer_categories (definition)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_buildings_result_grid_result_id
+    ON buildings_result (grid_result_id);
     """,
     "municipal_register": """CREATE TABLE IF NOT EXISTS municipal_register (
         plz integer,
-        mun_id bigint,
+        pop bigint,
+        area double precision,
+        lat double precision,
+        lon double precision,
         ags bigint,
-        name varchar,
-        gemeente_verband varchar,
-        qkm double precision,
-        regiostar7 integer,
-        regiostar17 integer,
-        geom geometry(Polygon,3035)
-    )
-    """,
-    "transformer_classified": """CREATE TABLE IF NOT EXISTS transformer_classified (
-        classification_id integer NOT NULL,
-        muni_id bigint,
-        plz integer,
-        lcid integer,
-        bcid integer,
-        cluster_type integer,
-        sn_mva double precision,
-        geom geometry(Point,3035),
-
-        CONSTRAINT fk_transformer_classified_classification_id
-            FOREIGN KEY (classification_id)
-            REFERENCES classification_version (classification_id)
-            ON DELETE CASCADE
+        name_city text,
+        fed_state integer,
+        regio7 integer,
+        regio5 integer,
+        pop_den double precision,
+        CONSTRAINT municipal_register_pkey PRIMARY KEY (plz, ags)
     )
     """,
     "sample_set": """CREATE TABLE IF NOT EXISTS sample_set (
         classification_id integer NOT NULL,
-        plz integer,
-        muni_id bigint,
-
+        plz integer NOT NULL,
+        ags bigint,
+        bin_no integer,
+        bins double precision,
+        perc_bin double precision,
+        count double precision,
+        perc double precision,
         CONSTRAINT sample_set_pkey PRIMARY KEY (classification_id, plz),
         CONSTRAINT fk_sample_set_classification_id
             FOREIGN KEY (classification_id)
             REFERENCES classification_version (classification_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_sample_set_plz
+            FOREIGN KEY (plz, ags)
+            REFERENCES municipal_register (plz, ags)
             ON DELETE CASCADE
     )
     """,
+    "clustering_parameters": """CREATE TABLE IF NOT EXISTS clustering_parameters (
+        grid_result_id bigint PRIMARY KEY,
+        
+        no_connection_buses integer,
+        no_branches integer,
+        
+        no_house_connections integer,
+        no_house_connections_per_branch double precision,
+        no_households integer,
+        no_household_equ double precision,
+        no_households_per_branch double precision,
+        max_no_of_households_of_a_branch double precision,
+        house_distance_km double precision,
+        
+        transformer_mva double precision,
+        osm_trafo bool,
+        
+        max_trafo_dis double precision,
+        avg_trafo_dis double precision,
+        
+        cable_length_km double precision,
+        cable_len_per_house double precision,
+        
+        max_power_mw double precision,
+        simultaneous_peak_load_mw double precision,
+        
+        resistance double precision,
+        reactance double precision,
+        ratio double precision,
+        vsw_per_branch double precision,
+        max_vsw_of_a_branch double precision,
+        
+        filtered boolean,
+        CONSTRAINT fk_clustering_parameters_grid_result
+            FOREIGN KEY (grid_result_id)
+            REFERENCES grid_result (grid_result_id)
+            ON DELETE CASCADE
+    )
+    """,
+    "transformers": """CREATE TABLE IF NOT EXISTS transformers (
+        osm_id varchar PRIMARY KEY,
+        area double precision,
+        type varchar,
+        transformer_rated_power integer,
+        geom_type varchar,
+        within_shopping boolean,
+        geom geometry(MultiPoint, 3035)
+    )
+    """,
+    "transformer_positions": """
+    CREATE TABLE IF NOT EXISTS transformer_positions (
+        grid_result_id bigint PRIMARY KEY,
+        geom geometry(Point,3035),
+        osm_id varchar,
+        version_id varchar(10),
+        "comment" varchar,
+        CONSTRAINT uq_tp_osm_v UNIQUE (osm_id, version_id),
+        CONSTRAINT fk_tp_version_id
+            FOREIGN KEY (version_id)
+            REFERENCES version (version_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_tp_grid_result_id
+            FOREIGN KEY (grid_result_id)
+            REFERENCES grid_result (grid_result_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_tp_osm_id
+            FOREIGN KEY (osm_id)
+            REFERENCES transformers (osm_id)
+            ON DELETE CASCADE
+    )
+    """,
+    "transformer_classified": """
+    CREATE TABLE IF NOT EXISTS transformer_classified (
+        grid_result_id bigint NOT NULL,
+        geom geometry(Point,3035),
+        kmedoid_clusters integer,
+        kmedoid_representative_grid bool,
+        kmeans_clusters integer,
+        kmeans_representative_grid bool,
+        gmm_clusters integer,
+        gmm_representative_grid bool,
+        classification_id integer NOT NULL,
+        CONSTRAINT pk_grid_result_id PRIMARY KEY (grid_result_id, classification_id),
+        CONSTRAINT fk_transformer_classified_classification_id
+            FOREIGN KEY (classification_id)
+            REFERENCES classification_version (classification_id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_transformer_classified_grid_result
+            FOREIGN KEY (grid_result_id)
+            REFERENCES grid_result (grid_result_id)
+            ON DELETE CASCADE
+    )
+    """,
+    "ags_log": """
+    CREATE TABLE IF NOT EXISTS ags_log (
+        ags bigint PRIMARY KEY
+    )
+    """,
+    "ways": """
+    CREATE TABLE IF NOT EXISTS ways (
+        clazz integer,
+        source integer,
+        target integer,
+        cost double precision,
+        reverse_cost double precision,
+        geom geometry(LineString,3035),
+        way_id integer PRIMARY KEY
+    )
+    """,
+    "ways_result": """
+    CREATE TABLE IF NOT EXISTS ways_result (
+        version_id varchar(10) NOT NULL,
+        clazz integer,
+        source integer,
+        target integer,
+        cost double precision,
+        reverse_cost double precision,
+        geom geometry(LineString,3035),
+        way_id integer NOT NULL,
+        plz integer,
+        CONSTRAINT pk_ways_result PRIMARY KEY (version_id, way_id, plz),
+        CONSTRAINT fk_ways_result_version_id_plz
+            FOREIGN KEY (version_id, plz)
+            REFERENCES postcode_result (version_id, postcode_result_plz)
+            ON DELETE CASCADE
+    )
+    """,
+    "plz_parameters": """
+    CREATE TABLE IF NOT EXISTS plz_parameters (
+        version_id varchar(10) NOT NULL,
+        plz integer NOT NULL,
+        trafo_num json,
+        cable_length json,
+        load_count_per_trafo json,
+        bus_count_per_trafo json,
+        sim_peak_load_per_trafo json,
+        max_distance_per_trafo json,
+        avg_distance_per_trafo json,
+        CONSTRAINT parameters_pkey PRIMARY KEY (version_id, plz),
+        CONSTRAINT fk_plz_parameters_version_id_plz
+            FOREIGN KEY (version_id, plz)
+            REFERENCES postcode_result (version_id, postcode_result_plz)
+            ON DELETE CASCADE
+    )
+    """,
+    "res": """CREATE TABLE IF NOT EXISTS res
+                   (
+                       osm_id     varchar PRIMARY KEY,
+                       area       double precision,
+                       use        varchar(80),
+                       comment    varchar(80),
+                       free_walls integer,
+                       building_t varchar(80),
+                       occupants  double precision,
+                       floors     integer,
+                       constructi varchar(80),
+                       refurb_wal double precision,
+                       refurb_roo double precision,
+                       refurb_bas double precision,
+                       refurb_win double precision,
+                       geom       geometry(MultiPolygon, 3035)
+                   )
+    """,
+    "oth": """CREATE TABLE IF NOT EXISTS oth
+                               (
+                                   osm_id     varchar PRIMARY KEY,
+                                   area       double precision,
+                                   use        varchar(80),
+                                   comment    varchar(80),
+                                   free_walls integer,
+                                   geom       geometry(MultiPolygon, 3035)
+                               )
+    """,
+    "transformer_positions_with_grid": """CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_positions_with_grid AS (
+        SELECT 
+            tp.*,
+            gr.kcid,
+            gr.bcid,
+            gr.plz,
+            gr.transformer_rated_power,
+            gr.transformer_equipment_name,
+            ed.s_max_kva,
+            ed.max_i_a,
+            ed.r_mohm_per_km,
+            ed.x_mohm_per_km,
+            ed.z_mohm_per_km,
+            ed.cost_eur,
+            ed.typ AS equipment_type
+        FROM transformer_positions tp
+        JOIN grid_result gr ON tp.grid_result_id = gr.grid_result_id
+        LEFT JOIN equipment_data ed 
+            ON gr.version_id = ed.version_id 
+            AND gr.transformer_equipment_name = ed.name
+    );
+    CREATE INDEX IF NOT EXISTS idx_transformer_positions_with_grid_geom ON transformer_positions_with_grid USING gist (geom)
+    """,
+    "transformer_classified_with_grid": """
+    CREATE MATERIALIZED VIEW IF NOT EXISTS transformer_classified_with_grid AS (
+        SELECT 
+            tc.*,
+            gr.version_id,
+            gr.kcid,
+            gr.bcid,
+            gr.plz,
+            gr.transformer_rated_power,
+            gr.transformer_equipment_name,
+            ed.s_max_kva,
+            ed.max_i_a,
+            ed.r_mohm_per_km,
+            ed.x_mohm_per_km,
+            ed.z_mohm_per_km,
+            ed.cost_eur,
+            ed.typ AS equipment_type
+        FROM transformer_classified tc
+        JOIN grid_result gr ON tc.grid_result_id = gr.grid_result_id
+        LEFT JOIN equipment_data ed 
+            ON gr.version_id = ed.version_id 
+            AND gr.transformer_equipment_name = ed.name
+    );
+    CREATE INDEX IF NOT EXISTS idx_transformer_classified_with_grid_geom ON transformer_classified_with_grid USING gist (geom)
+    """,
+    "buildings_result_with_grid": """
+    CREATE MATERIALIZED VIEW IF NOT EXISTS buildings_result_with_grid AS (
+        SELECT
+            (br.version_id || '_' || br.osm_id) AS id,
+            br.*,
+            gr.kcid, gr.bcid, gr.plz
+        FROM buildings_result br
+        JOIN grid_result gr ON br.grid_result_id = gr.grid_result_id
+    );
+    CREATE INDEX IF NOT EXISTS idx_buildings_result_with_grid_geom ON buildings_result_with_grid USING gist (geom)
+    """,
+    "lines_result_with_grid": """
+    CREATE MATERIALIZED VIEW IF NOT EXISTS lines_result_with_grid AS (
+        SELECT
+            lr.lines_result_id as id,
+            lr.grid_result_id,
+            lr.geom,
+            lr.line_name,
+            lr.std_type,
+            lr.from_bus,
+            lr.to_bus,
+            lr.length_km,
+            gr.version_id, gr.kcid, gr.bcid, gr.plz
+        FROM lines_result lr
+        JOIN grid_result gr ON lr.grid_result_id = gr.grid_result_id
+    );
+    CREATE INDEX IF NOT EXISTS idx_lines_result_with_grid_geom ON lines_result_with_grid USING gist (geom)
+    """,
 }
 
-# Temporary tables used during processing
 TEMP_CREATE_QUERIES = {
-    "buildings_tem": """
-        CREATE TABLE IF NOT EXISTS buildings_tem (
-            osm_id bigint,
-            plz integer,
-            kcid integer,
-            bcid integer,
-            area double precision,
-            type varchar,
-            households_per_building double precision,
-            peak_load_in_kw double precision,
-            floors integer,
-            vertice_id integer,
-            connection_point geometry(Point,3035),
-            center geometry(Point,3035),
-            geom geometry(Polygon,3035)
-        );
-        """,
-    "ways_tem": """
-        CREATE TABLE IF NOT EXISTS ways_tem (
-            gid SERIAL PRIMARY KEY,
-            clazz integer,
-            source integer,
-            target integer,
-            cost double precision,
-            reverse_cost double precision,
-            geom geometry(LineString,3035),
-            way_id bigint,
-            plz integer
-        );
-        """,
+    "buildings_tem": """CREATE TABLE IF NOT EXISTS buildings_tem
+    (
+        osm_id varchar,
+        area double precision,
+        type varchar(80),
+        geom geometry(Geometry,3035),  -- needs to be geometry as multipoint & multipolygon get inserted here
+        households_per_building integer,
+        center geometry(Point,3035),
+        peak_load_in_kw double precision,
+        plz integer,
+        vertice_id bigint,
+        bcid integer,
+        kcid integer,
+        floors integer,
+        connection_point integer,
+        address_street_id integer,
+        construction_year text
+    )""",
+    "ways_tem": """CREATE TABLE IF NOT EXISTS ways_tem
+    (
+        clazz integer,
+        source integer,
+        target integer,
+        cost double precision,
+        reverse_cost double precision,
+        geom geometry(LineString,3035),
+        way_id integer,
+        plz integer
+    )""",
 }
 
 REFRESH_QUERIES = {
-    "refresh_mv": """REFRESH MATERIALIZED VIEW municipal_register""",
+    "transformer_positions_with_grid": """
+    REFRESH MATERIALIZED VIEW transformer_positions_with_grid
+    """,
+    "transformer_classified_with_grid": """
+    REFRESH MATERIALIZED VIEW transformer_classified_with_grid
+    """,
+    "buildings_result_with_grid": """
+    REFRESH MATERIALIZED VIEW buildings_result_with_grid
+    """,
+    "lines_result_with_grid": """
+    REFRESH MATERIALIZED VIEW lines_result_with_grid
+    """,
 }
-
