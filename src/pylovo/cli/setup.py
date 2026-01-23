@@ -12,7 +12,7 @@ from pylovo.config_loader import *
 def main():
     # Set up logging
     log_dir = utils.reset_log_directory()
-    logger = utils.create_logger(name="main_constructor", log_file=log_dir / "log.txt", log_level=LOG_LEVEL)
+    logger = utils.create_logger(name="setup", log_file=log_dir / "log.txt", log_level=LOG_LEVEL)
 
     ### Create constructor class
     logger.info("### CREATING DATABASE CONSTRUCTOR CLASS ###")
