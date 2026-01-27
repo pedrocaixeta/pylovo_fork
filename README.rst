@@ -19,7 +19,7 @@ pylovo (PYthon tool for LOw-VOltage distribution grid generation)
 Overview
 ------------------------------------------------------------------------
 
-pylovo is a Python-based tool for generating synthetic low-voltage (LV) distribution grids using open data sources. 
+pylovo is a Python-based tool for generating synthetic low-voltage (LV) distribution grids using open data sources.
 Designed for energy system modeling research, it generates realistic and analyzable grid models for user-defined geographic areas.
 This enables researchers and practitioners to explore critical questions of the energy transition—such as the analysis
 of the potential integration of distributed energy resources and how their flexibilities can be leveraged while accounting
@@ -79,7 +79,7 @@ Quick Start
 0. **Requirements**: Python 3.12+, Docker, Ubuntu WSL2 or Linux-based OS, uv
 
 1. | **Setup InfDB**:
-   | Follow the documentation in `InfDB <https://tum-ens.github.io/InfDB/usage/>`_ to set up the infdb database for pylovo.
+   | Follow the documentation in `InfDB <https://tum-ens.github.io/InfDB/usage/>`_ from release 2.0.0 to set up the infdb database for pylovo.
    | Summarized you have to built three docker container:
 
    a) ...first, initialize the database with infdb-db service ``bash infdb-start.sh up -d --build``
