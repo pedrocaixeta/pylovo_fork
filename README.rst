@@ -78,15 +78,17 @@ Quick Start
 ------------------------------------------------------------------------
 0. **Requirements**: Python 3.12+, Docker, Ubuntu WSL2 or Linux-based OS, uv
 
-1. Setup InfDB:
-   Follow the documentation in `InfDB <https://tum-ens.github.io/InfDB/usage/>`_ to set up the infdb database for pylovo.
-   Summarized you have to built three docker container:
+1. | **Setup InfDB**:
+   | Follow the documentation in `InfDB <https://tum-ens.github.io/InfDB/usage/>`_ to set up the infdb database for pylovo.
+   | Summarized you have to built three docker container:
+
    a) ...first, initialize the database with infdb-db service ``bash infdb-start.sh up -d --build``
    b) ...second, configure and import the required data with infdb-import service ``bash infdb-import.sh``
    c) ...third, run the required preprocessing basedata tool ``bash tools/infdb-basedata/run.sh``
 
-2. Install pylovo:
-   Input data has been prepared, next lets focus on pylovo - setup the repository as follows:
+2. | **Install pylovo**:
+   | Input data has been prepared, next lets focus on pylovo - setup the repository as follows:
+
    a) If not already installed, download uv to install and manage your Python environment.
 
    .. code-block:: bash
@@ -106,7 +108,6 @@ Quick Start
 
    a) Copy ``.env.example`` to ``.env`` and align credentials with InfDB setup in environment file.
    b) Optionally adjust grid generation parameters in ``config/config_generation.yaml``.
-
 
 4. Initialize pylovo database:
 
@@ -134,14 +135,14 @@ For detailed methodology, see: `Reveron Baecker et al. (2025): Generation of low
 
 License
 ====================
-The code of this repository is licensed under the **MIT License** (MIT).
-See `LICENSE.txt <LICENSE.txt>`_ for rights and obligations.
-Copyright: `pylovo <https://github.com/tum-ens/pylovo/>`_ © TUM ENS | `MIT <LICENSE.txt>`_
+| The code of this repository is licensed under the **MIT License** (MIT).
+| See `LICENSE.txt <LICENSE.txt>`_ for rights and obligations.
+| Copyright: `pylovo <https://github.com/tum-ens/pylovo/>`_ © TUM ENS | `MIT <LICENSE.txt>`_
 
 Citation
 ====================
-If you use this code in a scientific publication, please cite the following publication:
-* Reveron Baecker et al. (2025): `Generation of low-voltage synthetic grid data for energy system modeling with the pylovo tool <https://doi.org/10.1016/j.segan.2024.101617>`_
+| If you use this code in a scientific publication, please cite the following publication:
+| * Reveron Baecker et al. (2025): `Generation of low-voltage synthetic grid data for energy system modeling with the pylovo tool <https://doi.org/10.1016/j.segan.2024.101617>`_
 
 
 .. |badge_license| image:: https://img.shields.io/github/license/tum-ens/pylovo
