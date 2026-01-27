@@ -49,47 +49,17 @@ for electricity grid constraints.
 pylovo leverages a reproducible and scalable open-data-based preprocessing pipeline within a dockerized environment that integrates multiple harmonized datasets into a unified Infrastructure Database (`InfDB <https://github.com/tum-ens/InfDB>`_):
 
 Main data sources:
+
 * **3D Building Models (LoD2)**: High-resolution 3D building geometries as a base of various other data modeling tools
 * **Census Demographics (Zensus 2022)**: Official statistical data on the population, households and buildings
 * **Cadastral Geodata**: Official street networks with addresses and administrative boundaries
 * **OpenStreetMap (OSM)**: Transformer locations and additional street network data
 
 Main processing steps for pylovo:
+
 * **Building Type Classification**: Building type allocation based on geometry and demographic data
 * **Household Allocation**: Statistical assignment of households to buildings
 * **Street Graph Construction**: Network routing consistent with cadastral information for realistic grid topology
-
-**Installation**
-------------
-
-**Requirements**: Python 3.12+, Ubuntu WSL2 or Linux-based OS, Docker (for InfDB preprocessing)
-
-.. code-block:: bash
-
-   # Clone the repository
-   git clone https://github.com/tum-ens/pylovo.git
-   cd pylovo
-
-   # Install dependencies
-   uv sync
-   # OR
-   pip install -e .
-
-   # Install with optional dependencies
-   uv sync --extra plots --extra docs    # Install with plotting and documentation tools
-   # OR
-   pip install -e .[plots,docs]          # Install with plotting and documentation tools
-
-   # Configure environment
-   cp .env.example .env
-   nano .env  # Add your database credentials
-
-**Optional Dependencies:**
-
-* **plots**: Includes matplotlib, plotly, seaborn, and contextily for visualization and plotting. Also required for classfication.
-* **docs**: Includes Sphinx and related tools for building documentation
-
-**Note:** The repository includes configuration templates in ``config/``, an ``.env.example`` file, and example data structures in ``raw_data/`` that are essential for running pylovo.
 
 **User Data Requirements**
 ------------
@@ -106,128 +76,57 @@ Pylovo requires user-provided geospatial data in the ``raw_data/`` directory:
 
 **Quick Start**
 ------------
+0. **Requirements**: Python 3.12+, Docker, Ubuntu WSL2 or Linux-based OS, uv
 
-1. **Setup InfDB** (preprocessing pipeline): Follow the `InfDB <https://github.com/tum-ens/InfDB>`_ "Getting Started" guide to set up the database on your machine. Start the preprocessing docker: ``docker compose -f tools/infdb-basedata/compose.yml up``
+1. **Setup InfDB**:
+Follow the documentation in `InfDB <https://tum-ens.github.io/InfDB/usage/>`_ to set up the infdb database for pylovo.
+Summarized you have to built three docker container:
+a) ...first, initialize the database with infdb-db service ``bash infdb-start.sh up -d --build``
+b) ...second, configure and import the required data with infdb-import service ``bash infdb-import.sh``
+c) ...third, run the required preprocessing basedata tool ``bash tools/infdb-basedata/run.sh``
 
-2. **Install and activate pylovo**:
+2. **Install pylovo**:
+Input data has been prepared, next lets focus on pylovo - setup the repository as follows:
+a) If not already installed, download uv to install and manage your Python environment.
 
-.. code-block:: bash
+::
+
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+b) Clone the pylovo repository and install dependencies:
+
+::
 
    git clone https://github.com/tum-ens/pylovo.git
    cd pylovo
    uv sync
-   source .venv/bin/activate  # Activate virtual environment
+   source .venv/bin/activate
 
-3. **Configure pylovo**: Copy ``.env.example`` to ``.env`` and add your database credentials from InfDB setup. Optionally adjust grid generation parameters in ``config/config_generation.yaml`` if needed.
+3. **Configure pylovo**:
 
-.. code-block:: bash
+a) Copy ``.env.example`` to ``.env`` and align credentials with InfDB setup in environment file.
+b) Optionally adjust grid generation parameters in ``config/config_generation.yaml``.
 
-   cp .env.example .env
-   nano .env  # Add your database credentials
-   # Optional: nano config/config_generation.yaml  # Adjust grid parameters if needed
 
-4. **Setup pylovo database**: Run ``pylovo-setup`` to create database schema and import municipal register data.
+4. **Initialize pylovo database**:
 
-.. code-block:: bash
+a) Run ``pylovo-setup`` to create database schema and import some data (osm transformer locations, municipal register data, equipment data, ...)
+
+::
 
    pylovo-setup
 
-5. **Generate grids**: Use ``pylovo-generate`` with region arguments to create synthetic LV distribution grids.
+b) Run ``pylovo-generate`` with region arguments (--plz or --ags) to create single or multiple synthetic LV distribution grids, e.g.:
 
-.. code-block:: bash
+::
 
-    # Single postal code (PLZ)
-    pylovo-generate --plz 80803
-
-    # Multiple postal codes
-    pylovo-generate --plz 80803 80802 80801
-
-    # Single municipality (AGS - Amtlicher Gemeindeschlüssel)
+    # single ags code
     pylovo-generate --ags 09162000
 
-    # Multiple municipalities
-    pylovo-generate --ags 09162000 09161000
+    # multiple postal codes
+    pylovo-generate --plz 80803 80802 80801
 
-    # Disable parallel processing (useful for debugging)
-    pylovo-generate --plz 80803 --no-parallel
-
-**Finding Region Identifiers:**
-
-After running ``pylovo-setup``, you can query available regions:
-
-.. code-block:: sql
-
-    -- Find postal codes (PLZ)
-    SELECT plz, note, population FROM pylovo.postcode LIMIT 10;
-
-    -- Find municipalities (AGS)
-    SELECT ags, gen, population FROM pylovo.municipal_register LIMIT 10;
-
-**Note**: All ``pylovo-*`` commands must be run with the virtual environment activated (``source .venv/bin/activate``).
-
-6. **Analyze results** (optional): Use ``pylovo-analyze`` for grid statistics and ``pylovo-export`` for QGIS visualization.
-
-**Available Commands**
-------------
-
-All commands must be run with uv or the virtual environment activated (``source .venv/bin/activate``).
-
-**Core Commands:**
-
-.. code-block:: bash
-
-   # Setup database and import initial data
-   pylovo-setup
-
-   # Generate synthetic grids for regions
-   pylovo-generate --plz 80803                    # Single postal code
-   pylovo-generate --plz 80803 80802              # Multiple postal codes
-   pylovo-generate --ags 09162000                 # Single municipality
-   pylovo-generate --ags 09162000 09161000        # Multiple municipalities
-   pylovo-generate --plz 80803 --no-parallel      # Disable parallel processing
-
-   # Analyze generated grids
-   pylovo-analyze --plz 80803                     # Calculate PLZ parameters
-   pylovo-analyze --plz 80803 --per-grid          # Calculate per-grid parameters
-   pylovo-analyze --plz 80803 --all               # Run both analyses
-
-**Data Management:**
-
-.. code-block:: bash
-
-   # Export grids to QGIS format
-   pylovo-export --plz 80803                      # Export single PLZ
-   pylovo-export --plz 80803 80802                # Export multiple PLZ
-   pylovo-export --grid --plz 80803 --kcid 4 --bcid 30  # Export specific grid
-
-   # Import data
-   pylovo-import transformers-osm --relation-id 62464  # Import transformers from OSM
-
-   # Delete data
-   pylovo-delete networks --plz 80803 --version 1      # Delete specific PLZ networks
-   pylovo-delete version --version 1                   # Delete all networks for version
-
-**Developer Commands (wip):**
-
-.. code-block:: bash
-
-   # Validate configuration
-   pylovo-validate
-
-   # Run classification
-   pylovo-classify
-
-**Get Help:**
-
-Add ``--help`` to any command for detailed usage information:
-
-.. code-block:: bash
-
-   pylovo-generate --help
-   pylovo-delete --help
-   pylovo-export --help
-
-This setup ensures access to the full preprocessing pipeline with 3D building models, census data, and cadastral information for enhanced accuracy in grid generation.
+**Note**: All ``pylovo-*`` commands must be run with the virtual environment activated (``source .venv/bin/activate``) or alternatively with ``uv run <command>``.
 
 **Scientific Background**
 ------------
