@@ -1,13 +1,13 @@
 # =============================================================================
 # Version CONFIGURATION
 # =============================================================================
-VERSION_ID: "1" # Change version if you changed any grid parameters or queries (e.g. transformer query)
-VERSION_COMMENT: base version # State here which parameters, queries are used to compute the grids with current VERSION_ID
+VERSION_ID: "2" # Change version if you changed any grid parameters or queries (e.g. transformer query)
+VERSION_COMMENT: swf_equipment # State here which parameters, queries are used to compute the grids with current VERSION_ID
 
 # =============================================================================
 # EXECUTION CONFIGURATION
 # =============================================================================
-PARALLEL: False # Toggles whether the grid generation uses multiple workers in parallel
+PARALLEL: True # Toggles whether the grid generation uses multiple workers in parallel
 N_JOBS_PERCENT: 60  # Percentage of CPU cores to use for parallel grid generation
 ANALYZE_GRIDS: True # Toggles analysis after grid generation (basic parameters, trafo analysis, cable counting)
 LOG_LEVEL: INFO #DEBUG, INFO, ERROR - Logging configurations
@@ -37,17 +37,17 @@ CONSUMER_CATEGORIES:
 EQUIPMENT_DATA:
 #  - {name: Tr_100, s_max_kva: 100, cost_eur: 2000, typ: Transformer} Not included in pandapower standard trafo types
 #  - {name: Tr_160, s_max_kva: 160, cost_eur: 3000, typ: Transformer} Not included in pandapower standard trafo types
-  - {name: Tr_250, s_max_kva: 250, cost_eur: 5000, typ: Transformer}
+#  - {name: Tr_250, s_max_kva: 250, cost_eur: 5000, typ: Transformer}
   - {name: Tr_400, s_max_kva: 400, cost_eur: 8000, typ: Transformer}
   - {name: Tr_630, s_max_kva: 630, cost_eur: 12000, typ: Transformer}
   - {name: NA2XS(F)2Y_1x240RM_12_20kV_ir_240, max_i_a: 456, r_mohm_per_km: 144, x_mohm_per_km: 182, z_mohm_per_km: 236, cost_eur: 45, typ: Cable} #extrapolated costs
   - {name: NA2XS(F)2Y_1x150RM_12_20kV_ir_150, max_i_a: 353, r_mohm_per_km: 227, x_mohm_per_km: 195, z_mohm_per_km: 299, cost_eur: 35, typ: Cable} #extrapolated costs
   - {name: NAYY_4_185, max_i_a: 313, r_mohm_per_km: 164, x_mohm_per_km: 80, z_mohm_per_km: 181, cost_eur: 33, typ: Cable}
-  - {name: NAYY_4_120, max_i_a: 242, r_mohm_per_km: 225, x_mohm_per_km: 80, z_mohm_per_km: 239, cost_eur: 19, typ: Cable}
+#  - {name: NAYY_4_120, max_i_a: 242, r_mohm_per_km: 225, x_mohm_per_km: 80, z_mohm_per_km: 239, cost_eur: 19, typ: Cable}
   - {name: NYY_4_70, max_i_a: 232, r_mohm_per_km: 268, x_mohm_per_km: 82, z_mohm_per_km: 280, cost_eur: 28, typ: Cable}
-  - {name: NAYY_4_50, max_i_a: 142, r_mohm_per_km: 642, x_mohm_per_km: 83, z_mohm_per_km: 647, cost_eur: 11, typ: Cable}
+#  - {name: NAYY_4_50, max_i_a: 142, r_mohm_per_km: 642, x_mohm_per_km: 83, z_mohm_per_km: 647, cost_eur: 11, typ: Cable}
   - {name: NYY_4_35, max_i_a: 159, r_mohm_per_km: 524, x_mohm_per_km: 85, z_mohm_per_km: 531, cost_eur: 16, typ: Cable}
-  - {name: NYY_4_16, max_i_a: 103, r_mohm_per_km: 1150, x_mohm_per_km: 90, z_mohm_per_km: 1153, cost_eur: 7, typ: Cable}
+#  - {name: NYY_4_16, max_i_a: 103, r_mohm_per_km: 1150, x_mohm_per_km: 90, z_mohm_per_km: 1153, cost_eur: 7, typ: Cable}
   # - {name: NAYY_4_95, max_i_a: 215, r_mohm_per_km: 320, x_mohm_per_km: 82, z_mohm_per_km: 330, cost_eur: 21, typ: Cable}
   # - {name: NYY_4_95, max_i_a: 280, r_mohm_per_km: 193, x_mohm_per_km: 82, z_mohm_per_km: 210, cost_eur: 37, typ: Cable}
   # - {name: NAYY_4_150, max_i_a: 270, r_mohm_per_km: 208, x_mohm_per_km: 80, z_mohm_per_km: 223, cost_eur: 24, typ: Cable}
@@ -57,10 +57,10 @@ EQUIPMENT_DATA:
 
 # Cables available for consumer connections (house connections from feeder to buildings) - must be a subset of the equipment data cables
 CONSUMER_CONNECTION_AVAILABLE_CABLES:
-  - NAYY_4_120  # NAYY_4_120
+#  - NAYY_4_120  # NAYY_4_120
   - NAYY_4_50   # NAYY_4_50
   - NYY_4_35    # NYY_4_35
-  - NYY_4_16    # NYY_4_16
+#  - NYY_4_16    # NYY_4_16
 
 
 ### CABLE DIMENSIONING PARAMETERS
@@ -86,8 +86,8 @@ URBAN_MAX_BUILDING_DISTANCE: 25 # Maximum average distance between buildings for
 
 ### Transformer mapping: Settlement Type (1=low/rural,2=medium/semi-urban,3=high/urban) -> Allowed Transformer Capacities (s_max_kva)
 TRANSFORMER_MAPPING:
-  1: [100, 160, 250]
-  2: [160, 250, 400, 630]
+  1: [400, 630]
+  2: [400, 630]
   3: [400, 630]
 
 ### Clustering

@@ -278,9 +278,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, help="Limit number of grids to process", default=None)
     parser.add_argument("--all", action="store_true", help="Process all grids (overrides limit)")
+    parser.add_argument("--output-dir", type=str, help="Directory to save results", default="results")
     args = parser.parse_args()
     
     limit = args.limit if not args.all else None
+    
+    # Update OUTPUT_DIR based on args
+    global OUTPUT_DIR
+    if args.output_dir:
+        OUTPUT_DIR = Path(args.output_dir)
+        if not OUTPUT_DIR.is_absolute():
+             OUTPUT_DIR = Path(__file__).parent / OUTPUT_DIR
     
     # 1. Real Grids
     df_real = get_real_grids_metrics(REAL_DATA_PATH, limit=limit)
