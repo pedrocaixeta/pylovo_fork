@@ -166,4 +166,3 @@ cython_debug/
 
 # for macOS users
 *.DS_Store
-/src/analysis/grid_data/
