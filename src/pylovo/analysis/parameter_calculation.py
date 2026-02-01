@@ -335,12 +335,47 @@ class ParameterCalculator:
         return root.index[0]
 
     def get_no_branches(self, networkx_graph: nx.Graph, pandapower_net: pp.pandapowerNet) -> int:
-        """Approximate number of main feeders from the LV bus."""
+        """Approximate number of main feeders from the LV bus. 
+        Handles Cable Distribution Cabinets (KVS) as splitters if directly connected."""
         root = self.get_root(pandapower_net)
         if root not in networkx_graph:
             return 0
+            
         root_degree = networkx_graph.degree[root]
-        return int(max(root_degree - 1, 0))
+        
+        # If single feeder, checking if it splits immediately at a KVS
+        # Or even if multiple feeders, check if any go to a KVS
+        if root_degree > 0:
+            branches = 0
+            neighbors = list(networkx_graph.neighbors(root))
+            
+            # Helper to check if edge is a transformer (don't count MV connection)
+            def is_trafo(u, v):
+                mask = ((pandapower_net.trafo["hv_bus"] == u) & (pandapower_net.trafo["lv_bus"] == v)) | \
+                       ((pandapower_net.trafo["hv_bus"] == v) & (pandapower_net.trafo["lv_bus"] == u))
+                return not mask.empty and mask.any()
+
+            for n in neighbors:
+                if is_trafo(root, n):
+                    continue
+                
+                # Check if neighbor is a KVS
+                bus_name = str(pandapower_net.bus.at[n, "name"])
+                if "NS_KVS" in bus_name:
+                    # It is a KVS. Count its branches (degree - 1 for incoming)
+                    kvs_degree = networkx_graph.degree[n]
+                    # If KVS is a dead end (degree 1), it counts as 1 branch (the KVS itself) or 0? 
+                    # Usually 0 meaningful feeders if no outgoing lines. But let's say 0.
+                    # If degree 2, 1 outgoing.
+                    branches += max(kvs_degree - 1, 0)
+                else:
+                    branches += 1
+            
+            # If branches is 0 but we have neighbors (and not just MV), fallback to degree-1 (trafo) 
+            # (Logic above handles MV detection via is_trafo)
+            return branches
+
+        return 0
 
     def get_distances_in_graph(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> Tuple[float, float]:
         """Average and maximum weighted distances (km) from transformer to consumer buses."""
@@ -394,8 +429,17 @@ class ParameterCalculator:
             except (nx.NetworkXNoPath, nx.NodeNotFound):
                 continue
             
-            # Identify branch (first edge from root)
-            branch = tuple(sorted(path[:2])) if len(path) >= 2 else None
+            # Identify branch
+            # Logic update: If first hop is a KVS, split branches there.
+            if len(path) >= 2:
+                first_hop_name = str(pandapower_net.bus.at[path[1], "name"])
+                if "NS_KVS" in first_hop_name and len(path) >= 3:
+                     # Treat the link KVS->NextNode as the branch identifier
+                     branch = tuple(sorted(path[1:3]))
+                else:
+                     branch = tuple(sorted(path[:2]))
+            else:
+                branch = None
             
             # Calculate impedance along path
             r_sum = 0.0
