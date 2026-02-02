@@ -12,6 +12,7 @@ This notebook enables interactive comparison of Synthetic Grid Versions against 
 **Features:**
 - **Interactive Plotting**: Choose metrics and plot types via dropdowns.
 - **Statistical Analysis**: Kolmogorov-Smirnov (KS) tests to quantify distribution similarity.
+- **Geographic Analysis**: Visualize grid structures on map.
 - **Data Loading**: Auto-detects Real Grid CSVs or allows path configuration.
 """))
 
@@ -30,10 +31,11 @@ from scipy import stats
 
 # Add project root to path for imports if running locally without install
 project_root = Path("../../").resolve()
-sys.path.append(str(project_root))
+sys.path.append(str(project_root / "src"))
 
 # Import Refactored Modules
-from pylovo.plotting import comparison as plotting
+from pylovo.plotting.validation import metric_validation as plotting
+from pylovo.plotting.validation import geo_validation
 from pylovo.database import database_client
 
 load_dotenv(project_root / ".env")
@@ -68,11 +70,10 @@ def load_real_metrics(csv_path):
         print(f"WARNING: Real metrics CSV not found at {csv_path}")
         return pd.DataFrame()
     df = pd.read_csv(csv_path)
-    # ROBUST FILTERING: Check for 'Real' in source string (handles "Real (SWF)")
+    # ROBUST FILTERING
     real_df = df[df['source'].str.contains('Real', case=False, na=False)]
     if real_df.empty:
         print("Warning: CSV loaded but no 'Real' source found inside.")
-        print(f"Available sources: {df['source'].unique()}")
     return real_df
 
 def load_synthetic_metrics(conn, plz, versions=None):
@@ -147,7 +148,8 @@ numeric_cols = df_all.select_dtypes(include=np.number).columns.tolist()
 metrics = [c for c in numeric_cols if c not in ['plz', 'kcid', 'bcid', 'grid_result_id', 'version_id']]
 
 def interactive_boxplot(metric):
-    fig = plotting.plot_metric_distribution(df_all, metric, title=f"Distribution of {metric}")
+    # Using refactored function
+    fig = plotting.plot_comparison_distribution_plotly(df_all, metric, title=f"Distribution of {metric}")
     fig.show()
 
 widgets.interact(interactive_boxplot, metric=widgets.Dropdown(options=metrics, value='transformer_mva', description='Metric:'));
@@ -161,13 +163,44 @@ Overlap histograms to analyze distribution shape and tail behavior.
 
 nb.cells.append(new_code_cell(r"""
 def interactive_histogram(metric):
-    fig = plotting.plot_metric_histogram(df_all, metric, title=f"Histogram of {metric}")
+    fig = plotting.plot_comparison_histogram_plotly(df_all, metric, title=f"Histogram of {metric}")
     fig.show()
 
 widgets.interact(interactive_histogram, metric=widgets.Dropdown(options=metrics, value='cable_length_km', description='Metric:'));
 """))
 
-# --- Cell 7: Statistical Analysis ---
+# --- Cell 7: GIS Visualization ---
+nb.cells.append(new_markdown_cell(r"""
+## Geographic Visualization (GIS)
+Visualize the grids on a map.
+"""))
+
+nb.cells.append(new_code_cell(r"""
+print("Plotting Transformer Overview for PLZ (can take a moment)...")
+# Overview of all transformers
+try:
+    fig_overview = geo_validation.plot_trafo_on_map(PLZ, save_plots=False)
+    if fig_overview:
+        fig_overview.show()
+    else:
+        print("No overview figure generated.")
+except Exception as e:
+    print(f"GIS Overview failed: {e}")
+"""))
+
+nb.cells.append(new_code_cell(r"""
+# Inspect specific grid (Example: First entry from loaded data)
+if not df_synth.empty:
+    sample_grid = df_synth.iloc[0]
+    kcid = sample_grid['kcid']
+    bcid = sample_grid['bcid']
+    print(f"Zooming in on Grid KCID={kcid}, BCID={bcid}")
+    fig_zoom = geo_validation.plot_grid_on_map_plotly(PLZ, int(kcid), int(bcid), title=f"Grid {kcid}-{bcid}")
+    if fig_zoom:
+        fig_zoom.show()
+"""))
+
+# --- Cell 8: Statistical Analysis ---
 nb.cells.append(new_markdown_cell(r"""
 ## Statistical Comparison (KS-Test)
 Mathematically quantify the difference between Real and Synthetic distributions.
