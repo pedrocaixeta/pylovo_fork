@@ -145,6 +145,25 @@ def prepare_real_grid(net, trafo_lookup, master_std_types):
     mask = ~net.bus["name"].str.contains("LVbus|Consumer Nodebus", regex=True, na=False)
     net.bus.loc[mask, "name"] = net.bus.loc[mask, "name"].astype(str) + " Connection Nodebus"
 
+    # 5. [FIX] Normalize Zones for Simultaneity Factor Calculation
+    # ParameterCalculator expects specific zones (Residential, Commercial, etc.) to look up factors.
+    # Real grids use "SWF". Map these to "Residential" (or "Mixed" if we knew).
+    # Also ensure no NaNs.
+    if "zone" in net.bus.columns:
+        # Map specific known non-standard values
+        net.bus.loc[net.bus["zone"].isin(["SWF", "m", "b"]), "zone"] = "Residential"
+        # Fill remaining NaNs
+        net.bus["zone"] = net.bus["zone"].fillna("Residential")
+    else:
+        net.bus["zone"] = "Residential"
+
+    # 6. [FIX] Ensure Connectivity (Close all switches for simple pathfinding)
+    # If switches are defining open rings, they might block Dijkstra if we aren't careful.
+    # For metric calculation of radial distance, we usually want the electrical path.
+    # If switches are actual open points in a ring, that is correct.
+    # But if data quality is poor, closed switches might be reported as open.
+    # Let's trust the data for now on switches, but verify zone fix first.
+    
     return net
 
 def check_spatial_validity(net, polygon_gdf):
@@ -270,7 +289,7 @@ def plot_comparisons(df, output_dir):
             plt.tight_layout()
             plt.savefig(output_dir / f"hist_{metric}.png")
             plt.close()
-        
+            
     print(f"Plots saved to {output_dir}")
 
 def main():

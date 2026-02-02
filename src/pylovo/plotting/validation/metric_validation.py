@@ -20,6 +20,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pandapower.plotting.plotly import vlevel_plotly
 from pandapower.plotting.plotly.mapbox_plot import set_mapbox_token
+from scipy import stats
+
 
 from pylovo.config_loader import RESULT_DIR, VERSION_ID
 from pylovo.plotting.utils import get_color_map
@@ -424,3 +426,77 @@ def plot_comparison_scatter_plotly(
     )
 
     return fig
+
+
+def plot_comparison_pdf_plotly(
+    df: pd.DataFrame, 
+    metric_col: str, 
+    title: Optional[str] = None
+) -> go.Figure:
+    """
+    Generate a Probability Density Function (PDF) plot using KDE.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing metrics.
+    metric_col : str
+        Column name to plot.
+    title : str, optional
+        Plot title.
+        
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if df.empty:
+        return go.Figure().add_annotation(text="No Data Available", showarrow=False)
+
+    sources = df["source"].unique()
+    color_discrete_map = get_color_map(sources)
+
+    fig = go.Figure()
+
+    for source in sources:
+        subset = df[df["source"] == source]
+        data = subset[metric_col].dropna()
+        
+        if len(data) > 1:
+            try:
+                # Calculate KDE
+                kde = stats.gaussian_kde(data)
+                
+                # Create x range for plotting
+                min_val = data.min()
+                max_val = data.max()
+                pad = (max_val - min_val) * 0.2
+                x_grid = np.linspace(min_val - pad, max_val + pad, 200)
+                y_grid = kde(x_grid)
+                
+                color = color_discrete_map.get(source, "black")
+                
+                fig.add_trace(go.Scatter(
+                    x=x_grid, 
+                    y=y_grid,
+                    mode='lines',
+                    name=source,
+                    line=dict(color=color, width=2),
+                    fill='tozeroy', # Optional: fill area under curve
+                    fillcolor=f"rgba{tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.1,)}" if color.startswith('#') else None
+                ))
+            except Exception as e:
+                print(f"Could not calculate KDE for {source}: {e}")
+                pass
+
+    fig.update_layout(
+        title=title or f"PDF Comparison of {metric_col}",
+        xaxis_title=metric_col.replace("_", " ").title(),
+        yaxis_title="Density",
+        legend_title="Source",
+        font=dict(family="Arial", size=14),
+        template="plotly_white",
+        hovermode="x unified"
+    )
+
+    return fig
+
