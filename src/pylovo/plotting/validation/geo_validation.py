@@ -78,7 +78,7 @@ def plot_trafo_on_map(plz: int, save_plots: bool = False) -> None:
                     net_plot,
                     name=f"Distribution_grid_{grid_index}<br>transformer: {trafo_size}_kVA",
                     vn_kv=trafo_size,
-                    geodata=trafo_geom,
+                    geodata=tuple(trafo_geom),
                     type="b",
                 )
             grid_index += 1
@@ -133,7 +133,7 @@ def plot_grid_on_map_plotly(
     
     # Ensure geodata checks passed implicitly by pandapower plotting
     try:
-        fig = pp_plotly.simple_plotly(net, on_map=True, projection="epsg:4326")
+        fig = pp_plotly.simple_plotly(net, on_map=True)
         if title:
             fig.update_layout(title_text=title)
         return fig
