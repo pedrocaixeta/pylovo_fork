@@ -137,6 +137,79 @@ def plot_grid_on_map_plotly(
         if title:
             fig.update_layout(title_text=title)
         return fig
+
     except Exception as e:
         print(f"Plotting failed: {e}")
         return None
+
+def plot_all_grids_detailed(plz: int, title: str = "Full Grid Comparison") -> Any:
+    """
+    Plot ALL grids (lines and transformers) in the PLZ.
+    WARNING: This can be slow (~1-2 mins) and heavy to render.
+    """
+    from pylovo.grid_generator import GridGenerator
+    from tqdm import tqdm
+    
+    gg = GridGenerator(plz=plz)
+    cluster_list = gg.dbc.get_list_from_plz(plz)
+    
+    net_all = pp.create_empty_network()
+    
+    print(f"Loading and merging {len(cluster_list)} grids...")
+    
+    for kcid, bcid in tqdm(cluster_list, desc="Merging Grids"):
+        try:
+            net = gg.dbc.read_net_db(plz, kcid, bcid)
+            
+            # Bus mapping: old_id -> new_id
+            bus_map = {}
+            
+            # Add Buses
+            # Faster iteration
+            for idx, row in net.bus.iterrows():
+                # Extract Geo
+                geo = None
+                if "geo" in net.bus.columns:
+                     geo_str = row.get("geo")
+                     if geo_str and isinstance(geo_str, str):
+                         try:
+                             d = json.loads(geo_str)
+                             geo = d.get("coordinates")
+                         except: pass
+                
+                # If geo missing in column, check bus_geodata
+                if not geo and hasattr(net, 'bus_geodata') and idx in net.bus_geodata.index:
+                    geo = (net.bus_geodata.at[idx, 'x'], net.bus_geodata.at[idx, 'y'])
+                
+                if geo:
+                    # Generic bus type
+                    bid = pp.create_bus(net_all, vn_kv=0.4, geodata=geo)
+                    bus_map[idx] = bid
+            
+            # Add Lines
+            for idx, row in net.line.iterrows():
+                if row.from_bus in bus_map and row.to_bus in bus_map:
+                    # Handle line geodata if present
+                    line_geo = None
+                    # If geodata column exists and is valid
+                    if 'geodata' in net.line.columns:
+                         # Pandapower stores line geodata as list of tuples usually, or json
+                         pass 
+                         # For now let pandapower infer straight line if missing, 
+                         # or copy if we can. 
+                         # For speed, simple straight lines between buses is usually enough for "schematic"
+                         # but for "Gis" we want the path.
+                         # Copying geodata is complex if format varies.
+                         # simple:
+                    pp.create_line(net_all, bus_map[row.from_bus], bus_map[row.to_bus], 
+                                   length_km=row.length_km, std_type=row.std_type)
+                                   
+        except Exception as e:
+            continue
+
+    print("Generating Map Plot...")
+    fig = pp_plotly.simple_plotly(net_all, on_map=True)
+    if title:
+        fig.update_layout(title_text=title)
+        
+    return fig
