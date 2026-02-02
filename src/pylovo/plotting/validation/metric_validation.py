@@ -8,7 +8,7 @@ grid statistics.
 
 import json
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional, List
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -17,11 +17,12 @@ import pandas as pd
 import pandapower as pp
 import plotly
 import plotly.express as px
+import plotly.graph_objects as go
 from pandapower.plotting.plotly import vlevel_plotly
 from pandapower.plotting.plotly.mapbox_plot import set_mapbox_token
 
 from pylovo.config_loader import RESULT_DIR, VERSION_ID
-from pylovo.grid_generator import GridGenerator
+from pylovo.plotting.utils import get_color_map
 
 # Try to import config, but don't fail if it doesn't exist
 try:
@@ -48,6 +49,7 @@ def plot_pie_of_trafo_cables(plz: int, figsize: Tuple[int, int] = (16, 4)) -> Fi
     matplotlib.figure.Figure
         The Figure object containing the pie charts.
     """
+    from pylovo.grid_generator import GridGenerator
     gg = GridGenerator(plz=plz)
     dbc_client = gg.dbc
     data_list, data_labels, trafo_dict = dbc_client.read_per_trafo_dict(plz=plz)
@@ -84,6 +86,7 @@ def plot_hist_trafos(plz: int, figsize: Tuple[int, int] = (10, 6)) -> Figure:
     matplotlib.figure.Figure
         The Figure object containing the histogram.
     """
+    from pylovo.grid_generator import GridGenerator
     gg = GridGenerator(plz=plz)
     dbc_client = gg.dbc
     data_list, data_labels, trafo_dict = dbc_client.read_per_trafo_dict(plz=plz)
@@ -117,6 +120,7 @@ def plot_boxplot_plz(plz: int, figsize: Tuple[int, int] = (16, 4)) -> Figure:
     matplotlib.figure.Figure
         The Figure object containing the boxplots.
     """
+    from pylovo.grid_generator import GridGenerator
     gg = GridGenerator(plz=plz)
     dbc_client = gg.dbc
     data_list, data_labels, trafo_dict = dbc_client.read_per_trafo_dict(plz=plz)
@@ -155,6 +159,7 @@ def plot_cable_length_of_types(plz: int, figsize: Tuple[int, int] = (10, 6)) -> 
     matplotlib.figure.Figure
         The Figure object containing the cable type distribution plot.
     """
+    from pylovo.grid_generator import GridGenerator
     gg = GridGenerator(plz=plz)
     dbc_client = gg.dbc
     cluster_list = dbc_client.get_list_from_plz(plz)
@@ -205,6 +210,7 @@ def get_trafo_dicts(plz: int) -> Tuple[dict, dict, dict, dict]:
     tuple of dict
         (load_count_dict, bus_count_dict, cable_length_dict, trafo_dict)
     """
+    from pylovo.grid_generator import GridGenerator
     gg = GridGenerator(plz=plz)
     dbc_client = gg.dbc
     cluster_list = dbc_client.get_list_from_plz(plz)
@@ -244,70 +250,177 @@ def get_trafo_dicts(plz: int) -> Tuple[dict, dict, dict, dict]:
 
     return load_count_dict, bus_count_dict, cable_length_dict, trafo_dict
 
+# -----------------------------------------------------------------------------
+# PLOTLY / INTERACTIVE PLOTS
+# -----------------------------------------------------------------------------
 
-def plot_trafo_on_map(plz: int, save_plots: bool = False) -> None:
+def plot_comparison_distribution_plotly(
+    df: pd.DataFrame, 
+    metric_col: str, 
+    title: Optional[str] = None,
+    hover_data: Optional[List[str]] = None,
+    plot_type: str = "box"
+) -> go.Figure:
     """
-    Plot transformer types by their capacity on a plotly basemap.
-
+    Generate a distribution plot (Box, Violin, or Strip) for a given metric.
+    
     Parameters
     ----------
-    plz : int
-        Postal code.
-    save_plots : bool, optional
-        Whether to save the plots to file. Default: False.
+    df : pd.DataFrame
+        DataFrame containing metrics. Must have 'source' column.
+    metric_col : str
+        Column name of the metric to plot.
+    title : str, optional
+        Chart title. Defaults to metric name.
+    hover_data : List[str], optional
+        Additional columns to show on hover (e.g. ['kcid', 'bcid']).
+    plot_type : str, optional
+        'box', 'violin', or 'strip'. Default: 'box'.
+        
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        The Plotly Figure object.
     """
-    net_plot = pp.create_empty_network()
-    gg = GridGenerator(plz=plz)
-    dbc_client = gg.dbc
-    cluster_list = dbc_client.get_list_from_plz(plz)
-    grid_index = 1
+    if df.empty:
+        return go.Figure().add_annotation(text="No Data Available", showarrow=False)
 
-    # Set mapbox token for plotly maps
-    set_mapbox_token("pk.eyJ1IjoiYmVuZWhhcm8iLCJhIjoiY205OGdwejJ1MDJsbzJsczl1ajdyYmlzaSJ9.HWA8ZLQm1Sp0Whs5PADxrw")
+    if hover_data is None:
+        hover_data = ["grid_result_id", "kcid", "bcid"]
+        # Filter to only existing columns
+        hover_data = [c for c in hover_data if c in df.columns]
 
-    for kcid, bcid in cluster_list:
-        net = dbc_client.read_net_db(plz, kcid, bcid)
-        for row in net.trafo[["sn_mva", "lv_bus"]].itertuples():
-            trafo_size = round(row.sn_mva * 1e3)
-            
-            # Extract bus coordinates - handle both new GeoJSON format and legacy DataFrame format
-            if "geo" in net.bus.columns and row.lv_bus in net.bus.index:
-                geo_str = net.bus.at[row.lv_bus, "geo"]
-                if geo_str and isinstance(geo_str, str):
-                    try:
-                        geo_data = json.loads(geo_str)
-                        coords = geo_data.get("coordinates", [])
-                        if len(coords) == 2:
-                            trafo_geom = np.array([coords[0], coords[1]])
-                        else:
-                            trafo_geom = None
-                    except (json.JSONDecodeError, ValueError):
-                        trafo_geom = None
-                else:
-                    trafo_geom = None
-            elif hasattr(net, 'bus_geodata') and row.lv_bus in net.bus_geodata.index:
-                # Legacy format
-                trafo_geom = np.array(net.bus_geodata.loc[row.lv_bus, ["x", "y"]])
-            else:
-                trafo_geom = None
-            
-            if trafo_geom is not None:
-                pp.create_bus(
-                    net_plot,
-                    name=f"Distribution_grid_{grid_index}<br>transformer: {trafo_size}_kVA",
-                    vn_kv=trafo_size,
-                    geodata=trafo_geom,
-                    type="b",
-                )
-            grid_index += 1
+    sources = df["source"].unique()
+    color_discrete_map = get_color_map(sources)
 
-    figure = vlevel_plotly(
-        net_plot, on_map=True, colors_dict=PLOT_COLOR_DICT, projection="epsg:4326"
+    common_args = {
+        "data_frame": df,
+        "x": "source",
+        "y": metric_col,
+        "color": "source",
+        "color_discrete_map": color_discrete_map,
+        "hover_data": hover_data,
+        "title": title or f"Distribution of {metric_col}",
+        "template": "plotly_white"
+    }
+
+    if plot_type == "box":
+        fig = px.box(**common_args, points="all") # points="all" adds strip plot next to box
+    elif plot_type == "violin":
+        fig = px.violin(**common_args, box=True, points="all")
+    elif plot_type == "strip":
+        fig = px.strip(**common_args)
+    else:
+        raise ValueError(f"Unknown plot_type: {plot_type}")
+
+    # Layout improvements
+    fig.update_layout(
+        xaxis_title="Grid Source",
+        yaxis_title=metric_col.replace("_", " ").title(),
+        legend_title="Source",
+        font=dict(family="Arial", size=14),
+        hovermode="closest"
+    )
+    
+    return fig
+
+
+def plot_comparison_histogram_plotly(
+    df: pd.DataFrame, 
+    metric_col: str, 
+    title: Optional[str] = None
+) -> go.Figure:
+    """
+    Generate an overlaid histogram/KDE using Plotly.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing metrics.
+    metric_col : str
+        Column name to plot.
+    title : str, optional
+        Plot title.
+        
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        The Plotly Figure object.
+    """
+    if df.empty:
+        return go.Figure().add_annotation(text="No Data Available", showarrow=False)
+
+    sources = df["source"].unique()
+    color_discrete_map = get_color_map(sources)
+
+    fig = px.histogram(
+        df, 
+        x=metric_col, 
+        color="source", 
+        barmode="overlay", 
+        marginal="box", # Adds small boxplot on top
+        color_discrete_map=color_discrete_map,
+        title=title or f"Histogram of {metric_col}",
+        template="plotly_white",
+        opacity=0.6
     )
 
-    if save_plots:
-        savepath_folder = Path(RESULT_DIR, "figures", f"version_{VERSION_ID}", str(plz))
-        savepath_folder.mkdir(parents=True, exist_ok=True)
-        savepath_file = Path(savepath_folder, "trafo_on_map.html")
-        plotly.offline.plot(figure, filename=str(savepath_file))
+    fig.update_layout(
+        xaxis_title=metric_col.replace("_", " ").title(),
+        yaxis_title="Count",
+        legend_title="Source",
+        font=dict(family="Arial", size=14)
+    )
 
+    return fig
+
+
+def plot_comparison_scatter_plotly(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    size_col: Optional[str] = None,
+    title: Optional[str] = None
+) -> go.Figure:
+    """
+    Generate a scatter plot for exploring correlations.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing data.
+    x_col : str
+        X-axis column.
+    y_col : str
+        Y-axis column.
+    size_col : str, optional
+        Column determining marker size.
+    title : str, optional
+        Plot title.
+        
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if df.empty:
+        return go.Figure().add_annotation(text="No Data Available", showarrow=False)
+
+    sources = df["source"].unique()
+    color_discrete_map = get_color_map(sources)
+    
+    hover_data = [c for c in ["grid_result_id", "kcid", "bcid"] if c in df.columns]
+
+    fig = px.scatter(
+        df,
+        x=x_col,
+        y=y_col,
+        size=size_col,
+        color="source",
+        color_discrete_map=color_discrete_map,
+        hover_data=hover_data,
+        title=title or f"{y_col} vs {x_col}",
+        template="plotly_white",
+        opacity=0.7
+    )
+
+    return fig
