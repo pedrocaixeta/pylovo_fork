@@ -121,16 +121,31 @@ class ParameterCalculator:
                 f"PLZ parameters for the postcode area {self.plz} missing. Please run calc_parameters_per_plz() first.")
             return
 
-        parameter_count = self.dbc.count_clustering_parameters(plz=self.plz)
-        if parameter_count > 0:
-            print(f"The parameters for the grids of postcode area {self.plz} and version {VERSION_ID} "
-                  f"have already been calculated.")
-            return
-
+        # Remove the early return that skips the entire PLZ if ANY parameters exist.
+        # Instead, verify per grid if it needs calculation.
+        
         cluster_list = self.dbc.get_list_from_plz(self.plz)
+        total_grids = len(cluster_list)
+        print(f"Checking {total_grids} grids for PLZ {self.plz}...")
+
+        skipped = 0
+        calculated = 0
+
         for kcid, bcid in cluster_list:
-            print(bcid, kcid)
-            self.calc_grid_parameters(bcid, kcid)
+            # Check if this specific grid already has parameters
+            try:
+                if self.dbc.has_clustering_parameters(self.plz, kcid, bcid):
+                     skipped += 1
+                     continue
+                
+                print(f"Calculating parameters for grid {bcid}, {kcid}")
+                self.calc_grid_parameters(bcid, kcid)
+                calculated += 1
+                
+            except Exception as e:
+                self.dbc.logger.error(f"Failed to calculate/insert parameters for {kcid}, {bcid}: {e}")
+        
+        print(f"Finished PLZ {self.plz}. Calculated: {calculated}, Skipped (already existed): {skipped}.")
 
     def calc_grid_parameters(self, bcid: int, kcid: int) -> None:
         """Compute parameters for a single local grid and persist them.
