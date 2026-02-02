@@ -19,15 +19,3 @@ Main script to run the comparison.
     # OR
     uv run python validation/grid_comparison/compare_grids.py
     ```
-
-### `debug_grids.py`
-Utility to run metric calculation on a single Real and single Synthetic grid for debugging purposes.
-- **Usage**:
-    ```bash
-    uv run python validation/grid_comparison/debug_grids.py
-    ```
-
-## Results
-Results are saved to `results/`.
-- `comparison_metrics.csv`: Detailed metrics for every grid.
-- `boxplot_*.png`: Distribution comparisons.
