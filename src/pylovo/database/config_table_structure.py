@@ -187,10 +187,8 @@ CREATE_QUERIES = {
     """,
     "clustering_parameters": """CREATE TABLE IF NOT EXISTS clustering_parameters (
         grid_result_id bigint PRIMARY KEY,
-        
         no_connection_buses integer,
         no_branches integer,
-        
         no_house_connections integer,
         no_house_connections_per_branch double precision,
         no_households integer,
@@ -198,27 +196,34 @@ CREATE_QUERIES = {
         no_households_per_branch double precision,
         max_no_of_households_of_a_branch double precision,
         house_distance_km double precision,
-        
         transformer_mva double precision,
         osm_trafo bool,
-        
         max_trafo_dis double precision,
         avg_trafo_dis double precision,
-        
         cable_length_km double precision,
         cable_len_per_house double precision,
-        
         max_power_mw double precision,
         simultaneous_peak_load_mw double precision,
-        
         resistance double precision,
         reactance double precision,
         ratio double precision,
         vsw_per_branch double precision,
         max_vsw_of_a_branch double precision,
-        
         filtered boolean,
         CONSTRAINT fk_clustering_parameters_grid_result
+            FOREIGN KEY (grid_result_id)
+            REFERENCES grid_result (grid_result_id)
+            ON DELETE CASCADE
+    )
+    """,
+        "grid_parameters": """CREATE TABLE IF NOT EXISTS grid_parameters (
+        grid_result_id bigint PRIMARY KEY,
+        feeder_lines integer,
+        house_connections integer,
+        cable_length double precision,
+        avg_trafo_distance double precision,
+        max_voltage_drop double precision,
+        CONSTRAINT fk_grid_parameters_grid_result
             FOREIGN KEY (grid_result_id)
             REFERENCES grid_result (grid_result_id)
             ON DELETE CASCADE
