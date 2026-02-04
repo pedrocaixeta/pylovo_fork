@@ -36,7 +36,9 @@ from sklearn.metrics.pairwise import haversine_distances
 import pylovo.database.database_client as dbc
 from pylovo import utils
 from pylovo.config_loader import *
-
+from pylovo.analysis.powerflow_analysis import run_powerflow
+from pylovo.utils import oneSimultaneousLoad
+from pylovo.database.config_table_structure import CREATE_QUERIES
 
 class ParameterCalculator:
     """Calculate and persist LV grid parameters at PLZ and per-grid levels.
@@ -146,6 +148,217 @@ class ParameterCalculator:
                 self.dbc.logger.error(f"Failed to calculate/insert parameters for {kcid}, {bcid}: {e}")
         
         print(f"Finished PLZ {self.plz}. Calculated: {calculated}, Skipped (already existed): {skipped}.")
+    
+        print(f"Finished PLZ {self.plz}. Calculated: {calculated}, Skipped (already existed): {skipped}.")
+    
+    def preprocess_net_for_pf(self, net: pp.pandapowerNet):
+        """
+        Preprocess net for power flow:
+        - Fix zero impedance lines.
+        - Ensure connectivity data structures are ready (though runpp does that).
+        """
+        # Fix zero impedance/length
+        if not net.line.empty:
+             mask_zero = (net.line.r_ohm_per_km == 0) & (net.line.x_ohm_per_km == 0)
+             if mask_zero.any():
+                 net.line.loc[mask_zero, "r_ohm_per_km"] = 1e-6
+                 net.line.loc[mask_zero, "x_ohm_per_km"] = 1e-6
+                 
+             # Also zero length?
+             mask_len = net.line.length_km <= 0
+             if mask_len.any():
+                  net.line.loc[mask_len, "length_km"] = 0.001
+
+    def calculate_comparison_metrics(self, net: pp.pandapowerNet, buildings_df: pd.DataFrame = None) -> Dict[str, Any]:
+        """
+        Calculate grid parameters specifically for comparison.
+        Refactored to reuse core logic with adaptable node identification.
+        """
+        
+        # 1. Identify Key Nodes (Root & Consumers)
+        # Try PyLovo naming conventions first
+        is_pylovo = "name" in net.bus.columns and net.bus["name"].str.contains(self.lvbus_keyword).any()
+        
+        try:
+            if is_pylovo:
+                # Use existing keyword-based lookup
+                root_idx = self.get_root(net)
+                # Consumers = "Consumer Nodebus"
+                consumer_mask = net.bus["name"].str.contains(self.consumer_bus_keyword)
+                consumer_buses = net.bus[consumer_mask].index.tolist()
+                
+                house_connections = len(consumer_buses)
+            
+            else:
+                # Real Grids / Generic Fallback
+                # Root: First LV bus of transformer, or ext_grid bus
+                if not net.trafo.empty:
+                    root_idx = net.trafo['lv_bus'].iloc[0]
+                elif not net.ext_grid.empty:
+                    root_idx = net.ext_grid['bus'].iloc[0]
+                else:
+                    # No source?
+                    root_idx = net.bus.index[0]
+                
+                # Consumers: All buses with loads
+                # Note: In real grids, one bus might have multiple loads or one aggregated load. 
+                # We count loads as connections? Or buses with loads?
+                # User complaint: "value for house_connections changes" -> implying count of loads vs count of buses.
+                # PyLovo 'house_connections' = count of buses named "Consumer Nodebus".
+                # For Real Grids, let's treat every Load as a connection.
+                consumer_buses = net.load['bus'].unique().tolist()
+                house_connections = len(net.load)
+
+            # 2. Structural Metrics (Reusing helpers with explicit nodes)
+            G = pp.topology.create_nxgraph(net, respect_switches=True)
+            
+            # Feeder Lines (No. Branches)
+            # Pass explicit root to avoid internal get_root() calling keyword search again if we want to be safe,
+            # BUT get_no_branches currently calls get_root(net) internally.
+            # We need to refactor get_no_branches to accept root_idx.
+            feeder_lines = self.get_no_branches(G, net, root_idx=root_idx)
+
+            # Avg Trafo Distance
+            # Valid consumer buses only (must be in graph)
+            valid_consumers = [b for b in consumer_buses if b in G]
+            avg_trafo_distance, _ = self._calculate_path_lengths(G, root_idx, valid_consumers)
+
+        except Exception as e:
+            self.dbc.logger.error(f"Error calculating structural metrics: {e}")
+            import traceback
+            traceback.print_exc()
+            feeder_lines = 0
+            house_connections = len(net.load)
+            avg_trafo_distance = 0.0
+
+        cable_length = net.line[net.line.in_service]["length_km"].sum()
+
+        # 3. Max Voltage Drop
+        max_voltage_drop = 0.0
+        
+        # Preprocess
+        self.preprocess_net_for_pf(net)
+        
+        try:
+             # Check connectivity: select component with ext_grid
+             mg = pp.topology.create_nxgraph(net, respect_switches=True)
+             if not net.ext_grid.empty:
+                  ext_bus = net.ext_grid.bus.iloc[0]
+                  # Components
+                  # If disconnected, we might want to drop disconnected buses or just warn
+                  # For calculation, pandapower usually handles it unless Z=0
+                  pass
+                  
+             # Use robust run_powerflow
+             success = run_powerflow(net)
+             if success:
+                 vm_pu = net.res_bus.vm_pu
+                 # Consider only voltage at consumer buses or all buses? 
+                 # Usually drop at endpoints is what matters.
+                 if is_pylovo:
+                      # Filter for consumer buses to match PyLovo logic? 
+                      # Or just min of all? Usually min is at end of line.
+                      max_voltage_drop = 1.0 - vm_pu.min()
+                 else:
+                      max_voltage_drop = 1.0 - vm_pu.min()
+                      
+                 if np.isnan(max_voltage_drop):
+                     max_voltage_drop = 0.0
+             else:
+                 max_voltage_drop = np.nan
+                 
+        except Exception as e:
+             # Power flow failed
+             self.dbc.logger.warning(f"Power flow failed: {e}")
+             max_voltage_drop = np.nan
+
+        return {
+            "feeder_lines": int(feeder_lines),
+            "house_connections": int(house_connections),
+            "cable_length": float(cable_length),
+            "avg_trafo_distance": float(avg_trafo_distance),
+            "max_voltage_drop": float(max_voltage_drop),
+        }
+
+    def calc_comparison_parameters_for_plz(self, plz: int):
+        """
+        Calculate and store comparison parameters for all grids in a PLZ.
+        Populates 'grid_parameters' table.
+        """
+        self.plz = plz
+        
+        # Ensure table exists
+        create_query = CREATE_QUERIES["grid_parameters"]
+        self.dbc.cur.execute(create_query)
+        self.dbc.conn.commit()
+        
+        grids = self.dbc.get_list_from_plz(plz) 
+        print(f"Calculating comparison parameters for {len(grids)} grids in PLZ {plz}...")
+
+        metrics_list = []
+        
+        for kcid, bcid in grids:
+            try:
+                # 1. Load Grid
+                net = self.dbc.read_net_db(plz, kcid, bcid)
+                self.dbc.cur.execute("SELECT grid_result_id FROM grid_result WHERE plz=%s AND kcid=%s AND bcid=%s AND version_id=%s", (plz, kcid, bcid, self.version_id))
+                grid_result_id = self.dbc.cur.fetchone()[0]
+                
+                # 2. Apply Simultaneity
+                # Logic: P_sim = P_max * oneSimultaneousLoad(1, n_loads, sim_factor)
+                # Synthetic grids usually store max power in p_mw or max_p_mw
+                # We assume p_mw is peak/installed, and we apply factor.
+                n_loads = len(net.load)
+                if n_loads > 0:
+                    sim_factor = oneSimultaneousLoad(1.0, n_loads, 0.07) # Residential default
+                    if "max_p_mw" in net.load.columns:
+                         net.load["p_mw"] = net.load["max_p_mw"] * sim_factor
+                    else:
+                         net.load["p_mw"] = net.load["p_mw"] * sim_factor
+                
+                # 3. Calculate Metrics
+                params = self.calculate_comparison_metrics(net)
+                params["grid_result_id"] = grid_result_id
+                metrics_list.append(params)
+                
+                # 4. Insert into DB
+                query = """
+                    INSERT INTO grid_parameters (grid_result_id, feeder_lines, house_connections, cable_length, avg_trafo_distance, max_voltage_drop, trafo_capacity, mean_line_capacity)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (grid_result_id) DO UPDATE SET
+                    feeder_lines = EXCLUDED.feeder_lines,
+                    house_connections = EXCLUDED.house_connections,
+                    cable_length = EXCLUDED.cable_length,
+                    avg_trafo_distance = EXCLUDED.avg_trafo_distance,
+                    max_voltage_drop = EXCLUDED.max_voltage_drop;
+                """
+                self.dbc.cur.execute(query, (
+                    grid_result_id, 
+                    params["feeder_lines"], 
+                    params["house_connections"], 
+                    params["cable_length"], 
+                    params["avg_trafo_distance"], 
+                    params["max_voltage_drop"],
+                    params["trafo_capacity"],
+                    params["mean_line_capacity"]
+                ))
+            except Exception as e:
+                self.dbc.logger.error(f"Error processing grid {kcid}_{bcid}: {e}")
+                self.dbc.conn.rollback()
+            
+            # Commit after each grid to enable progress monitoring and avoid long locks
+            self.dbc.conn.commit()
+        
+        self.dbc.conn.commit()
+        
+        # 5. Export Synthetic Metrics to CSV
+        if metrics_list:
+            df = pd.DataFrame(metrics_list)
+            out_dir = Path("validation/metrics")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            csv_path = out_dir / "synthetic_grid_metrics.csv"
+            df.to_csv(csv_path, index=False)
+            print(f"Saved synthetic grid metrics to {csv_path}")
 
     def calc_grid_parameters(self, bcid: int, kcid: int) -> None:
         """Compute parameters for a single local grid and persist them.
@@ -343,16 +556,26 @@ class ParameterCalculator:
 
     def get_root(self, pandapower_net: pp.pandapowerNet) -> int:
         """Return LV root bus index."""
-        root = pandapower_net.bus[pandapower_net.bus["name"].str.contains(self.lvbus_keyword)]
-        if root.empty:
-            raise ValueError(f"No LV bus found using keyword '{self.lvbus_keyword}' for PLZ {self.plz}, "
-                             f"kcid {self.kcid}, bcid {self.bcid}.")
-        return root.index[0]
+        # Try finding by keyword
+        if "name" in pandapower_net.bus.columns:
+            root = pandapower_net.bus[pandapower_net.bus["name"].str.contains(self.lvbus_keyword, na=False)]
+            if not root.empty:
+                return root.index[0]
+        
+        # Fallback: Trafo LV bus
+        if not pandapower_net.trafo.empty:
+             return pandapower_net.trafo["lv_bus"].iloc[0]
+             
+        raise ValueError(f"No LV bus found using keyword '{self.lvbus_keyword}' and no trafo found.")
 
-    def get_no_branches(self, networkx_graph: nx.Graph, pandapower_net: pp.pandapowerNet) -> int:
+    def get_no_branches(self, networkx_graph: nx.Graph, pandapower_net: pp.pandapowerNet, root_idx: int = None) -> int:
         """Approximate number of main feeders from the LV bus. 
         Handles Cable Distribution Cabinets (KVS) as splitters if directly connected."""
-        root = self.get_root(pandapower_net)
+        if root_idx is None:
+            root = self.get_root(pandapower_net)
+        else:
+            root = root_idx
+            
         if root not in networkx_graph:
             return 0
             
@@ -392,10 +615,18 @@ class ParameterCalculator:
 
         return 0
 
-    def get_distances_in_graph(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> Tuple[float, float]:
+    def get_distances_in_graph(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph, root_idx: int = None, leaves: List[int] = None) -> Tuple[float, float]:
         """Average and maximum weighted distances (km) from transformer to consumer buses."""
-        root = self.get_root(pandapower_net)
-        leaves = pandapower_net.bus[pandapower_net.bus["name"].str.contains(self.consumer_bus_keyword)].index
+        if root_idx is None:
+            root = self.get_root(pandapower_net)
+        else:
+            root = root_idx
+
+        if leaves is None:
+             if "name" in pandapower_net.bus.columns:
+                 leaves = pandapower_net.bus[pandapower_net.bus["name"].str.contains(self.consumer_bus_keyword, na=False)].index
+             else:
+                 leaves = []
         
         if len(leaves) == 0:
             return 0.0, 0.0

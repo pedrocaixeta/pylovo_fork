@@ -140,6 +140,9 @@ else:
     INFDB_PASSWORD = None
     INFDB_SOURCE_SCHEMA = None
 
+# Validation Data Path
+GRID_DATA_PATH = os.getenv("GRID_DATA_PATH")
+
 # =============================================================================
 # EXECUTION CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================
