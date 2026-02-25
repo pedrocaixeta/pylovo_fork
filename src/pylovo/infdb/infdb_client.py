@@ -70,15 +70,138 @@ class InfdbClient:
     
     def fetch_ways_from_infdb(self, plz) -> list:
         """
-        Fetch ways from remote DB for a given postcode.
-        Filter out clazz:72 (Rad- und Fußweg)
-        In testing mode, fetches ways from allocated_plz (geometry filtering handled locally).
+        Fetch ways from the remote DB for a given postcode (PLZ) and return them in the
+        exact tuple layout expected by the pylovo import/insert pipeline.
+
+        What this function does (and why):
+
+        1) klasse_to_clazz (string -> int mapping)
+        - In the source schema, the road type is stored as a string column `klasse`
+            (e.g., "Bundesstraße", "Fußweg", "connection_line").
+        - In pylovo, the downstream tables/operators expect an integer road class
+            (`clazz`).
+        - Therefore, we define `klasse_to_clazz` once in Python and generate a SQL
+            CASE expression from it. We also use `btrim(klasse)` so trailing/leading
+            spaces in the raw strings do not break the mapping.
+
+        2) Column mapping from source tables -> pylovo.ways tuple layout
+        The insert into the local temp/result tables expects rows shaped like:
+            (clazz, source, target, cost, reverse_cost, geom, way_id)
+
+        We construct that shape from the source columns as follows:
+        - klasse (string)      -> clazz (int)
+            via CASE mapping using `klasse_to_clazz` (defaulting to 99 if unknown).
+        - source (missing/unused in source) -> NULL
+            we return `NULL::bigint AS source` to preserve the expected column position/type.
+        - target (missing/unused in source) -> NULL
+            we return `NULL::bigint AS target` for the same reason.
+        - length_geo -> cost
+            we use the geometric length as the routing cost.
+        - length_geo -> reverse_cost
+            we set reverse_cost equal to cost (symmetric) because direction-specific
+            costs are not available/needed here.
+        - geom -> geom
+            geometry is passed through unchanged and later transformed locally.
+        - id (source is md5 text) -> way_id (generated int)
+            pylovo expects an integer id, so we generate numeric ids during fetch.
+
+        3) Combining ways_segmented + connection_lines (UNION ALL)
+        - Previously, all relevant ways lived in a single table.
+        - Now the road network is split across:
+            * ways_segmented      (regular road segments)
+            * connection_lines    (synthetic connection segments, e.g., building-to-road)
+        - To ensure pylovo inserts a complete network, we combine both tables in a
+            single result set using `UNION ALL` so we keep all rows.
+
+        4) Ensuring unique integer way_id across multiple runs
+        - The source `id` is an md5 string (created for parallel-safe uniqueness), but
+            pylovo target expects an integer way_id.
+        - A plain `row_number()` would restart at 1 on every run/PLZ, causing collisions
+            if you generate 80803 first and later generate 80802 in a separate run.
+        - To avoid collisions, we:
+            a) read the current maximum used id from `pylovo.ways_result`:
+                    base_id = COALESCE(MAX(way_id), 0)
+            b) assign ids as:
+                    way_id = base_id + row_number() OVER (ORDER BY remote_id)
+            where remote_id is a stable ordering key derived from the source id.
+        - Result: each run continues numbering from the last used id, so way_id remains
+            globally unique across sequential executions.
         """
-        query = """
-            SELECT clazz, source, target, cost, reverse_cost, geom, way_id
-            FROM ways
-            WHERE postcode = %(plz)s and clazz != 72
+
+        klasse_to_clazz = {
+            "Bundesautobahn": 11,
+            "Bundesstraße": 13,
+            "Landesstraße, Staatsstraße": 15,
+            "Kreisstraße": 21,
+            "Gemeindestraße": 41,
+            "Nicht öffentliche Straße": 51,
+            "Wirtschaftsweg": 71,
+            "Hauptwirtschaftsweg": 71,
+            "Rad- und Fußweg": 72,
+            "Radweg": 81,
+            "Fußweg": 91,
+            "connection_line": 110,
+        }
+        default_clazz = 99
+
+        def _sql_literal(s: str) -> str:
+            return s.replace("'", "''")
+
+        when_clauses = "\n".join(
+            f"WHEN '{_sql_literal(k)}' THEN {int(v)}"
+            for k, v in klasse_to_clazz.items()
+        )
+
+        case_expr = f"""
+            (CASE btrim(klasse)
+                {when_clauses}
+                ELSE {int(default_clazz)}
+            END)::int
         """
+
+        query = f"""
+            WITH max_id AS (
+                SELECT COALESCE(MAX(way_id), 0) AS base_id
+                FROM pylovo.ways_result
+            ),
+            base AS (
+                SELECT
+                    {case_expr} AS clazz,
+                    NULL::bigint AS source,
+                    NULL::bigint AS target,
+                    length_geo AS cost,
+                    length_geo AS reverse_cost,
+                    geom,
+                    ('ways_segmented:' || id::text) AS remote_id
+                FROM ways_segmented
+                WHERE postcode = %(plz)s
+
+                UNION ALL
+
+                SELECT
+                    {case_expr} AS clazz,
+                    NULL::bigint AS source,
+                    NULL::bigint AS target,
+                    length_geo AS cost,
+                    length_geo AS reverse_cost,
+                    geom,
+                    ('connection_lines:' || id::text) AS remote_id
+                FROM connection_lines
+                WHERE postcode = %(plz)s
+            )
+            SELECT
+                b.clazz,
+                b.source,
+                b.target,
+                b.cost,
+                b.reverse_cost,
+                b.geom,
+                (m.base_id + row_number() OVER (ORDER BY b.remote_id))::bigint AS way_id
+            FROM base b
+            CROSS JOIN max_id m
+            WHERE b.clazz != 72
+        """
+
         self.cur.execute(query, {"plz": plz})
 
         ways = self.cur.fetchall()
