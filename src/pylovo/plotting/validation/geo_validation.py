@@ -23,8 +23,6 @@ from pylovo.plotting.utils import get_color_map
 try:
     from pylovo.plotting import ACCESS_TOKEN_PLOTLY, PLOT_COLOR_DICT
     # Default token if None
-    if ACCESS_TOKEN_PLOTLY is None:
-        ACCESS_TOKEN_PLOTLY = "pk.eyJ1IjoiYmVuZWhhcm8iLCJhIjoiY205OGdwejJ1MDJsbzJsczl1ajdyYmlzaSJ9.HWA8ZLQm1Sp0Whs5PADxrw"
     set_mapbox_token(ACCESS_TOKEN_PLOTLY)
 except ImportError:
     ACCESS_TOKEN_PLOTLY = None
