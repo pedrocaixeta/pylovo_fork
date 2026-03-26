@@ -678,8 +678,8 @@ class ParameterCalculator:
         """
         cluster_list = self.dbc.get_list_from_plz(plz)
         count = len(cluster_list)
-        time = 0
-        percent = 0
+        processed = 0
+        last_reported = 0
 
         load_count_dict = {}
         bus_count_dict = {}
@@ -719,11 +719,11 @@ class ParameterCalculator:
                         bus_count_dict[capacity] = [bus_count]
                         cable_length_dict[capacity] = [cable_length]
 
-            time += 1
-            if time / count >= 0.1:
-                percent += 10
+            processed += 1
+            percent = int(processed / count * 100)
+            if percent // 10 > last_reported // 10:
+                last_reported = percent
                 self.dbc.logger.info(f"{percent} percent finished")
-                time = 0
         self.dbc.logger.info("analyse_basic_parameters finished.")
         trafo_string = json.dumps(trafo_dict)
         load_count_string = json.dumps(load_count_dict)
@@ -735,8 +735,8 @@ class ParameterCalculator:
         """Sum cable lengths per standard type across all grids of a PLZ and persist result."""
         cluster_list = self.dbc.get_list_from_plz(plz)
         count = len(cluster_list)
-        time = 0
-        percent = 0
+        processed = 0
+        last_reported = 0
 
         # distributed according to cross_section
         cable_length_dict = {}
@@ -759,11 +759,11 @@ class ParameterCalculator:
                     else:
                         cable_length_dict[type] = (cable_df[cable_df["std_type"] == type]["parallel"] *
                                                    cable_df[cable_df["std_type"] == type]["length_km"]).sum()
-            time += 1
-            if time / count >= 0.1:
-                percent += 10
+            processed += 1
+            percent = int(processed / count * 100)
+            if percent // 10 > last_reported // 10:
+                last_reported = percent
                 self.dbc.logger.info(f"{percent} % processed")
-                time = 0
         self.dbc.logger.info("analyse_cables finished.")
         cable_length_string = json.dumps(cable_length_dict)
         self.dbc.insert_cable_length(plz, cable_length_string)
@@ -778,8 +778,8 @@ class ParameterCalculator:
         """
         cluster_list = self.dbc.get_list_from_plz(plz)
         count = len(cluster_list)
-        time = 0
-        percent = 0
+        processed = 0
+        last_reported = 0
 
         trafo_load_dict = {}
         trafo_max_distance_dict = {}
@@ -846,11 +846,11 @@ class ParameterCalculator:
                     trafo_max_distance_dict[trafo_size] = [max_distance]
                     trafo_avg_distance_dict[trafo_size] = [avg_distance]
 
-            time += 1
-            if time / count >= 0.1:
-                percent += 10
+            processed += 1
+            percent = int(processed / count * 100)
+            if percent // 10 > last_reported // 10:
+                last_reported = percent
                 self.dbc.logger.info(f"{percent} % processed")
-                time = 0
         self.dbc.logger.info("analyse_per_trafo_parameters finished.")
 
         trafo_load_string = json.dumps(trafo_load_dict)
