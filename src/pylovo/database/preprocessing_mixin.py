@@ -704,11 +704,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         If this column is null for a building, fallback to the traditional distance-based logic is applied.
         """
         self.cur.execute("SELECT segment_intersecting_ways();")
-
-        if USE_INFDB:
-            self.cur.execute("SELECT generate_building_to_way_connections_infdb();")
-        else:
-            self.cur.execute("SELECT generate_building_to_way_connections();")
+        self.cur.execute("SELECT generate_building_to_way_connections();")
 
     def build_pgr_network_topology(self, plz: int) -> None:
         """Builds the pgRouting-compatible network topology from the updated `ways_tem` table.
