@@ -219,10 +219,13 @@ class CableInstaller:
                 else:
                     voltage_drop_limit = VN * VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM / 100
 
-                voltage_available_cables_df = current_available_cables_df[
-                    current_available_cables_df["cable_impedence"] <=
-                    voltage_drop_limit / (Imax * length_km / count)
-                ]
+                if Imax * length_km == 0:
+                    voltage_available_cables_df = current_available_cables_df
+                else:
+                    voltage_available_cables_df = current_available_cables_df[
+                        current_available_cables_df["cable_impedence"] <=
+                        voltage_drop_limit / (Imax * length_km / count)
+                    ]
 
                 if len(voltage_available_cables_df) == 0:
                     count += 1
