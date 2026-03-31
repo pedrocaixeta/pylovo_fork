@@ -172,8 +172,8 @@ class InfdbClient:
                     length_geo AS cost,
                     length_geo AS reverse_cost,
                     geom,
-                    ('ways_per_junction:' || id::text) AS remote_id
-                FROM ways_per_junction
+                    ('ways_per_connection:' || id::text) AS remote_id
+                FROM ways_per_connection
                 WHERE postcode = %(plz)s
 
                 UNION ALL
