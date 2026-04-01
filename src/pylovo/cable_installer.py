@@ -277,10 +277,16 @@ class CableInstaller:
                     current_available_cables["x_ohm_per_km"] ** 2
                 )
 
-                voltage_available_cables = current_available_cables[
-                    current_available_cables["cable_impedence"] <=
-                    VN * VOLTAGE_DROP_DISTRIBUTION_PERCENT / 100 / (Imax * distance / count)
-                ]
+                # Guard against zero/non-finite denominator (for example Imax == 0).
+                # In this edge case, skip voltage-drop filtering and keep current-based candidates.
+                voltage_denominator = Imax * distance / count
+                if voltage_denominator <= 0 or not np.isfinite(voltage_denominator):
+                    voltage_available_cables = current_available_cables
+                else:
+                    voltage_available_cables = current_available_cables[
+                        current_available_cables["cable_impedence"] <=
+                        VN * VOLTAGE_DROP_DISTRIBUTION_PERCENT / 100 / voltage_denominator
+                    ]
 
                 if len(voltage_available_cables) == 0:
                     count += 1
