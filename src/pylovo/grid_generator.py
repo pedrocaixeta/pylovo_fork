@@ -61,6 +61,7 @@ class GridGenerator:
         self.dbc.create_temp_tables(plz)  # create PLZ-suffixed temp tables
         # self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
 
+        interrupted = False
         try:
             self.generate_grid()
             self.dbc.save_tables(plz=self.plz)  # Save data from temporary tables to result tables
@@ -71,6 +72,10 @@ class GridGenerator:
                 self.dbc.commit_changes()  # commit the changes to the database
         except ResultExistsError:
             self.dbc.logger.info(f"Grid for the postcode area {plz} has already been generated.")
+        except KeyboardInterrupt:
+            interrupted = True
+            self.logger.warning(f"Grid generation interrupted by user for PLZ {self.plz}.")
+            self.dbc.conn.rollback()
         except Exception as e:
             self.logger.error(f"Error during grid generation for PLZ {self.plz}: {e}")
             self.logger.info(f"Skipped PLZ {self.plz} due to generation error.")
@@ -78,8 +83,24 @@ class GridGenerator:
             self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
             traceback.print_exc()
         finally:
-            # Always clean up temporary tables, even if there was an error
-            self.dbc.drop_temp_tables(plz)  # drop PLZ-suffixed temp tables
+            # Always clean up temporary tables, even if there was an error.
+            # Roll back first so cleanup can run after SQL errors/interrupts.
+            try:
+                self.dbc.conn.rollback()
+            except Exception:
+                pass
+
+            try:
+                self.dbc.drop_temp_tables(plz)  # drop PLZ-suffixed temp tables
+                # Commit cleanup so dropped tables don't reappear after interruption.
+                self.dbc.commit_changes()
+            except Exception as cleanup_error:
+                self.logger.error(
+                    f"Failed to clean up PLZ-specific temporary tables for PLZ {plz}: {cleanup_error}"
+                )
+
+        if interrupted:
+            raise KeyboardInterrupt("Grid generation interrupted by user")
 
         if refresh_mv:
             # update the materialized views to reflect changes in their base tables
@@ -95,6 +116,10 @@ class GridGenerator:
         :param analyze_grids: option to analyse the results after grid generation, defaults to False
         :param parallel: optionally use parallel workers, defaults to True
         """
+        # One-time cleanup of leftover PLZ-specific temp tables from previously interrupted runs.
+        self.dbc.drop_orphaned_plz_temp_tables()
+        self.dbc.commit_changes()
+
         plz_list = [int(row["plz"]) for _, row in df_plz.iterrows()]
         
         # Use parallel processing if:

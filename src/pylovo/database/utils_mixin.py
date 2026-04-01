@@ -39,6 +39,34 @@ class UtilsMixin(BaseMixin, ABC):
         # Drop the vertices table created by pgr_createTopology (correct naming pattern)
         self.cur.execute(f"DROP TABLE IF EXISTS ways_tem_{plz}_vertices_pgr CASCADE")
 
+    def drop_orphaned_plz_temp_tables(self) -> None:
+        """Drop all leftover PLZ-suffixed temp tables from previous interrupted runs.
+
+        Only suffixed tables are removed (for example, buildings_tem_80805, ways_tem_80805,
+        ways_tem_80805_vertices_pgr). Base tables like buildings_tem and ways_tem are never dropped.
+        """
+        query = """
+            SELECT tablename
+            FROM pg_tables
+            WHERE schemaname = current_schema()
+              AND (
+                  tablename ~ '^buildings_tem_[0-9]+$'
+                  OR tablename ~ '^ways_tem_[0-9]+$'
+                  OR tablename ~ '^ways_tem_[0-9]+_vertices_pgr$'
+              )
+            ORDER BY tablename;
+        """
+        self.cur.execute(query)
+        table_names = [row[0] for row in self.cur.fetchall()]
+
+        for table_name in table_names:
+            self.cur.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+
+        if table_names:
+            self.logger.info(
+                f"Dropped {len(table_names)} orphaned PLZ temp tables from previous runs."
+            )
+
     def refresh_materialized_views(self) -> None:
         for query in REFRESH_QUERIES.values():
             self.cur.execute(query)

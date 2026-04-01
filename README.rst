@@ -82,7 +82,7 @@ Quick Start
 
    a) Clone the infdb repository with its sumbmodules ``git clone --recurse-submodules git@github.com:tum-ens/InfDB.git infdb-pylovo`` (If your submodules are not properly downloaded you might need to additionally run ``git submodule update --init --recursive``)
    b) Initialize the database with infdb-db service ``bash infdb.sh start``
-   c) Configure the import in ``configs/config-infdb-import.yml and download the required data with infdb-import service ``bash infdb.sh import``
+   c) Configure the import in ``configs/config-infdb-import.yml`` and download the required data with ``bash infdb.sh import``
    d) Run the required preprocessing tools ``bash tools/tools.sh -p basedata-buildings <AGS>`` and ``bash tools/tools.sh -p basedata-ways <AGS>`` for the respective region (<AGS> code) you want to generate pylovo grids for.
 
    | Note: if this is not running for you check for updates in the infdb documentation

@@ -47,6 +47,10 @@ def create_grid_single_plz(plz: int, plot_results: bool = False):
     if not USE_INFDB:
         import_buildings_for_single_plz(gg)
 
+    # Remove leftovers from previously interrupted runs (only PLZ-suffixed temp tables).
+    gg.dbc.drop_orphaned_plz_temp_tables()
+    gg.dbc.commit_changes()
+
     # Generate a grid for the specified region
     gg.generate_grid_for_single_plz(plz=plz, analyze_grids=ANALYZE_GRIDS)
 
