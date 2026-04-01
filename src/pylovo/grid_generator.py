@@ -846,8 +846,11 @@ class GridGenerator:
         cluster_list = self.dbc.get_list_from_plz(self.plz)
         if TESTING:
             cluster_list = cluster_list[:5]  # Limit to first 5 clusters for testing
+        total_clusters = len(cluster_list)
         ci_count = 0
         next_progress_checkpoint = 10
+        converged_count = 0
+        not_converged_count = 0
 
         for id in cluster_list:
             kcid, bcid = id
@@ -1004,7 +1007,6 @@ class GridGenerator:
 
             # Track and report progress using real cluster counts.
             ci_count += 1
-            total_clusters = len(cluster_list)
             current_percent = int((ci_count / total_clusters) * 100)
 
             while current_percent >= next_progress_checkpoint and next_progress_checkpoint <= 100:
@@ -1013,19 +1015,32 @@ class GridGenerator:
                 )
                 next_progress_checkpoint += 10
 
-            self.save_net(backend, kcid, bcid)
+            powerflow_status = self.save_net(backend, kcid, bcid)
+            if powerflow_status == "converged":
+                converged_count += 1
+            else:
+                not_converged_count += 1
 
-    def save_net(self, backend: IElectricalBackend, kcid, bcid):
+        self.logger.info(
+            f"Cable installation finished for PLZ {self.plz}: processed_clusters={total_clusters}, "
+            f"power_flow_converged={converged_count}/{total_clusters}, "
+            f"power_flow_not_converged={not_converged_count}"
+        )
+
+    def save_net(self, backend: IElectricalBackend, kcid, bcid) -> str:
         """
         Validate and save grid to file and database using backend pattern.
         """
         # Validate grid with power flow before saving
+        powerflow_status = "not_converged"
         try:
             converged = backend.solve_power_flow()
             if converged:
                 self.logger.info(f"Power flow converged for kcid={kcid}, bcid={bcid}")
+                powerflow_status = "converged"
             else:
                 self.logger.warning(f"Power flow did NOT converge for kcid={kcid}, bcid={bcid}")
+                powerflow_status = "not_converged"
         except Exception as e:
             self.logger.warning(f"Power flow failed for kcid={kcid}, bcid={bcid}: {e}")
 
@@ -1046,4 +1061,5 @@ class GridGenerator:
         self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string, transformer_description)
 
         self.logger.debug(f"Grid with kcid:{kcid} bcid:{bcid} is stored.")
+        return powerflow_status
 
