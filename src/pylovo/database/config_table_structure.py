@@ -379,6 +379,8 @@ CREATE_QUERIES = {
             ON gr.version_id = ed.version_id 
             AND gr.transformer_equipment_name = ed.name
     );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_transformer_positions_with_grid_uq_grid_result_id
+            ON transformer_positions_with_grid (grid_result_id);
     CREATE INDEX IF NOT EXISTS idx_transformer_positions_with_grid_geom ON transformer_positions_with_grid USING gist (geom)
     """,
     "transformer_classified_with_grid": """
@@ -404,6 +406,8 @@ CREATE_QUERIES = {
             ON gr.version_id = ed.version_id 
             AND gr.transformer_equipment_name = ed.name
     );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_transformer_classified_with_grid_uq_grid_result_id_classification_id
+            ON transformer_classified_with_grid (grid_result_id, classification_id);
     CREATE INDEX IF NOT EXISTS idx_transformer_classified_with_grid_geom ON transformer_classified_with_grid USING gist (geom)
     """,
     "buildings_result_with_grid": """
@@ -415,6 +419,8 @@ CREATE_QUERIES = {
         FROM buildings_result br
         JOIN grid_result gr ON br.grid_result_id = gr.grid_result_id
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_buildings_result_with_grid_uq_id
+    ON buildings_result_with_grid (id);
     CREATE INDEX IF NOT EXISTS idx_buildings_result_with_grid_geom ON buildings_result_with_grid USING gist (geom)
     """,
     "lines_result_with_grid": """
@@ -432,6 +438,8 @@ CREATE_QUERIES = {
         FROM lines_result lr
         JOIN grid_result gr ON lr.grid_result_id = gr.grid_result_id
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_lines_result_with_grid_uq_id
+    ON lines_result_with_grid (id);
     CREATE INDEX IF NOT EXISTS idx_lines_result_with_grid_geom ON lines_result_with_grid USING gist (geom)
     """,
 }
