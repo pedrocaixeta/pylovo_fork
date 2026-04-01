@@ -62,7 +62,7 @@ Main processing steps for pylovo:
 User Data Requirements
 ------------------------------------------------------------------------
 
-Pylovo requires user-provided geospatial data in the ``raw_data/`` directory:
+Without infdb, pylovo requires substantial user-provided geospatial data in the ``raw_data/`` directory:
 
 **Note**: When using InfDB, building and street data are fetched directly from the database, reducing the need for local shapefiles.
 
@@ -77,12 +77,15 @@ Quick Start
 0. **Requirements**: Python 3.12+, Docker, Ubuntu WSL2 or Linux-based OS, uv
 
 1. | **Setup InfDB**:
-   | Follow the documentation in `InfDB <https://tum-ens.github.io/InfDB/usage/>`_ from release 2.0.0 to set up the infdb database for pylovo.
-   | Summarized you have to built three docker container:
+   | Follow the documentation in `InfDB <https://tum-ens.github.io/InfDB/usage/>`_ from release 3.0.0 to set up the infdb database for pylovo.
+   | Summarized you have to follow these steps:
 
-   a) ...first, initialize the database with infdb-db service ``bash infdb-start.sh up -d --build``
-   b) ...second, configure and import the required data with infdb-import service ``bash infdb-import.sh``
-   c) ...third, run the required preprocessing basedata tool ``bash tools/infdb-basedata/run.sh``
+   a) Clone the infdb repository with its sumbmodules ``git clone --recurse-submodules git@github.com:tum-ens/InfDB.git infdb-pylovo`` (If your submodules are not properly downloaded you might need to additionally run ``git submodule update --init --recursive``)
+   b) Initialize the database with infdb-db service ``bash infdb.sh start``
+   c) Configure the import in ``configs/config-infdb-import.yml and download the required data with infdb-import service ``bash infdb.sh import``
+   d) Run the required preprocessing tools ``bash tools/tools.sh -p basedata-buildings <AGS>`` and ``bash tools/tools.sh -p basedata-ways <AGS>`` for the respective region (<AGS> code) you want to generate pylovo grids for.
+
+   | Note: if this is not running for you check for updates in the infdb documentation
 
 2. | **Install pylovo**:
    | Input data has been prepared, next lets focus on pylovo - setup the repository as follows:
