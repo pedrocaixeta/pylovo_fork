@@ -513,12 +513,16 @@ class GridGenerator:
         transformer_capacities, _ = self.dbc.get_transformer_data(settlement_type)
         # Use the two largest available transformers
         double_trans = np.multiply(transformer_capacities[-2:], 2)
+        self.logger.info(f"Start BCID dimensioning for PLZ {plz}, KCID {kcid}")
 
         # Get distance matrix and prepare for hierarchical clustering
         localid2vid, dist_mat, vid2localid = self.dbc.get_distance_matrix_from_kcid(kcid)
         dist_vector = squareform(dist_mat)
 
         if len(dist_vector) == 0:
+            self.logger.warning(
+                f"Skipped BCID dimensioning for PLZ {plz}, KCID {kcid}: empty distance vector"
+            )
             return
 
         # Initialize hierarchical clustering
@@ -527,9 +531,11 @@ class GridGenerator:
         invalid_trans_cluster_dict = {}
         cluster_amount = 2
         new_localid2vid = localid2vid
+        reclustering_iterations = 0
 
         # Iterative clustering process
         while True:
+            reclustering_iterations += 1
             # Try clustering with current parameters
             invalid_cluster_dict, cluster_dict, _ = self.dbc.load_constrained_hierarchical_clustering(Z, cluster_amount, new_localid2vid, buildings,
                                                                                                       consumer_cat_df, transformer_capacities,
@@ -551,13 +557,19 @@ class GridGenerator:
             # Check if clustering is complete
             if not invalid_trans_cluster_dict:
                 self.logger.info(
-                    f"Found {len(valid_cluster_dict)} single transformer clusters for KCID: {kcid} (postcode: {plz})"
+                    f"BCID dimensioning complete for PLZ {plz}, KCID {kcid}: "
+                    f"{len(valid_cluster_dict)} single-transformer clusters, "
+                    f"cluster_split_iterations={reclustering_iterations}"
                 )
                 break
             else:
-                # Process too large clusters by re-clustering them
-                self.logger.info(
-                    f"Found {len(invalid_trans_cluster_dict)} too_large clusters for PLZ: {plz}, KCID: {kcid}"
+                # Process too-large clusters by re-clustering them.
+                # This value can go up and down while invalid clusters are split iteratively.
+                pending_oversized = len(invalid_trans_cluster_dict)
+                self.logger.debug(
+                    f"BCID dimensioning progress for PLZ {plz}, KCID {kcid}: "
+                    f"iteration={reclustering_iterations}, pending_oversized={pending_oversized}, "
+                    f"accepted_clusters={len(valid_cluster_dict)}"
                 )
 
                 # Get buildings from the first too-large cluster for re-clustering
@@ -703,6 +715,10 @@ class GridGenerator:
         # If there's only one connection point, use it
         if len(connection_points) == 1:
             self.dbc.upsert_transformer_selection(plz, kcid, bcid, connection_points[0])
+            self.logger.debug(
+                f"Greenfield transformer positioned for PLZ {plz}, KCID {kcid}, BCID {bcid}: "
+                f"single connection point {connection_points[0]}"
+            )
             return
 
         # Get distance matrix between all connection points
@@ -721,7 +737,10 @@ class GridGenerator:
         # Update the database with the selected transformer position
         self.dbc.upsert_transformer_selection(plz, kcid, bcid, ont_connection_id)
 
-        self.logger.info("Greenfield clusters completed")
+        self.logger.debug(
+            f"Greenfield transformer positioned for PLZ {plz}, KCID {kcid}, BCID {bcid}: "
+            f"selected connection point {ont_connection_id} from {len(connection_points)} candidates"
+        )
 
     def prepare_vertices_list(self, plz: int, kcid: int, bcid: int) -> tuple[
         dict, int, list, pd.DataFrame, pd.DataFrame, list, list]:
@@ -828,11 +847,11 @@ class GridGenerator:
         if TESTING:
             cluster_list = cluster_list[:5]  # Limit to first 5 clusters for testing
         ci_count = 0
-        ci_process = 0
+        next_progress_checkpoint = 10
 
         for id in cluster_list:
             kcid, bcid = id
-            self.logger.info(f"Start cable installation for PLZ {self.plz} kcid {kcid} bcid {bcid}")
+            self.logger.debug(f"Start cable installation for PLZ {self.plz} kcid {kcid} bcid {bcid}")
 
             # Get data for this cluster
             vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes = (
@@ -867,7 +886,7 @@ class GridGenerator:
             installer.create_consumer_bus_and_load(consumer_list, sim_load_per_building, buildings_df, load_type)
 
             trafo_power = self.dbc.get_transformer_rated_power_from_bcid(self.plz, kcid, bcid)
-            self.logger.info(
+            self.logger.debug(
                 f"Backend network initialized (buses={backend.get_component_count('buses')}, "
                 f"loads={backend.get_component_count('loads')}, transformer_rated_power={trafo_power} kVA)"
             )
@@ -908,7 +927,7 @@ class GridGenerator:
                             vertices_dict, cable, count, ont_vertice
                         )
                         local_length_dict[cable] += length
-                        self.logger.info(
+                        self.logger.debug(
                             f"Final branch backbone installed (PLZ={self.plz}, kcid={kcid}, bcid={bcid}, "
                             f"start_node={connection_node_list[0]}, cable={cable}, parallels={count}, length_km={length:.4f})"
                         )
@@ -983,17 +1002,16 @@ class GridGenerator:
                 f"total_length={total_length:.3f} km ({cable_summary})"
             )
 
-            # Track and report progress
+            # Track and report progress using real cluster counts.
             ci_count += 1
-            progress_increment = 10  # Report progress in 10% increments
-            progress_threshold = max(1, len(cluster_list) / progress_increment)
+            total_clusters = len(cluster_list)
+            current_percent = int((ci_count / total_clusters) * 100)
 
-            if ci_count >= progress_threshold:
-                ci_process += progress_increment
-                ci_count = 0
+            while current_percent >= next_progress_checkpoint and next_progress_checkpoint <= 100:
                 self.logger.info(
-                    f"Cable installation: {min(ci_process, 100)}% complete ({ci_process // progress_increment}/{progress_increment})"
+                    f"Cable installation progress: {ci_count}/{total_clusters} clusters ({current_percent}%)"
                 )
+                next_progress_checkpoint += 10
 
             self.save_net(backend, kcid, bcid)
 
@@ -1005,11 +1023,11 @@ class GridGenerator:
         try:
             converged = backend.solve_power_flow()
             if converged:
-                self.logger.info(f"✓ Power flow converged for kcid={kcid}, bcid={bcid}")
+                self.logger.info(f"Power flow converged for kcid={kcid}, bcid={bcid}")
             else:
-                self.logger.warning(f"⚠ Power flow did NOT converge for kcid={kcid}, bcid={bcid}")
+                self.logger.warning(f"Power flow did NOT converge for kcid={kcid}, bcid={bcid}")
         except Exception as e:
-            self.logger.warning(f"⚠ Power flow failed for kcid={kcid}, bcid={bcid}: {e}")
+            self.logger.warning(f"Power flow failed for kcid={kcid}, bcid={bcid}: {e}")
 
         if SAVE_GRID_FOLDER:
             savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
@@ -1027,5 +1045,5 @@ class GridGenerator:
 
         self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string, transformer_description)
 
-        self.logger.info(f"Grid with kcid:{kcid} bcid:{bcid} is stored. ")
+        self.logger.debug(f"Grid with kcid:{kcid} bcid:{bcid} is stored.")
 

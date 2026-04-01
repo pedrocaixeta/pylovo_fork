@@ -186,10 +186,8 @@ For more information, see the README: https://github.com/tum-ens/pylovo
         if args.plz:
             # Command-line PLZ argument(s) provided
             if len(args.plz) == 1:
-                print(f"Creating grid for single PLZ: {args.plz[0]}")
                 create_grid_single_plz(args.plz[0])
             else:
-                print(f"Creating grids for multiple PLZ: {args.plz}")
                 create_grid_multiple_plz(args.plz, parallel=not args.no_parallel)
 
         elif args.ags:

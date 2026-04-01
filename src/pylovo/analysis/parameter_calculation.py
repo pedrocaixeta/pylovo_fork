@@ -86,13 +86,13 @@ class ParameterCalculator:
             return
 
         try:
-            self.dbc.logger.info("Start basic result analysis")
+            self.dbc.logger.info(f"PLZ {self.plz}: start basic result analysis")
             self.analyse_basic_parameters_per_plz(self.plz)
-            self.dbc.logger.info("Start cable counting")
+            self.dbc.logger.info(f"PLZ {self.plz}: start cable counting")
             self.analyse_cables_per_plz(self.plz)
-            self.dbc.logger.info("Start per trafo analysis")
+            self.dbc.logger.info(f"PLZ {self.plz}: start per-trafo analysis")
             self.analyse_trafo_parameters_per_plz(self.plz)
-            self.dbc.logger.info("Result analysis finished")
+            self.dbc.logger.info(f"PLZ {self.plz}: result analysis finished")
             self.dbc.conn.commit()
         except Exception as e:
             self.dbc.logger.error(f"Error during analysis for PLZ {self.plz}: {e}")
@@ -723,8 +723,10 @@ class ParameterCalculator:
             percent = int(processed / count * 100)
             if percent // 10 > last_reported // 10:
                 last_reported = percent
-                self.dbc.logger.info(f"{percent} percent finished")
-        self.dbc.logger.info("analyse_basic_parameters finished.")
+                self.dbc.logger.info(
+                    f"PLZ {plz}: basic analysis progress {processed}/{count} grids ({percent}%)"
+                )
+        self.dbc.logger.info(f"PLZ {plz}: analyse_basic_parameters finished")
         trafo_string = json.dumps(trafo_dict)
         load_count_string = json.dumps(load_count_dict)
         bus_count_string = json.dumps(bus_count_dict)
@@ -763,8 +765,10 @@ class ParameterCalculator:
             percent = int(processed / count * 100)
             if percent // 10 > last_reported // 10:
                 last_reported = percent
-                self.dbc.logger.info(f"{percent} % processed")
-        self.dbc.logger.info("analyse_cables finished.")
+                self.dbc.logger.info(
+                    f"PLZ {plz}: cable analysis progress {processed}/{count} grids ({percent}%)"
+                )
+        self.dbc.logger.info(f"PLZ {plz}: analyse_cables finished")
         cable_length_string = json.dumps(cable_length_dict)
         self.dbc.insert_cable_length(plz, cable_length_string)
 
@@ -850,8 +854,10 @@ class ParameterCalculator:
             percent = int(processed / count * 100)
             if percent // 10 > last_reported // 10:
                 last_reported = percent
-                self.dbc.logger.info(f"{percent} % processed")
-        self.dbc.logger.info("analyse_per_trafo_parameters finished.")
+                self.dbc.logger.info(
+                    f"PLZ {plz}: per-trafo analysis progress {processed}/{count} grids ({percent}%)"
+                )
+        self.dbc.logger.info(f"PLZ {plz}: analyse_per_trafo_parameters finished")
 
         trafo_load_string = json.dumps(trafo_load_dict)
         trafo_max_distance_string = json.dumps(trafo_max_distance_dict)

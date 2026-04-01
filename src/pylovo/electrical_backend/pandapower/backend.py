@@ -226,7 +226,7 @@ class PandapowerBackend(IElectricalBackend):
 
             converged = self.net.converged
             if converged:
-                self.logger.info("Power flow converged")
+                self.logger.debug("Power flow converged")
             else:
                 self.logger.warning("Power flow did not converge")
             return converged
@@ -276,10 +276,10 @@ class PandapowerBackend(IElectricalBackend):
                 pp.to_json(self.net, filename=filename)
                 with open(filename, 'r') as f:
                     json_str = f.read()
-                self.logger.info(f"Exported to JSON file: {filename}")
+                self.logger.debug(f"Exported to JSON file: {filename}")
             else:
                 json_str = pp.to_json(self.net)
-                self.logger.info("Exported to JSON")
+                self.logger.debug("Exported to JSON")
             return json_str
 
         except Exception as e:
