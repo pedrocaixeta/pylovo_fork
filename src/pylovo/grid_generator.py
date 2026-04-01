@@ -388,9 +388,8 @@ class GridGenerator:
         self.logger.info(f"The ways_tem table filled with {ways_count} ways")
 
         # Run preprocessing functions that segment roads and connect buildings
-        if not USE_INFDB:
-            self.dbc.preprocess_ways()
-            self.logger.info(f"Ways preprocessing completed in ways_tem.")
+        self.dbc.preprocess_ways()
+        self.logger.info(f"Ways preprocessing completed in ways_tem.")
 
         # Build pgRouting topology on the processed network
         self.dbc.build_pgr_network_topology(self.plz)

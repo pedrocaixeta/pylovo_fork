@@ -698,13 +698,14 @@ class PreprocessingMixin(BaseMixin, ABC):
         - All intersecting ways are properly split.
         - All buildings are connected to the network via dedicated segments.
 
-        When the flag USE_INFDB is set to "True", the function generate_building_to_way_connections_infdb() 
-        is used instead. This version utilizes the 'address_street_id' column in the infdb.buildings table, 
-        which stores the closest road segment assigned via address-level matching. 
-        If this column is null for a building, fallback to the traditional distance-based logic is applied.
+        When the flag USE_INFDB is set to "True", the function generate_transformer_to_way_connections_infdb() 
+        is used instead.
         """
-        self.cur.execute("SELECT segment_intersecting_ways();")
-        self.cur.execute("SELECT generate_building_to_way_connections();")
+        if USE_INFDB:
+            self.cur.execute("SELECT generate_transformer_to_way_connections_infdb();")
+        else:
+            self.cur.execute("SELECT segment_intersecting_ways();")
+            self.cur.execute("SELECT generate_building_to_way_connections();")
 
     def build_pgr_network_topology(self, plz: int) -> None:
         """Builds the pgRouting-compatible network topology from the updated `ways_tem` table.
