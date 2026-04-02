@@ -68,7 +68,7 @@ class GridGenerator:
             self.dbc.commit_changes()
             if analyze_grids:
                 pc = ParameterCalculator()
-                pc.calc_parameters_per_plz(plz)
+                pc.analyze_parameters_for_plz(plz)
                 self.dbc.commit_changes()  # commit the changes to the database
         except ResultExistsError:
             self.dbc.logger.info(f"Grid for the postcode area {plz} has already been generated.")

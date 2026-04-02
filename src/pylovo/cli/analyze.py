@@ -8,14 +8,14 @@ from pylovo.analysis.parameter_calculation import ParameterCalculator
 def analyze_plz(plz):
     """Calculate parameters for all grids in a PLZ."""
     pc = ParameterCalculator()
-    pc.calc_parameters_per_plz(plz)
+    pc.analyze_parameters_for_plz(plz)
     print(f"✓ Calculated parameters for PLZ {plz}")
 
 
 def analyze_grid(plz):
     """Calculate parameters per individual grid (must run after analyze_plz)."""
     pc = ParameterCalculator()
-    pc.calc_parameters_per_grid(plz)
+    pc.analyze_grid_parameters_for_plz(plz)
     print(f"✓ Calculated parameters per grid for PLZ {plz}")
 
 

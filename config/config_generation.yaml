@@ -1,7 +1,7 @@
 # =============================================================================
 # Version CONFIGURATION
 # =============================================================================
-VERSION_ID: "2" # Change version if you changed any grid parameters or queries (e.g. transformer query)
+VERSION_ID: "1" # Change version if you changed any grid parameters or queries (e.g. transformer query)
 VERSION_COMMENT: swf_equipment # State here which parameters, queries are used to compute the grids with current VERSION_ID
 
 # =============================================================================

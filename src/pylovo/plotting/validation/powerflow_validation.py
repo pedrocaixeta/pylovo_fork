@@ -3,7 +3,7 @@ Power flow validation_swf plotting functions.
 
 This module contains plotting functions for visualizing power flow validation_swf results,
 including voltage distributions, line loading, and grid performance metrics.
-Used primarily with src/analysis/powerflow_analysis.py.
+Used primarily with src/analysis/powerflow_calculation.py.
 """
 
 from typing import Tuple, Optional

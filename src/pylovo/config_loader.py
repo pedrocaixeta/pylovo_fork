@@ -285,7 +285,7 @@ CSV_FILE_LIST = [
 # PLOTTING CONFIGURATION (from CONFIG_ANALYSIS)
 # =============================================================================
 # Plotly configuration
-ACCESS_TOKEN_PLOTLY = get_required_env_var("ACCESS_TOKEN_PLOTLY", "Plotly access token")
+ACCESS_TOKEN_PLOTLY = os.getenv("ACCESS_TOKEN_PLOTLY")
 
 # TUM Color definitions
 TUMBlue = CONFIG_ANALYSIS["COLORS"]["TUMBlue"]

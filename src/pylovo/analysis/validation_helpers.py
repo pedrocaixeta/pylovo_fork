@@ -1,13 +1,13 @@
 """
-Helper functions for validation operations.
-
-These functions support the validation CLI commands for processing
-pandapower network JSON files and geodata export.
+Utility helpers for reading validation nets and exporting simple geodata views.
 """
 import json
+import shutil
 from pathlib import Path
-import pandapower as pp
+
 import geopandas as gpd
+import pandapower as pp
+from tqdm import tqdm
 from shapely.geometry import LineString, Point
 
 
@@ -88,5 +88,150 @@ def get_bus_line_geo(net, net_index: int, projection: str):
     return gdf_line, gdf_bus
 
 
-__all__ = ["iter_nets_from_json", "get_bus_line_geo"]
+def extract_mv_grid(net: pp.pandapowerNet, output_dir: Path | str) -> Path | None:
+    """Extract and persist the MV part of a SWF validation net.
+
+    The SWF source data encodes MV buses via `chr_name` prefixes. The extracted
+    MV net keeps both MV buses and the transformer buses needed to preserve the
+    interface to downstream LV grids.
+    """
+    output_dir = Path(output_dir)
+    mv_dir = output_dir / "regular"
+    mv_dir.mkdir(parents=True, exist_ok=True)
+
+    if "chr_name" not in net.bus.columns:
+        raise ValueError("Cannot extract the MV grid because the bus table has no 'chr_name' column.")
+
+    mv_buses = net.bus[net.bus["chr_name"].fillna("").str.startswith("5", na=False)].index.tolist()
+    trafo_buses = list(net.trafo["hv_bus"]) + list(net.trafo["lv_bus"])
+    buses_to_keep = sorted(set(mv_buses + trafo_buses))
+    if not buses_to_keep:
+        return None
+
+    mv_net = pp.select_subnet(net, buses=buses_to_keep, include_results=False)
+    mv_net.name = "MV_5001"
+
+    json_path = mv_dir / "MV_5001.json"
+    pp.to_json(mv_net, str(json_path))
+    pp.to_excel(mv_net, str(json_path.with_suffix(".xlsx")))
+    return json_path
+
+
+def extract_lv_grids(net: pp.pandapowerNet, output_dir: Path | str) -> list[Path]:
+    """Extract and persist LV subnets from a SWF validation net.
+
+    The extraction is intentionally strict: LV buses are grouped by their encoded
+    subnet ID and neighboring buses are not force-included. This preserves the
+    original radial subnet boundaries expected by the validation assets.
+    """
+    output_dir = Path(output_dir)
+    regular_dir = output_dir / "regular"
+    mini_dir = output_dir / "mini_grids"
+    regular_dir.mkdir(parents=True, exist_ok=True)
+    mini_dir.mkdir(parents=True, exist_ok=True)
+
+    if "chr_name" not in net.bus.columns:
+        raise ValueError("Cannot extract LV grids because the bus table has no 'chr_name' column.")
+
+    bus_df = net.bus.copy()
+    bus_df["sub_id"] = bus_df["chr_name"].apply(
+        lambda value: value[1:4] if isinstance(value, str) and len(value) > 4 and value.startswith("7") else None
+    )
+    unique_subnets = bus_df["sub_id"].dropna().unique()
+
+    saved_paths: list[Path] = []
+    for sub_id in tqdm(unique_subnets):
+        core_buses = bus_df[bus_df["sub_id"] == sub_id].index.tolist()
+        if not core_buses:
+            continue
+
+        try:
+            relevant_trafos = net.trafo[net.trafo["lv_bus"].isin(core_buses)]
+            lv_net = pp.select_subnet(net, buses=core_buses, include_results=False)
+            lv_net.name = f"LV_{sub_id}"
+
+            # Preserve the feeder entry point so each exported LV subnet stays solvable.
+            for _, trafo in relevant_trafos.iterrows():
+                lv_bus = trafo["lv_bus"]
+                if lv_bus in lv_net.bus.index:
+                    pp.create_ext_grid(lv_net, bus=lv_bus, name=f"Feed_from_{trafo['name']}")
+
+            target_dir = mini_dir if len(lv_net.bus) < 5 else regular_dir
+            json_path = target_dir / f"LV_{sub_id}.json"
+            pp.to_json(lv_net, str(json_path))
+            pp.to_excel(lv_net, str(json_path.with_suffix(".xlsx")))
+            saved_paths.append(json_path)
+        except Exception:
+            continue
+
+    return saved_paths
+
+
+def split_to_subgrids(
+    input_file: Path | str,
+    output_dir: Path | str,
+    clear_output_dir: bool = True,
+) -> dict[str, list[Path] | Path | None]:
+    """Split a source validation net into one MV net and multiple LV subnets."""
+    input_file = Path(input_file)
+    output_dir = Path(output_dir)
+
+    if clear_output_dir and output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    net = pp.from_json(str(input_file))
+    mv_path = extract_mv_grid(net, output_dir)
+    lv_paths = extract_lv_grids(net, output_dir)
+    return {"mv_grid": mv_path, "lv_grids": lv_paths}
+
+
+def _resolve_convert_geodata_to_geojson():
+    """Resolve the pandapower geojson conversion helper across version differences."""
+    try:
+        from pandapower.plotting.geo import convert_geodata_to_geojson
+        return convert_geodata_to_geojson
+    except ImportError:
+        try:
+            from pandapower.plotting import convert_geodata_to_geojson
+            return convert_geodata_to_geojson
+        except ImportError as exc:
+            raise ImportError(
+                "convert_geodata_to_geojson not found in pandapower.plotting or pandapower.plotting.geo"
+            ) from exc
+
+
+def fix_subnet_geos(base_dir: Path | str) -> tuple[int, int]:
+    """Convert bus and line geodata of exported subnet JSON files into GeoJSON-ready form."""
+    base_dir = Path(base_dir)
+    convert_geodata_to_geojson = _resolve_convert_geodata_to_geojson()
+    files = sorted(base_dir.glob("**/*.json"))
+
+    success_count = 0
+    fail_count = 0
+    for file_path in tqdm(files):
+        try:
+            net = pp.from_json(str(file_path))
+            convert_geodata_to_geojson(net, delete=False)
+            pp.to_json(net, str(file_path))
+
+            excel_path = file_path.with_suffix(".xlsx")
+            if excel_path.exists():
+                pp.to_excel(net, str(excel_path))
+
+            success_count += 1
+        except Exception:
+            fail_count += 1
+
+    return success_count, fail_count
+
+
+__all__ = [
+    "extract_lv_grids",
+    "extract_mv_grid",
+    "fix_subnet_geos",
+    "get_bus_line_geo",
+    "iter_nets_from_json",
+    "split_to_subgrids",
+]
 
