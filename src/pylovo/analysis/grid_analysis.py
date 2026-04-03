@@ -10,6 +10,50 @@ if TYPE_CHECKING:
     from pylovo.analysis.parameter_calculation import ParameterCalculator
 
 
+def _get_transformer_mva(net: pp.pandapowerNet) -> float:
+    """Return the transformer rating in MVA.
+
+    Synthetic grids store the transformer in ``net.trafo``.
+    Real grids (e.g. SWF Forchheim exports) use an ``ext_grid`` element instead
+    and carry no ``sn_mva`` in the trafo table, so ``float('nan')`` is returned.
+    """
+    if not net.trafo.empty and "sn_mva" in net.trafo.columns:
+        return float(net.trafo["sn_mva"].iloc[0])
+    return float("nan")
+
+
+def _calculate_resistance(
+    calculator: "ParameterCalculator",
+    net: pp.pandapowerNet,
+    graph,
+) -> float:
+    """Return the impedance-weighted resistance proxy for any grid type.
+
+    Delegates to ``calculator.calculate_impedance_metrics`` which expects a
+    ``max_p_mw`` column in ``net.load``.  Synthetic grids already carry this
+    column; real grids provide only ``p_mw``.  When ``max_p_mw`` is absent,
+    current active power (``p_mw``) is used as a stand-in — the column is
+    added temporarily and removed after the calculation.
+    """
+    load = net.load
+    if load.empty or "bus" not in load.columns:
+        return 0.0
+
+    if "max_p_mw" in load.columns:
+        _, resistance, *_ = calculator.calculate_impedance_metrics(net, graph)
+        return float(resistance)
+
+    if "p_mw" not in load.columns:
+        return 0.0
+
+    net.load["max_p_mw"] = net.load["p_mw"]
+    try:
+        _, resistance, *_ = calculator.calculate_impedance_metrics(net, graph)
+    finally:
+        del net.load["max_p_mw"]
+    return float(resistance)
+
+
 def compute_comparison_parameters(
     calculator: "ParameterCalculator",
     net: pp.pandapowerNet,
@@ -43,6 +87,10 @@ def compute_comparison_parameters(
         house_connections = len(net.load["bus"].unique()) if not net.load.empty else 0
         avg_trafo_distance = 0.0
         max_trafo_distance = 0.0
+        graph = pp.topology.create_nxgraph(net, respect_switches=True)
+
+    transformer_mva = _get_transformer_mva(net)
+    resistance = _calculate_resistance(calculator, net, graph)
 
     return {
         "feeder_lines": int(feeder_lines),
@@ -50,6 +98,8 @@ def compute_comparison_parameters(
         "cable_length": float(calculator.calculate_cable_length(net, only_in_service=True)),
         "avg_trafo_distance": float(avg_trafo_distance),
         "max_trafo_distance": float(max_trafo_distance),
+        "transformer_mva": transformer_mva,
+        "resistance": resistance,
     }
 
 
