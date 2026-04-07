@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, Dict
 
+import pandas as pd
 import pandapower as pp
 
 from pylovo.config_loader import PEAK_LOAD_HOUSEHOLD
@@ -11,14 +12,17 @@ if TYPE_CHECKING:
 
 
 def _get_transformer_mva(net: pp.pandapowerNet) -> float:
-    """Return the transformer rating in MVA.
+    """Return the transformer rating in MVA from ``net.trafo["sn_mva"]``.
 
-    Synthetic grids store the transformer in ``net.trafo``.
-    Real grids (e.g. SWF Forchheim exports) use an ``ext_grid`` element instead
-    and carry no ``sn_mva`` in the trafo table, so ``float('nan')`` is returned.
+    Both synthetic grids and real LV subnets carry the transformer as an
+    out-of-service element (added by
+    :func:`~pylovo.analysis.validation_helpers.extract_lv_grids`), so
+    ``sn_mva`` is always readable directly from the network object.
     """
     if not net.trafo.empty and "sn_mva" in net.trafo.columns:
-        return float(net.trafo["sn_mva"].iloc[0])
+        val = net.trafo["sn_mva"].iloc[0]
+        if pd.notna(val):
+            return float(val)
     return float("nan")
 
 

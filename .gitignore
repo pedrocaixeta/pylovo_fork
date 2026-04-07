@@ -2,7 +2,7 @@
 /data/buildings/*
 /data/ways/ways_public_2po_4pgr.sql
 /data/postcode.csv
-/validation/metrics/*
+/validation/grid_comparison/metrics/*
 
 # Keep default transformers for bavaria in git - ignore other generated input files
 /data/transformer_data/fetched_trafos/*
@@ -167,3 +167,5 @@ cython_debug/
 
 # for macOS users
 *.DS_Store
+validation/grid_comparison/metrics/real_grid_metrics.csv
+validation/grid_comparison/metrics/synthetic_grid_metrics.csv

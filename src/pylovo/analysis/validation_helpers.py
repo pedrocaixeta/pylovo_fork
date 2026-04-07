@@ -10,6 +10,9 @@ import pandapower as pp
 from tqdm import tqdm
 from shapely.geometry import LineString, Point
 
+# Subnets (real or synthetic) with fewer LV buses than this are classified as
+# mini grids and excluded from the comparison dataset.
+MINI_GRID_BUS_THRESHOLD = 5
 
 def iter_nets_from_json(json_path: Path):
     """
@@ -150,13 +153,63 @@ def extract_lv_grids(net: pp.pandapowerNet, output_dir: Path | str) -> list[Path
             lv_net = pp.select_subnet(net, buses=core_buses, include_results=False)
             lv_net.name = f"LV_{sub_id}"
 
-            # Preserve the feeder entry point so each exported LV subnet stays solvable.
-            for _, trafo in relevant_trafos.iterrows():
-                lv_bus = trafo["lv_bus"]
-                if lv_bus in lv_net.bus.index:
-                    pp.create_ext_grid(lv_net, bus=lv_bus, name=f"Feed_from_{trafo['name']}")
+            for _, trafo_row in relevant_trafos.iterrows():
+                lv_bus = trafo_row["lv_bus"]
+                if lv_bus not in lv_net.bus.index:
+                    continue
 
-            target_dir = mini_dir if len(lv_net.bus) < 5 else regular_dir
+                # Feeder entry point: ext_grid at the LV bus keeps the subnet
+                # solvable with the standard pandapower power-flow setup.
+                pp.create_ext_grid(lv_net, bus=lv_bus, name=f"Feed_from_{trafo_row['name']}")
+
+                # Carry over the full transformer element as an *out-of-service*
+                # record so that net.trafo["sn_mva"] (and other electrical params
+                # such as vk_percent, pfe_kw, tap settings, custom DSO columns) are
+                # available without consulting the original full-model file again.
+                # Marking it out-of-service prevents create_nxgraph from inserting
+                # a topology edge, so feeder counting and distance metrics are
+                # unaffected.
+                hv_bus_orig = trafo_row["hv_bus"]
+                vn_hv_kv = (
+                    float(net.bus.at[hv_bus_orig, "vn_kv"])
+                    if hv_bus_orig in net.bus.index
+                    else float(trafo_row.get("vn_hv_kv", 20.0))
+                )
+                hv_dummy = pp.create_bus(
+                    lv_net,
+                    vn_kv=vn_hv_kv,
+                    name=f"HV_{trafo_row['name']}",
+                    type="b",
+                    in_service=False,
+                )
+                new_trafo_idx = pp.create_transformer_from_parameters(
+                    lv_net,
+                    hv_bus=hv_dummy,
+                    lv_bus=lv_bus,
+                    sn_mva=float(trafo_row["sn_mva"]),
+                    vn_hv_kv=vn_hv_kv,
+                    vn_lv_kv=float(trafo_row.get("vn_lv_kv", 0.4)),
+                    vk_percent=float(trafo_row.get("vk_percent", 4.0)),
+                    vkr_percent=float(trafo_row.get("vkr_percent", 1.0)),
+                    pfe_kw=float(trafo_row.get("pfe_kw", 0.0)),
+                    i0_percent=float(trafo_row.get("i0_percent", 0.0)),
+                    name=str(trafo_row.get("name", "")),
+                    in_service=False,
+                )
+                # Copy all remaining columns (tap settings, zero-sequence params,
+                # custom DSO fields like chr_name, Baujahr, std_type, …) from the
+                # original trafo row.  hv_bus is intentionally skipped — it must
+                # point to the dummy bus, not the original MV bus index.
+                # in_service is skipped to preserve the False flag set above.
+                _skip = {"hv_bus", "in_service"}
+                for col, val in trafo_row.items():
+                    if col in _skip or col.startswith("Unnamed"):
+                        continue
+                    if col not in lv_net.trafo.columns:
+                        lv_net.trafo[col] = None
+                    lv_net.trafo.at[new_trafo_idx, col] = val
+
+            target_dir = mini_dir if len(core_buses) < MINI_GRID_BUS_THRESHOLD else regular_dir
             json_path = target_dir / f"LV_{sub_id}.json"
             pp.to_json(lv_net, str(json_path))
             pp.to_excel(lv_net, str(json_path.with_suffix(".xlsx")))
@@ -232,6 +285,7 @@ __all__ = [
     "fix_subnet_geos",
     "get_bus_line_geo",
     "iter_nets_from_json",
+    "MINI_GRID_BUS_THRESHOLD",
     "split_to_subgrids",
 ]
 

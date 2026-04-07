@@ -11,6 +11,7 @@ from shapely import wkt
 from shapely.geometry import Point
 
 from pylovo.analysis.grid_analysis import compute_comparison_parameters
+from pylovo.analysis.validation_helpers import MINI_GRID_BUS_THRESHOLD
 from pylovo.config_loader import GRID_DATA_PATH, VERSION_ID
 from pylovo.database.config_table_structure import CREATE_QUERIES
 from pylovo.database.database_client import DatabaseClient
@@ -41,6 +42,8 @@ def export_synthetic_comparison_parameters_for_plz(
     for kcid, bcid in grids:
         try:
             net = calculator.dbc.read_net_db(plz, kcid, bcid)
+            if len(net.bus) < MINI_GRID_BUS_THRESHOLD:
+                continue
             calculator.dbc.cur.execute(
                 "SELECT grid_result_id FROM grid_result WHERE plz=%s AND kcid=%s AND bcid=%s AND version_id=%s",
                 (plz, kcid, bcid, calculator.version_id),
@@ -66,7 +69,7 @@ def export_synthetic_comparison_parameters_for_plz(
         return pd.DataFrame()
 
     df = pd.DataFrame(metrics_list)
-    out_dir = Path(output_dir) if output_dir is not None else Path("validation/metrics")
+    out_dir = Path(output_dir) if output_dir is not None else Path("validation/grid_comparison/metrics")
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "synthetic_grid_metrics.csv"
     df.to_csv(csv_path, index=False)
@@ -78,6 +81,7 @@ def iter_real_grid_files(data_path: str) -> list[Path]:
     """Return only LV JSON subnet files from the configured real-grid directory."""
     path = Path(data_path)
     return [file_path for file_path in sorted(path.glob("*.json")) if file_path.stem.startswith("LV_")]
+
 
 
 def extract_bus_geometries(net: pp.pandapowerNet) -> gpd.GeoDataFrame:

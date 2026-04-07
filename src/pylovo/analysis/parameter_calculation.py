@@ -679,6 +679,11 @@ class ParameterCalculator:
 
         loads["zone"] = loads["zone"].fillna("Residential")
         loads["zone"] = loads["zone"].replace(["MFH", "SFH", "AB", "TH"], "Residential")
+        # Map any zone not recognised by SIM_FACTOR (e.g. DSO zone codes like "SWF") to
+        # "Residential" so the category-based upstream propagation produces valid non-zero
+        # sim_factor_cumulated values for real grid exports.
+        _known_zones = set(SIM_FACTOR.keys())
+        loads.loc[~loads["zone"].isin(_known_zones), "zone"] = "Residential"
 
         load_name_column = "name" if "name" in loads.columns else "bus"
 
