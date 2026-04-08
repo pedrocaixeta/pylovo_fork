@@ -549,89 +549,282 @@ class ParameterCalculator:
 
         return sum(path_lengths) / len(path_lengths), max(path_lengths)
 
-    def calculate_impedance_metrics(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> Tuple[float, float, float, float, float]:
-        """Calculate impedance-weighted proxy metrics aggregated along consumer paths.
+    def _resolve_impedance_root_bus(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> int:
+        """Resolve the root bus used by the shared impedance engine."""
+        root_bus = self.resolve_root_bus(
+            pandapower_net,
+            self.uses_synthetic_bus_naming(pandapower_net),
+        )
+        if root_bus not in networkx_graph:
+            raise ValueError(
+                f"Resolved root bus {root_bus} is absent from the topology graph for {self._calculator_context()}."
+            )
+        return root_bus
 
-        Returns maximum household equivalents per branch, total resistance, total
-        reactance, the resistance-to-reactance ratio, and the maximum branch
-        resistance proxy. Missing load data or disconnected consumers are tolerated.
+    def _prepare_legacy_impedance_loads(self, pandapower_net: pp.pandapowerNet) -> pd.DataFrame:
+        """Return the legacy VSW load basis without mutating ``net.load``."""
+        if pandapower_net.load.empty or "bus" not in pandapower_net.load.columns:
+            return pd.DataFrame(columns=["bus", "max_p_mw"])
+
+        load = pandapower_net.load.copy()
+        if "max_p_mw" in load.columns:
+            return load
+
+        unique_buses = pd.Index(load["bus"].dropna().unique())
+        if unique_buses.empty:
+            return pd.DataFrame(columns=["bus", "max_p_mw"])
+
+        # Real exports often carry many sub-load rows per connection bus but no
+        # max_p_mw column. The legacy VSW metric uses one household equivalent per
+        # unique consumer bus to stay comparable with synthetic grids.
+        return pd.DataFrame({
+            "bus": unique_buses.to_numpy(),
+            "max_p_mw": PEAK_LOAD_HOUSEHOLD / 1000.0,
+        })
+
+    def _build_impedance_line_table(self, pandapower_net: pp.pandapowerNet) -> pd.DataFrame:
+        """Return the line table when the impedance columns needed by the engine exist."""
+        df_line = pandapower_net.line.copy()
+        if df_line.empty:
+            return df_line
+
+        required_columns = {"from_bus", "to_bus", "length_km", "r_ohm_per_km", "x_ohm_per_km"}
+        missing_columns = sorted(required_columns - set(df_line.columns))
+        if missing_columns:
+            self.dbc.logger.warning(
+                "Cannot calculate impedance metrics because the line table is missing columns %s.",
+                missing_columns,
+            )
+            return pd.DataFrame(columns=list(required_columns))
+
+        return df_line
+
+    def _build_line_lookup(self, df_line: pd.DataFrame) -> Dict[Tuple[int, int], Dict[str, Any]]:
+        """Build a stable edge-to-line lookup for path aggregation."""
+        line_lookup = {}
+        duplicate_edges = 0
+        if df_line.empty:
+            return line_lookup
+
+        for _, row in df_line.iterrows():
+            key = tuple(sorted((int(row["from_bus"]), int(row["to_bus"]))))
+            if key in line_lookup:
+                duplicate_edges += 1
+                continue
+            line_lookup[key] = row.to_dict()
+
+        if duplicate_edges:
+            self.dbc.logger.debug(
+                "Collapsed %s duplicate line rows onto existing bus-to-bus edges while building the impedance lookup. "
+                "This can indicate parallel lines or incomplete line segmentation in %s.",
+                duplicate_edges,
+                self._calculator_context(),
+            )
+
+        return line_lookup
+
+    def _resolve_branch_from_path(self, pandapower_net: pp.pandapowerNet, path: List[int]) -> Tuple[int, int] | None:
+        """Resolve the feeder branch label associated with one source-to-consumer path."""
+        if len(path) < 2:
+            return None
+
+        first_hop_name = ""
+        if "name" in pandapower_net.bus.columns:
+            first_hop_name = str(pandapower_net.bus.at[path[1], "name"])
+
+        if "NS_KVS" in first_hop_name and len(path) >= 3:
+            return tuple(sorted((path[1], path[2])))
+
+        return tuple(sorted((path[0], path[1])))
+
+    def _calculate_path_impedance_summary(
+        self,
+        pandapower_net: pp.pandapowerNet,
+        networkx_graph: nx.Graph,
+        bus_weights: pd.DataFrame,
+        line_table: pd.DataFrame,
+        apply_simultaneity: bool,
+    ) -> Dict[str, float]:
+        """Run the shared source-to-consumer path impedance aggregation.
+
+        This helper is the common base for both the historical VSW metric and
+        the household-count path proxy. The caller provides the bus weights and
+        decides whether cumulated simultaneity should affect line resistance.
         """
-        if pandapower_net.load.empty or "bus" not in pandapower_net.load.columns or "max_p_mw" not in pandapower_net.load.columns:
-            return 0.0, 0.0, 0.0, 0.0, 0.0
+        if bus_weights.empty or line_table.empty:
+            return {
+                "max_branch_weight": 0.0,
+                "total_resistance": 0.0,
+                "total_reactance": 0.0,
+                "max_branch_resistance": 0.0,
+                "total_weight": 0.0,
+            }
 
-        df_load = pandapower_net.load
-        df_vsw = df_load.groupby("bus")["max_p_mw"].sum() * 1000.0 / PEAK_LOAD_HOUSEHOLD
-        df_vsw = df_vsw.reset_index(name="household_equivalents").rename(columns={"bus": "house_connection"})
+        try:
+            root_bus = self._resolve_impedance_root_bus(pandapower_net, networkx_graph)
+        except ValueError:
+            return {
+                "max_branch_weight": 0.0,
+                "total_resistance": 0.0,
+                "total_reactance": 0.0,
+                "max_branch_resistance": 0.0,
+                "total_weight": 0.0,
+            }
 
-        df_line = self._augment_line_table_with_simultaneity(pandapower_net, networkx_graph)
+        line_lookup = self._build_line_lookup(line_table)
+        records = []
+        missing_line_edges = 0
 
-        root = self.resolve_synthetic_root_bus(pandapower_net)
-
-        results = []
-
-        for _, row in df_vsw.iterrows():
-            house_conn = row["house_connection"]
-            he = row["household_equivalents"]
+        for row in bus_weights.itertuples(index=False):
+            consumer_bus = int(row.consumer_bus)
+            path_weight = float(row.path_weight)
+            if path_weight <= 0:
+                continue
 
             try:
-                path = nx.shortest_path(networkx_graph, source=root, target=house_conn)
+                path = nx.shortest_path(networkx_graph, source=root_bus, target=consumer_bus, weight="weight")
             except (nx.NetworkXNoPath, nx.NodeNotFound):
                 continue
 
-            if len(path) >= 2:
-                first_hop_name = str(pandapower_net.bus.at[path[1], "name"]) if "name" in pandapower_net.bus.columns else ""
-                if "NS_KVS" in first_hop_name and len(path) >= 3:
-                    branch = tuple(sorted(path[1:3]))
-                else:
-                    branch = tuple(sorted(path[:2]))
-            else:
-                branch = None
+            branch = self._resolve_branch_from_path(pandapower_net, path)
+            path_resistance = 0.0
+            path_reactance = 0.0
 
-            r_sum = 0.0
-            x_sum = 0.0
-
-            for i in range(len(path) - 1):
-                u, v = path[i], path[i+1]
-                line_data = self._get_line_data(df_line, u, v)
+            for from_bus, to_bus in zip(path, path[1:]):
+                line_data = line_lookup.get(tuple(sorted((from_bus, to_bus))))
                 if line_data is None:
+                    missing_line_edges += 1
                     continue
 
-                length_km = line_data["length_km"]
-                sim_factor = line_data.get("sim_factor_cumulated", 1.0)
+                length_km = float(line_data.get("length_km", 0.0) or 0.0)
+                resistance_per_km = float(line_data.get("r_ohm_per_km", 0.0) or 0.0)
+                reactance_per_km = float(line_data.get("x_ohm_per_km", 0.0) or 0.0)
+                sim_factor = float(line_data.get("sim_factor_cumulated", 1.0) or 1.0) if apply_simultaneity else 1.0
 
-                r_sum += he * length_km * line_data["r_ohm_per_km"] * sim_factor
-                x_sum += he * length_km * line_data["x_ohm_per_km"]
+                path_resistance += length_km * resistance_per_km * sim_factor
+                path_reactance += length_km * reactance_per_km
 
-            results.append({
+            records.append({
                 "branch": branch,
-                "household_equivalents": he,
-                "resistance": r_sum,
-                "reactance": x_sum
+                "path_weight": path_weight,
+                "weighted_resistance": path_weight * path_resistance,
+                "weighted_reactance": path_weight * path_reactance,
             })
 
-        if not results:
-            return 0.0, 0.0, 0.0, 0.0, 0.0
+        if missing_line_edges:
+            self.dbc.logger.debug(
+                "Impedance path collection skipped %s path edges because no matching line row was found. "
+                "This can indicate missing line segmentation in %s.",
+                missing_line_edges,
+                self._calculator_context(),
+            )
 
-        df_res = pd.DataFrame(results)
+        if not records:
+            return {
+                "max_branch_weight": 0.0,
+                "total_resistance": 0.0,
+                "total_reactance": 0.0,
+                "max_branch_resistance": 0.0,
+                "total_weight": 0.0,
+            }
 
-        max_he_branch = df_res.groupby("branch")["household_equivalents"].sum().max() if "branch" in df_res else 0.0
-        total_resistance = df_res["resistance"].sum()
-        total_reactance = df_res["reactance"].sum()
-        ratio = total_resistance / total_reactance if total_reactance > 0 else 0.0
-        max_vsw_branch = df_res.groupby("branch")["resistance"].sum().max() if "branch" in df_res else 0.0
+        df_records = pd.DataFrame(records)
+        branch_weights = df_records.groupby("branch", dropna=False)["path_weight"].sum()
+        branch_resistance = df_records.groupby("branch", dropna=False)["weighted_resistance"].sum()
+        return {
+            "max_branch_weight": float(branch_weights.max()) if not branch_weights.empty else 0.0,
+            "total_resistance": float(df_records["weighted_resistance"].sum()),
+            "total_reactance": float(df_records["weighted_reactance"].sum()),
+            "max_branch_resistance": float(branch_resistance.max()) if not branch_resistance.empty else 0.0,
+            "total_weight": float(df_records["path_weight"].sum()),
+        }
 
-        return max_he_branch, total_resistance, total_reactance, ratio, max_vsw_branch
+    def calculate_impedance_metrics(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph) -> Tuple[float, float, float, float, float]:
+        """Calculate the legacy VSW-style impedance metrics used by clustering.
 
-    def _get_line_data(self, df_line: pd.DataFrame, u: int, v: int) -> Dict[str, Any]:
-        """Return the first line record connecting two buses in the line table."""
-        mask = ((df_line["from_bus"] == u) & (df_line["to_bus"] == v)) | \
-               ((df_line["from_bus"] == v) & (df_line["to_bus"] == u))
-        subset = df_line[mask]
-        if subset.empty:
-            return None
-        return subset.iloc[0].to_dict()
+        Returns maximum household equivalents per branch, total resistance, total
+        reactance, the resistance-to-reactance ratio, and the maximum branch
+        resistance proxy.
+        """
+        load_table = self._prepare_legacy_impedance_loads(pandapower_net)
+        if load_table.empty or "max_p_mw" not in load_table.columns:
+            bus_weights = pd.DataFrame(columns=["consumer_bus", "path_weight"])
+        else:
+            bus_weights = (
+                load_table.groupby("bus")["max_p_mw"].sum() * 1000.0 / PEAK_LOAD_HOUSEHOLD
+            ).reset_index(name="path_weight").rename(columns={"bus": "consumer_bus"})
+        line_table = self._augment_line_table_with_simultaneity(
+            pandapower_net,
+            networkx_graph,
+            load_table=load_table,
+        )
+        result = self._calculate_path_impedance_summary(
+            pandapower_net,
+            networkx_graph,
+            bus_weights,
+            line_table,
+            apply_simultaneity=True,
+        )
+        total_reactance = result["total_reactance"]
+        ratio = result["total_resistance"] / total_reactance if total_reactance > 0 else 0.0
+        return (
+            result["max_branch_weight"],
+            result["total_resistance"],
+            total_reactance,
+            ratio,
+            result["max_branch_resistance"],
+        )
 
-    def _augment_line_table_with_simultaneity(self, net: pp.pandapowerNet, graph: nx.Graph) -> pd.DataFrame:
+    def calculate_household_path_impedance_proxy(
+        self,
+        pandapower_net: pp.pandapowerNet,
+        networkx_graph: nx.Graph,
+        load_table: pd.DataFrame | None = None,
+    ) -> Dict[str, float]:
+        """Calculate the HH-only weighted mean path impedance proxy.
+
+        The caller may pass a pre-filtered load table to define which rows count
+        as households. This keeps dataset-specific HH filtering outside of the
+        shared ParameterCalculator path logic.
+        """
+        effective_load_table = pandapower_net.load if load_table is None else load_table
+        if effective_load_table.empty or "bus" not in effective_load_table.columns:
+            bus_weights = pd.DataFrame(columns=["consumer_bus", "path_weight"])
+        else:
+            # For the household path proxy, the path weight is simply the number
+            # of household load rows attached to each consumer bus.
+            bus_weights = effective_load_table.groupby("bus").size().reset_index(name="path_weight")
+            bus_weights["path_weight"] = bus_weights["path_weight"].astype(float)
+            bus_weights = bus_weights.rename(columns={"bus": "consumer_bus"})
+        line_table = self._build_impedance_line_table(pandapower_net)
+        result = self._calculate_path_impedance_summary(
+            pandapower_net,
+            networkx_graph,
+            bus_weights,
+            line_table,
+            apply_simultaneity=False,
+        )
+        total_reactance = result["total_reactance"]
+        total_weight = result["total_weight"]
+        resistance = result["total_resistance"] / total_weight if total_weight > 0 else 0.0
+        reactance = total_reactance / total_weight if total_weight > 0 else 0.0
+        ratio = result["total_resistance"] / total_reactance if total_reactance > 0 else 0.0
+        return {
+            "household_count": float(total_weight),
+            "max_households_of_a_branch": float(result["max_branch_weight"]),
+            "resistance": float(resistance),
+            "reactance": float(reactance),
+            "ratio": float(ratio),
+            "max_branch_resistance": float(result["max_branch_resistance"]),
+        }
+
+    def _augment_line_table_with_simultaneity(
+        self,
+        net: pp.pandapowerNet,
+        graph: nx.Graph,
+        load_table: pd.DataFrame | None = None,
+        root_bus: int | None = None,
+    ) -> pd.DataFrame:
         """Augment the line table with per-line simultaneity and aggregated category metadata.
 
         The routine assumes a predominantly radial synthetic LV grid. It seeds line-
@@ -640,26 +833,18 @@ class ParameterCalculator:
         Missing columns are handled conservatively so higher-level metric computation
         can continue on imperfect inputs.
         """
-        df_line = net.line.copy()
+        df_line = self._build_impedance_line_table(net)
         if df_line.empty:
-            return df_line
-
-        required_line_columns = {"from_bus", "to_bus", "length_km"}
-        missing_line_columns = sorted(required_line_columns - set(df_line.columns))
-        if missing_line_columns:
-            self.dbc.logger.warning(
-                "Cannot augment line simultaneity because the line table is missing columns %s.",
-                missing_line_columns,
-            )
             return df_line
 
         df_line["sim_load"] = 0.0
         df_line["sim_factor_cumulated"] = 1.0
 
-        if net.load.empty:
+        effective_load_table = net.load.copy() if load_table is None else load_table.copy()
+        if effective_load_table.empty:
             return df_line
 
-        if "bus" not in net.load.columns or "max_p_mw" not in net.load.columns:
+        if "bus" not in effective_load_table.columns or "max_p_mw" not in effective_load_table.columns:
             self.dbc.logger.warning(
                 "Cannot augment line simultaneity because the load table is missing required columns."
             )
@@ -669,7 +854,7 @@ class ParameterCalculator:
         sim_defs.index.name = "description"
         sim_defs.reset_index(inplace=True)
 
-        loads = net.load.copy()
+        loads = effective_load_table.copy()
 
         if "zone" in net.bus.columns:
             loads = loads.merge(net.bus[["zone"]], left_on="bus", right_index=True, how="left")
@@ -734,19 +919,19 @@ class ParameterCalculator:
                 df_line.at[idx, "sim_factor_cumulated"] = 0.0
 
         try:
-            root_bus = self.resolve_synthetic_root_bus(net)
+            resolved_root_bus = self.resolve_synthetic_root_bus(net) if root_bus is None else root_bus
         except ValueError:
             self.dbc.logger.debug("Could not resolve a synthetic root bus; returning seeded line simultaneity only.")
             return df_line
 
-        if root_bus not in graph:
+        if resolved_root_bus not in graph:
             self.dbc.logger.debug(
                 "Synthetic root bus %s is not present in the topology graph; returning seeded line simultaneity only.",
-                root_bus,
+                resolved_root_bus,
             )
             return df_line
 
-        graph_distances = nx.shortest_path_length(graph, source=root_bus)
+        graph_distances = nx.shortest_path_length(graph, source=resolved_root_bus)
         # Process buses from the leaves upward so child-line totals are available
         # before their parent line is recomputed.
         buses_by_reverse_distance = sorted(
@@ -777,7 +962,7 @@ class ParameterCalculator:
             df_line.at[line_idx, f"load_{category_name}_mw"] += row["max_p_mw"]
 
         for bus_idx in buses_by_reverse_distance:
-            if bus_idx == root_bus:
+            if bus_idx == resolved_root_bus:
                 continue
 
             parent_bus = None

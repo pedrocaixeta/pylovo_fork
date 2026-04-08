@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from pylovo.analysis.parameter_calculation import ParameterCalculator
 
 
+REAL_HOUSEHOLD_LOAD_TYPES = {"HH"}
+
+
 def _get_transformer_mva(net: pp.pandapowerNet) -> float:
     """Return the transformer rating in MVA from ``net.trafo["sn_mva"]``.
 
@@ -31,31 +34,22 @@ def _calculate_resistance(
     net: pp.pandapowerNet,
     graph,
 ) -> float:
-    """Return the impedance-weighted resistance proxy for any grid type.
+    """Return the active comparison resistance proxy.
 
-    Delegates to ``calculator.calculate_impedance_metrics`` which expects a
-    ``max_p_mw`` column in ``net.load``.  Synthetic grids already carry this
-    column; real grids provide only ``p_mw``.  When ``max_p_mw`` is absent,
-    current active power (``p_mw``) is used as a stand-in — the column is
-    added temporarily and removed after the calculation.
+    Real grids use only load rows explicitly tagged as HH. Synthetic grids do
+    not use the HH type tag, so all synthetic load rows are kept.
     """
-    load = net.load
-    if load.empty or "bus" not in load.columns:
+    if net.load.empty or "bus" not in net.load.columns:
         return 0.0
 
-    if "max_p_mw" in load.columns:
-        _, resistance, *_ = calculator.calculate_impedance_metrics(net, graph)
-        return float(resistance)
+    load_table = net.load.copy()
+    if not calculator.uses_synthetic_bus_naming(net) and "type" in load_table.columns:
+        household_mask = load_table["type"].fillna("").astype(str).str.upper().isin(REAL_HOUSEHOLD_LOAD_TYPES)
+        if household_mask.any():
+            load_table = load_table.loc[household_mask].copy()
 
-    if "p_mw" not in load.columns:
-        return 0.0
-
-    net.load["max_p_mw"] = net.load["p_mw"]
-    try:
-        _, resistance, *_ = calculator.calculate_impedance_metrics(net, graph)
-    finally:
-        del net.load["max_p_mw"]
-    return float(resistance)
+    proxy = calculator.calculate_household_path_impedance_proxy(net, graph, load_table=load_table)
+    return float(proxy["resistance"])
 
 
 def compute_comparison_parameters(
