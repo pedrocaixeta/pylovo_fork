@@ -40,23 +40,6 @@ def get_bus_line_geo_for_network(
     tuple of GeoDataFrame
         (line_geo, bus_geo) - GeoDataFrames containing line and bus geometries.
     """
-    # Line data - parse GeoJSON from geo column
-    line_geometries = []
-    for idx, row in pandapower_net.line.iterrows():
-        if pd.notna(row.get("geo")):
-            try:
-                geo_dict = json.loads(row["geo"])
-                coords = geo_dict["coordinates"]
-                line_geometries.append(LineString(coords))
-            except (json.JSONDecodeError, KeyError, TypeError):
-                line_geometries.append(None)
-        else:
-            line_geometries.append(None)
-
-    line_geo = gpd.GeoDataFrame(pandapower_net.line.copy(), geometry=line_geometries)
-    line_geo['net'] = net_index
-    line_geo['plz'] = plz
-
     # Bus data - parse GeoJSON from geo column
     bus_geometries = []
     for idx, row in pandapower_net.bus.iterrows():
@@ -74,6 +57,26 @@ def get_bus_line_geo_for_network(
     bus_geo['net'] = net_index
     bus_geo['consumer_bus'] = bus_geo['name'].str.contains("Consumer Nodebus")
     bus_geo['plz'] = plz
+
+    bus_point_lookup = bus_geo.geometry.to_dict()
+
+    # Line data - parse GeoJSON from geo column, or build a straight segment from bus points.
+    line_geometries = []
+    for _, row in pandapower_net.line.iterrows():
+        geometry = None
+        if pd.notna(row.get("geo")):
+            try:
+                geo_dict = json.loads(row["geo"])
+                coords = geo_dict["coordinates"]
+                geometry = LineString(coords)
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                geometry = None
+
+        line_geometries.append(geometry)
+
+    line_geo = gpd.GeoDataFrame(pandapower_net.line.copy(), geometry=line_geometries)
+    line_geo['net'] = net_index
+    line_geo['plz'] = plz
 
     return line_geo, bus_geo
 
