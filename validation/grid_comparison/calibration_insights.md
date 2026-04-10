@@ -38,3 +38,51 @@
 ## 4. Load Assumptions
 - **Simultaneity**: Real grid ADMD validation suggests ~1 kW/household effective peak is a reasonable approximation for residential-dominated grids in this area.
 - **Peak Load**: `PEAK_LOAD_HOUSEHOLD = 14.5 kW` (standard installed capacity) is used as the base for simultaneity calculations.
+
+## 5. Resistance Metric: Real vs. Synthetic Unit Mismatch (Resolved)
+
+**Investigation**: The `resistance` comparison metric showed real-grid values roughly 300–1000× lower than synthetic values, which was initially suspected to be a unit difference (`ohm/km` vs `mOhm/km`).
+
+**Root Cause — NOT units**: Both synthetic grids (loaded from the database via `read_net_db`) and real grids (loaded from JSON via `pp.from_json`) store `r_ohm_per_km` in true **ohm/km**. No unit scaling is needed or correct.
+
+The actual cause was in how **household equivalents (HE)** were derived for real grids inside `_calculate_resistance` in `src/pylovo/analysis/grid_analysis.py`:
+
+| Grid type | `max_p_mw` per load | HE per consumer bus | Effect |
+| :--- | :--- | :--- | :--- |
+| Synthetic | `PEAK_LOAD_HOUSEHOLD / 1000` (0.0145 MW) | 1.0 (1 load per bus) | Correct baseline |
+| Real (old fallback) | `p_mw` (~0.003–0.005 MW) | ~0.3 (from low instantaneous load) | HE ~ 3× too small |
+
+A second compounding issue: real grids have **multiple load entries per consumer bus** (individual meters, sub-circuits, appliances). For example, LV_028 has 157 load rows on only 26 unique buses (average 6 per bus). Assigning `PEAK_LOAD_HOUSEHOLD` per load row rather than per bus would give `HE ≈ 6` per bus — inflating resistance ~6×.
+
+**Fix** (`src/pylovo/analysis/grid_analysis.py`, `_calculate_resistance`): When `max_p_mw` is absent, build a temporary single-row-per-unique-consumer-bus load table with `max_p_mw = PEAK_LOAD_HOUSEHOLD / 1000.0`, yielding `HE = 1.0` per consumer bus — identical to the synthetic grid assumption.
+
+```python
+unique_buses = load["bus"].unique()
+net.load = pd.DataFrame({
+    "bus": unique_buses,
+    "max_p_mw": PEAK_LOAD_HOUSEHOLD / 1000.0,
+})
+```
+
+**Validation**: After the fix, `LV_028` (26 consumers, 4.1 km cable) gives `resistance ≈ 0.55 Ω·HE`, consistent with its topology.
+
+## 6. HH-Only Path Resistance Proxy (In Progress)
+
+**Current implementation direction**: The comparison workflow now uses a dedicated HH-only path resistance proxy, while the historical VSW metric remains available in the clustering workflow.
+
+- **HH-only path resistance proxy**: a residential comparison metric based only on load rows tagged with `type == HH` in real grids. Loads such as `Ladestation` and `WP` are excluded.
+
+For the HH-only proxy, each consumer bus contributes with a weight equal to the number of HH load rows attached to that bus:
+
+$$
+R_{proxy} = \frac{\sum_i n_i \cdot R_{path,i}}{\sum_i n_i}
+$$
+
+with:
+
+- $n_i$: number of HH loads on consumer bus $i$
+- $R_{path,i}$: total transformer-to-bus path resistance
+
+**Reason**: This avoids the old dependency on synthesizing `max_p_mw` for real grids and makes the real-vs-synthetic comparison explicitly residential-only.
+
+**Note**: The historical VSW metric is kept unchanged for clustering-oriented analyses. The HH-only proxy is used for the residential comparison workflow.

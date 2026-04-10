@@ -316,9 +316,11 @@ def plot_comparison_distribution_plotly(
         raise ValueError(f"Unknown plot_type: {plot_type}")
 
     # Layout improvements
+    y_max = df[metric_col].max()
     fig.update_layout(
         xaxis_title="Grid Source",
         yaxis_title=metric_col.replace("_", " ").title(),
+        yaxis_range=[0, y_max * 1.1],
         legend_title="Source",
         font=dict(family="Arial", size=14),
         hovermode="closest"
