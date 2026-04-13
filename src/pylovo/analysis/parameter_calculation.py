@@ -1107,7 +1107,7 @@ class ParameterCalculator:
         Group by transformer size (kVA) and store lists per size for later lookup.
         """
         cluster_list = self.dbc.get_list_from_plz(plz)
-        count = len(cluster_list)
+        total_grids = len(cluster_list)
         time = 0
         percent = 0
 
@@ -1169,11 +1169,11 @@ class ParameterCalculator:
             }
 
             sim_peak_load = 0.0
-            for cat, (count, sum_load) in stats.items():
-                if count > 0:
+            for cat, (category_count, sum_load) in stats.items():
+                if category_count > 0:
                     sim_peak_load += utils.oneSimultaneousLoad(
                         installed_power=sum_load,
-                        load_count=count,
+                        load_count=category_count,
                         sim_factor=SIM_FACTOR.get(cat, 1.0)
                     )
 
@@ -1196,7 +1196,7 @@ class ParameterCalculator:
             trafo_avg_distance_dict[trafo_size_kva].append(avg_distance_m)
 
             time += 1
-            if count > 0 and time / count >= 0.1:
+            if total_grids > 0 and time / total_grids >= 0.1:
                 percent += 10
                 self.dbc.logger.info(f"{percent} % processed")
                 time = 0

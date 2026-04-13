@@ -2,13 +2,12 @@ import warnings
 from factor_analyzer import FactorAnalyzer
 
 from pylovo.classification.database_communication.database_communication import DatabaseCommunication
-from pylovo.classification.clustering import get_parameters_for_clustering
+from pylovo.plotting.classification import get_parameters_for_clustering as select_clustering_parameters
 
 warnings.filterwarnings('ignore')
 
-def print_parameters_for_clustering_for_classification_version() -> list:
-    """ print optimal clustering parameter for grid data of classification version
-    """
+def get_parameters_for_clustering() -> list:
+    """Return optimal clustering parameters for the active classification version."""
     # get grid data
     dc = DatabaseCommunication()
     df = dc.get_clustering_parameters_for_classification_version()
@@ -27,13 +26,15 @@ def print_parameters_for_clustering_for_classification_version() -> list:
 
     # get the eigenvalues larger than 1.
     # --> This is the appropriate number of factors
-    no_of_factors = (ev[0] > 1).sum()
+    no_of_factors = int((ev[0] > 1).sum())
+    if no_of_factors <= 0:
+        no_of_factors = 1
 
-    return df
+    return select_clustering_parameters(df_plz_parameters=df, n_comps=no_of_factors)
 
 
 def main():
-    get_parameters_for_clustering()
+    print(get_parameters_for_clustering())
 
 
 if __name__ == '__main__':
