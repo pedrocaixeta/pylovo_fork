@@ -80,9 +80,14 @@ def export_synthetic_comparison_parameters_for_plz(
 
 
 def iter_real_grid_files(data_path: str) -> list[Path]:
-    """Return only LV JSON subnet files from the configured real-grid directory."""
+    """Return only LV JSON subnet files from the configured real-grid directory.
+
+    Searches both the top-level directory and a ``regular/`` subdirectory
+    (produced by :func:`~pylovo.analysis.validation_helpers.split_to_subgrids`).
+    """
     path = Path(data_path)
-    return [file_path for file_path in sorted(path.glob("*.json")) if file_path.stem.startswith("LV_")]
+    candidates = sorted(path.glob("*.json")) + sorted((path / "regular").glob("*.json"))
+    return [file_path for file_path in candidates if file_path.stem.startswith("LV_")]
 
 
 
@@ -138,8 +143,6 @@ def process_real_grids(dbc: DatabaseClient, data_path: str, plz: int, output_dir
     print(f"Processing real grids from {data_path}...")
 
     buildings_gdf = _load_buildings_for_plz(dbc, plz)
-    if buildings_gdf is None:
-        return pd.DataFrame()
 
     from pylovo.analysis.parameter_calculation import ParameterCalculator
 
@@ -301,10 +304,13 @@ def _load_buildings_for_plz(dbc: DatabaseClient, plz: int) -> gpd.GeoDataFrame |
     return gpd.GeoDataFrame(buildings_df, geometry="geometry", crs="EPSG:3035")
 
 
-def _infer_real_grid_consumer_buses(net: pp.pandapowerNet, buildings_gdf: gpd.GeoDataFrame) -> list[int] | None:
+def _infer_real_grid_consumer_buses(net: pp.pandapowerNet, buildings_gdf: gpd.GeoDataFrame | None) -> list[int] | None:
     """Infer consumer buses for real grids when no explicit load buses are available."""
     if not net.load.empty:
         return net.load["bus"].unique().tolist()
+
+    if buildings_gdf is None:
+        return None
 
     if "geo" not in net.bus.columns or not net.bus["geo"].notna().any():
         return None

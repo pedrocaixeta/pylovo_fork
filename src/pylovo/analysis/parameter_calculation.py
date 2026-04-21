@@ -20,7 +20,8 @@ projected coordinates are auto-detected where spatial distance calculations need
 """
 
 import json
-from typing import Tuple, Dict, Any, List
+import re
+from typing import Tuple, Dict, Any, List, Optional
 
 import networkx as nx
 import numpy as np
@@ -33,6 +34,65 @@ import pylovo.database.database_client as dbc
 from pylovo.analysis.grid_analysis import compute_clustering_metrics
 from pylovo import utils
 from pylovo.config_loader import *
+
+
+# ---------------------------------------------------------------------------
+# Bus type classification configs for feeder counting
+# ---------------------------------------------------------------------------
+# Each config maps bus name patterns to semantic roles used by the unified
+# feeder counter.  Adapt ``name_column`` and the regex patterns when working
+# with a different DSO data export.
+
+SWF_BUS_TYPE_CONFIG: Dict[str, str] = {
+    "name_column": "name",
+    "house_connection_pattern": r"NS_HaAn",
+    "kvs_pattern": r"NS_KVS",
+}
+
+PYLOVO_BUS_TYPE_CONFIG: Dict[str, str] = {
+    "name_column": "name",
+    "house_connection_pattern": r"Consumer Nodebus",
+    "kvs_pattern": r"NS_KVS",
+}
+
+
+def classify_bus_types(
+    net: pp.pandapowerNet,
+    config: Dict[str, str],
+) -> Dict[int, str]:
+    """Build a mapping ``{bus_index: bus_type}`` from naming patterns.
+
+    Recognised bus types:
+    - ``"house_connection"`` – leaf consumer buses (e.g. NS_HaAn, Consumer Nodebus)
+    - ``"kvs"`` – cable distribution stations treated as transparent splitters
+    - ``"backbone"`` – everything else (cable nodes, connection buses, …)
+
+    Parameters
+    ----------
+    net : pp.pandapowerNet
+        Pandapower network whose ``bus`` table is inspected.
+    config : dict
+        Must contain ``name_column``, ``house_connection_pattern``, and
+        ``kvs_pattern`` keys.  Patterns are compiled as case-insensitive
+        regexes and matched with ``re.search``.
+    """
+    col = config["name_column"]
+    if col not in net.bus.columns:
+        return {}
+
+    hc_re = re.compile(config["house_connection_pattern"], re.IGNORECASE)
+    kvs_re = re.compile(config["kvs_pattern"], re.IGNORECASE)
+
+    bus_types: Dict[int, str] = {}
+    for idx, name in net.bus[col].fillna("").items():
+        name_str = str(name)
+        if kvs_re.search(name_str):
+            bus_types[idx] = "kvs"
+        elif hc_re.search(name_str):
+            bus_types[idx] = "house_connection"
+        else:
+            bus_types[idx] = "backbone"
+    return bus_types
 
 
 class ParameterCalculator:
@@ -218,11 +278,135 @@ class ParameterCalculator:
         graph: nx.Graph,
         root_idx: int,
         uses_synthetic_naming: bool,
+        bus_type_config: Optional[Dict[str, str]] = None,
     ) -> int:
-        """Count feeders using the topology rule that matches the grid representation."""
-        if uses_synthetic_naming:
-            return self.count_feeders_for_synthetic_grid(graph, net, root_idx=root_idx)
-        return self.count_feeders_for_generic_grid(graph, root_idx)
+        """Count feeders using a unified topology-aware algorithm.
+
+        The method walks past degree-1 / degree-2 source stubs to find the
+        first real branching node, then classifies each downstream neighbor:
+
+        * **house_connection leaf** (degree 1): skipped – not a feeder.
+        * **KVS (cable distribution station)**: expanded – each non-house-
+          connection child counts as a separate feeder.  If *all* children
+          are house connections the KVS itself counts as **one** feeder.
+        * **backbone / anything else**: counted as one feeder.
+
+        Parameters
+        ----------
+        net : pp.pandapowerNet
+            The grid model (used for bus names and trafo table).
+        graph : nx.Graph
+            Switch-aware topology graph.
+        root_idx : int
+            LV root bus index (transformer LV side or LVbus).
+        uses_synthetic_naming : bool
+            Legacy flag – only used when *bus_type_config* is ``None`` so
+            that ``PYLOVO_BUS_TYPE_CONFIG`` is chosen automatically.
+        bus_type_config : dict, optional
+            Naming-pattern dictionary (see :data:`SWF_BUS_TYPE_CONFIG`).
+            When ``None``, the config is inferred from *uses_synthetic_naming*.
+        """
+        if bus_type_config is None:
+            bus_type_config = (
+                PYLOVO_BUS_TYPE_CONFIG if uses_synthetic_naming else SWF_BUS_TYPE_CONFIG
+            )
+        bus_types = classify_bus_types(net, bus_type_config)
+
+        return self._count_feeders_unified(net, graph, root_idx, bus_types)
+
+    def _count_feeders_unified(
+        self,
+        net: pp.pandapowerNet,
+        graph: nx.Graph,
+        root_idx: int,
+        bus_types: Dict[int, str],
+    ) -> int:
+        """Core feeder counting logic shared by all grid representations.
+
+        1. Walk from *root_idx* past degree-1 and degree-2 stubs to the first
+           branching node.
+        2. Enumerate downstream neighbors (excluding the incoming edge and any
+           trafo edges).
+        3. Classify each neighbor using *bus_types* and apply the counting rules
+           documented in :meth:`count_feeders`.
+        """
+        if root_idx not in graph:
+            return 0
+
+        # --- walk past source stubs ----------------------------------------
+        previous = None
+        current = root_idx
+
+        while graph.degree[current] == 1:
+            neighbors = list(graph.neighbors(current))
+            if not neighbors:
+                return 0
+            previous, current = current, neighbors[0]
+
+        while previous is not None and graph.degree[current] == 2:
+            next_nodes = [n for n in graph.neighbors(current) if n != previous]
+            if not next_nodes:
+                break
+            previous, current = current, next_nodes[0]
+
+        branch_point = current
+
+        # --- determine downstream neighbors --------------------------------
+        if previous is not None:
+            downstream = [n for n in graph.neighbors(branch_point) if n != previous]
+        else:
+            # Root itself is the branch point (e.g. synthetic LVbus).
+            # Exclude trafo edges explicitly.
+            downstream = [
+                n for n in graph.neighbors(branch_point)
+                if not self._is_trafo_edge(net, branch_point, n)
+            ]
+
+        # --- classify and count --------------------------------------------
+        feeders = 0
+        for neighbor in downstream:
+            btype = bus_types.get(neighbor, "backbone")
+            # A node is a leaf if it has no unique neighbor other than the
+            # branch point (parallel edges in a MultiGraph inflate degree).
+            neighbor_children = [c for c in graph.neighbors(neighbor) if c != branch_point]
+
+            if btype == "house_connection" and not neighbor_children:
+                # Leaf house connection directly at the branch point – not a feeder.
+                continue
+
+            if btype == "kvs":
+                # KVS = transparent splitter.  Count non-house-connection
+                # children as individual feeders; if *all* children are
+                # house connections the KVS itself is one feeder.
+                kvs_children = [c for c in graph.neighbors(neighbor) if c != branch_point]
+                backbone_children = [
+                    c for c in kvs_children
+                    if not (
+                        bus_types.get(c, "backbone") == "house_connection"
+                        and not [x for x in graph.neighbors(c) if x != neighbor]
+                    )
+                ]
+                feeders += max(len(backbone_children), 1)
+            else:
+                feeders += 1
+
+        # A grid with downstream buses must have at least one feeder even if
+        # all neighbors are leaf house connections (degenerate star topology).
+        if downstream and feeders == 0:
+            feeders = 1
+
+        return feeders
+
+    @staticmethod
+    def _is_trafo_edge(net: pp.pandapowerNet, u: int, v: int) -> bool:
+        """Return True if (u, v) corresponds to a transformer winding."""
+        if net.trafo.empty:
+            return False
+        mask = (
+            ((net.trafo["hv_bus"] == u) & (net.trafo["lv_bus"] == v))
+            | ((net.trafo["hv_bus"] == v) & (net.trafo["lv_bus"] == u))
+        )
+        return mask.any()
 
     def calculate_trafo_distances(
         self,
@@ -233,36 +417,6 @@ class ParameterCalculator:
         """Calculate average and maximum weighted source-to-consumer path lengths."""
         valid_consumers = [bus_idx for bus_idx in consumer_buses if bus_idx in graph]
         return self._calculate_path_lengths(graph, root_idx, valid_consumers)
-
-    def count_feeders_for_generic_grid(self, networkx_graph: nx.Graph, root_idx: int) -> int:
-        """Count feeders for generic real grids by skipping the source stub before branching.
-
-        Real DSO exports often include an initial source stub before the first meaningful
-        feeder split. This helper walks past degree-1 and degree-2 stubs so the feeder
-        count starts at the first actual branching point.
-        """
-        if root_idx not in networkx_graph:
-            return 0
-
-        previous = None
-        current = root_idx
-
-        while networkx_graph.degree[current] == 1:
-            neighbors = list(networkx_graph.neighbors(current))
-            if not neighbors:
-                return 0
-            previous, current = current, neighbors[0]
-
-        while previous is not None and networkx_graph.degree[current] == 2:
-            next_nodes = [neighbor for neighbor in networkx_graph.neighbors(current) if neighbor != previous]
-            if not next_nodes:
-                break
-            previous, current = current, next_nodes[0]
-
-        if previous is None:
-            return max(networkx_graph.degree[current], 0)
-
-        return max(networkx_graph.degree[current] - 1, 1)
 
     def analyze_single_grid(self, bcid: int, kcid: int) -> None:
         """Compute clustering parameters for a single local grid and persist them.
@@ -451,49 +605,6 @@ class ParameterCalculator:
                 return root.index[0]
 
         return self._resolve_default_root_bus(pandapower_net)
-
-    def count_feeders_for_synthetic_grid(self, networkx_graph: nx.Graph, pandapower_net: pp.pandapowerNet, root_idx: int = None) -> int:
-        """Approximate the number of main feeders starting from the synthetic LV root bus.
-
-        Cable distribution cabinets (`NS_KVS`) are treated as immediate splitter nodes
-        when they are directly connected to the transformer-side root. The method uses
-        the synthetic LV-bus label first and falls back to the transformer LV bus when
-        the naming convention is absent.
-        """
-        if root_idx is None:
-            root = self.resolve_synthetic_root_bus(pandapower_net)
-        else:
-            root = root_idx
-
-        if root not in networkx_graph:
-            return 0
-
-        root_degree = networkx_graph.degree[root]
-
-        if root_degree > 0:
-            branches = 0
-            neighbors = list(networkx_graph.neighbors(root))
-
-            # Ignore the MV/LV transformer edge so only outgoing LV feeders are counted.
-            def is_trafo(u, v):
-                mask = ((pandapower_net.trafo["hv_bus"] == u) & (pandapower_net.trafo["lv_bus"] == v)) | \
-                       ((pandapower_net.trafo["hv_bus"] == v) & (pandapower_net.trafo["lv_bus"] == u))
-                return not mask.empty and mask.any()
-
-            for n in neighbors:
-                if is_trafo(root, n):
-                    continue
-
-                bus_name = str(pandapower_net.bus.at[n, "name"]) if "name" in pandapower_net.bus.columns else ""
-                if "NS_KVS" in bus_name:
-                    kvs_degree = networkx_graph.degree[n]
-                    branches += max(kvs_degree - 1, 0)
-                else:
-                    branches += 1
-
-            return branches
-
-        return 0
 
     def calculate_trafo_distances_for_synthetic_grid(self, pandapower_net: pp.pandapowerNet, networkx_graph: nx.Graph, root_idx: int = None, leaves: List[int] = None) -> Tuple[float, float]:
         """Calculate average and maximum weighted distances from the root to consumer buses.

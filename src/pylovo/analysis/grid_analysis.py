@@ -1,6 +1,6 @@
 """Compose named LV grid parameter sets from the ParameterCalculator toolbox."""
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import pandas as pd
 import pandapower as pp
@@ -56,8 +56,17 @@ def compute_comparison_parameters(
     calculator: "ParameterCalculator",
     net: pp.pandapowerNet,
     consumer_buses: list[int] | None = None,
+    bus_type_config: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """Compute the active real-vs-synthetic comparison parameter set for one LV grid."""
+    """Compute the active real-vs-synthetic comparison parameter set for one LV grid.
+
+    Parameters
+    ----------
+    bus_type_config : dict, optional
+        Naming-pattern dictionary forwarded to the unified feeder counter.
+        When ``None`` the config is auto-detected from the bus naming
+        convention (see :data:`~pylovo.analysis.parameter_calculation.SWF_BUS_TYPE_CONFIG`).
+    """
     uses_synthetic_naming = calculator.uses_synthetic_bus_naming(net)
 
     try:
@@ -70,7 +79,10 @@ def compute_comparison_parameters(
         house_connections = calculator.count_consumers(resolved_consumer_buses)
 
         graph = pp.topology.create_nxgraph(net, respect_switches=True)
-        feeder_lines = calculator.count_feeders(net, graph, root_idx, uses_synthetic_naming)
+        feeder_lines = calculator.count_feeders(
+            net, graph, root_idx, uses_synthetic_naming,
+            bus_type_config=bus_type_config,
+        )
         avg_trafo_distance, max_trafo_distance = calculator.calculate_trafo_distances(
             graph,
             root_idx,
@@ -113,7 +125,8 @@ def compute_clustering_metrics(calculator: "ParameterCalculator", net: pp.pandap
     cable_len_per_house = cable_length_km / no_house_connections if no_house_connections > 0 else 0.0
 
     graph = pp.topology.create_nxgraph(net, respect_switches=True)
-    no_branches = calculator.count_feeders_for_synthetic_grid(graph, net)
+    root_idx = calculator.resolve_synthetic_root_bus(net)
+    no_branches = calculator.count_feeders(net, graph, root_idx, uses_synthetic_naming=True)
     avg_trafo_dis, max_trafo_dis = calculator.calculate_trafo_distances_for_synthetic_grid(net, graph)
 
     if no_branches > 0:
