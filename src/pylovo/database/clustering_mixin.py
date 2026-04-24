@@ -820,9 +820,14 @@ class ClusteringMixin(BaseMixin, ABC):
         """
         settlement_query = """SELECT settlement_type
                               FROM postcode_result
-                              WHERE postcode_result_plz = %(p)s
+                              WHERE version_id = %(v)s
+                                AND postcode_result_plz = %(p)s
                               LIMIT 1; """
-        self.cur.execute(settlement_query, {"p": plz})
-        settlement_type = self.cur.fetchone()[0]
-
-        return settlement_type
+        self.cur.execute(settlement_query, {"v": VERSION_ID, "p": plz})
+        row = self.cur.fetchone()
+        if row is None or row[0] is None:
+            raise ValueError(
+                f"No settlement_type found in postcode_result for PLZ {plz} "
+                f"(version {VERSION_ID}). Ensure settlement type classification succeeded."
+            )
+        return row[0]

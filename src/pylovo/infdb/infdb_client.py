@@ -210,10 +210,24 @@ class InfdbClient:
 
         return ways
     
-    def fetch_postcode_from_infb(self) -> list[tuple]:
+    def fetch_postcode_from_infdb(self, plz: int) -> tuple | None:
         """
-        Fetch postcode data from opendata schema and return rows matching the local schema.
-        Returns tuples of (plz, note, qkm, population, geom) from INFDB_SOURCE_SCHEMA.
+        Fetch the postcode geometry row for a single PLZ from opendata schema.
+        Returns a tuple of (plz, note, qkm, population, geom) or None if not found.
+        """
+        query = """
+            SELECT plz, note, qkm, einwohner, geom
+            FROM opendata.postcodes_germany
+            WHERE plz = %(plz)s::varchar
+            LIMIT 1;
+        """
+        self.cur.execute(query, {"plz": plz})
+        return self.cur.fetchone()
+
+    def fetch_all_postcodes_from_infdb(self) -> list[tuple]:
+        """
+        Bulk-fetch all postcode rows from opendata schema for use during pylovo-setup.
+        Returns tuples of (plz, note, qkm, population, geom).
         """
         query = """
             SELECT plz, note, qkm, einwohner, geom

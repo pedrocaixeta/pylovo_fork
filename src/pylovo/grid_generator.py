@@ -304,11 +304,25 @@ class GridGenerator:
     def prepare_postcodes(self):
         """
         Caches postcode from raw data tables and stores in temporary tables.
-        FROM: postcode
+        FROM: postcode (local) or InfDB opendata.postcodes_germany
         INTO: postcode_result
+
+        In USE_INFDB mode, the local postcode table may be empty or stale for new PLZ
+        regions added after the initial pylovo-setup run.  To avoid requiring a full
+        re-run of setup, the postcode geometry is fetched on-demand from InfDB and
+        inserted into the local postcode table before copying to postcode_result.
         """
+        if USE_INFDB and not self.dbc.postcode_exists_locally(self.plz):
+            postcode_row = self.inf_dbc.fetch_postcode_from_infdb(self.plz)
+            if postcode_row is None:
+                raise ValueError(
+                    f"PLZ {self.plz} not found in InfDB opendata.postcodes_germany. "
+                    "Cannot proceed without postcode geometry."
+                )
+            self.dbc.insert_postcode(postcode_row)
+            self.logger.info(f"Missing postcode for plz {self.plz} fetched from InfDB and inserted into local database.")
         self.dbc.copy_postcode_result_table(self.plz)
-        self.logger.info(f"Working on plz {self.plz}")
+        self.logger.info(f"Starting grid generation for plz {self.plz}")
 
     def prepare_buildings(self):
         """

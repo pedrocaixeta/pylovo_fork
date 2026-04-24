@@ -150,6 +150,21 @@ class PreprocessingMixin(BaseMixin, ABC):
             self.logger.error(f"Failed inserting/updating consumer_categories: {e}")
             raise
 
+    def postcode_exists_locally(self, plz: int) -> bool:
+        """Returns True if the given PLZ already exists in the local postcode table."""
+        self.cur.execute(
+            "SELECT 1 FROM postcode WHERE plz = %(p)s LIMIT 1;", {"p": plz}
+        )
+        return self.cur.fetchone() is not None
+
+    def insert_postcode(self, postcode_row: tuple) -> None:
+        """Insert a single postcode row (plz, note, qkm, population, geom) into the postcode table."""
+        query = """
+            INSERT INTO postcode (plz, note, qkm, population, geom)
+            VALUES (%s, %s, %s, %s, ST_Transform(%s::geometry, 3035))
+            ON CONFLICT (plz) DO NOTHING;"""
+        self.cur.execute(query, postcode_row)
+
     def copy_postcode_result_table(self, plz: int) -> None:
         """
         Copies the given plz entry from postcode to the postcode_result table

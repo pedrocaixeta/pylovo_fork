@@ -237,7 +237,7 @@ class DatabaseConstructor:
         infdb_client = InfdbClient()
 
         # Fetch postcode data from InfDB
-        rows = infdb_client.fetch_postcode_from_infb()
+        rows = infdb_client.fetch_all_postcodes_from_infdb()
 
         if not rows:
             raise ValueError("No postcode data retrieved from InfDB")
