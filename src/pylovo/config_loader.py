@@ -140,6 +140,9 @@ else:
     INFDB_PASSWORD = None
     INFDB_SOURCE_SCHEMA = None
 
+# Validation Data Path
+GRID_DATA_PATH = os.getenv("GRID_DATA_PATH")
+
 # =============================================================================
 # EXECUTION CONFIGURATION (from CONFIG_GENERATION)
 # =============================================================================
@@ -282,7 +285,7 @@ CSV_FILE_LIST = [
 # PLOTTING CONFIGURATION (from CONFIG_ANALYSIS)
 # =============================================================================
 # Plotly configuration
-ACCESS_TOKEN_PLOTLY = CONFIG_ANALYSIS["PLOTLY"]["ACCESS_TOKEN"]
+ACCESS_TOKEN_PLOTLY = os.getenv("ACCESS_TOKEN_PLOTLY")
 
 # TUM Color definitions
 TUMBlue = CONFIG_ANALYSIS["COLORS"]["TUMBlue"]

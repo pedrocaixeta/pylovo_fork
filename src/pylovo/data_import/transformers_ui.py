@@ -1898,23 +1898,20 @@ def cleanup_lingering_connections():
         print(f"⚠ Warning: Could not reset database connections: {e}")
 
 
-def main():
-    """Main function to run the transformer map UI."""
-    parser = argparse.ArgumentParser(description='Transformer Map UI')
-    parser.add_argument('--host', default='0.0.0.0', help='Host address (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=8080, help='Port number (default: 8080, 0 for auto-detect)')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--cleanup', action='store_true', help='Clean up lingering connections before starting')
-    parser.add_argument('--auto-cleanup', action='store_true', default=True, help='Automatically clean up port conflicts (default: True)')
-    
-    args = parser.parse_args()
-    
+def run_transformers_ui(
+    host: str = '0.0.0.0',
+    port: int = 8080,
+    debug: bool = False,
+    cleanup: bool = False,
+    auto_cleanup: bool = True,
+):
+    """Run the transformer map UI with explicit options."""
     # Clean up lingering connections if requested
-    if args.cleanup:
+    if cleanup:
         cleanup_lingering_connections()
     
     # Determine port to use
-    if args.port == 0:
+    if port == 0:
         # Auto-detect available port
         try:
             port = find_available_port(8080)
@@ -1923,15 +1920,14 @@ def main():
             print(f"❌ {e}")
             return
     else:
-        port = args.port
         # Check if port is available, clean up if needed
-        if args.auto_cleanup:
+        if auto_cleanup:
             cleanup_port_processes(port)
     
     try:
         # Initialize and run the UI
-        ui = TransformerMapUI(host=args.host, port=port)
-        ui.run(debug=args.debug)
+        ui = TransformerMapUI(host=host, port=port)
+        ui.run(debug=debug)
         
     except OSError as e:
         if "Address already in use" in str(e):
@@ -1945,6 +1941,28 @@ def main():
         print("💡 Make sure the database is running and accessible.")
         print("💡 Try running with --cleanup flag to reset connections.")
         sys.exit(1)
+
+
+def main(argv=None):
+    """CLI entry point for the transformer map UI."""
+    parser = argparse.ArgumentParser(description='Transformer Map UI')
+    # Compatibility for accidental passthrough invocation:
+    # `python -m pylovo.data_import.transformers_ui transformers-ui`
+    parser.add_argument('compat_command', nargs='?', choices=['transformers-ui'], help=argparse.SUPPRESS)
+    parser.add_argument('--host', default='0.0.0.0', help='Host address (default: 0.0.0.0)')
+    parser.add_argument('--port', type=int, default=8080, help='Port number (default: 8080, 0 for auto-detect)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--cleanup', action='store_true', help='Clean up lingering connections before starting')
+    parser.add_argument('--auto-cleanup', action='store_true', default=True, help='Automatically clean up port conflicts (default: True)')
+
+    args = parser.parse_args(argv)
+    run_transformers_ui(
+        host=args.host,
+        port=args.port,
+        debug=args.debug,
+        cleanup=args.cleanup,
+        auto_cleanup=args.auto_cleanup,
+    )
 
 
 if __name__ == "__main__":

@@ -54,8 +54,20 @@ def import_transformers_osm(relation_id: int):
 
 def import_transformers_ui():
     """Launch interactive UI for transformer management."""
-    from pylovo.data_import.transformers_ui import main as ui_main
-    ui_main()
+    from pylovo.data_import.transformers_ui import run_transformers_ui
+    run_transformers_ui()
+
+
+def import_transformers_ui_with_options(host: str, port: int, debug: bool, cleanup: bool, auto_cleanup: bool):
+    """Launch interactive UI for transformer management with explicit options."""
+    from pylovo.data_import.transformers_ui import run_transformers_ui
+    run_transformers_ui(
+        host=host,
+        port=port,
+        debug=debug,
+        cleanup=cleanup,
+        auto_cleanup=auto_cleanup,
+    )
 
 
 def import_test_postcodes():
@@ -98,9 +110,36 @@ Examples:
     )
 
     # Subcommand: transformers-ui
-    subparsers.add_parser(
+    ui_parser = subparsers.add_parser(
         "transformers-ui",
         help="Launch interactive UI for transformer management"
+    )
+    ui_parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host address (default: 0.0.0.0)"
+    )
+    ui_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port number (default: 8080, 0 for auto-detect)"
+    )
+    ui_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode"
+    )
+    ui_parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Clean up lingering connections before starting"
+    )
+    ui_parser.add_argument(
+        "--auto-cleanup",
+        action="store_true",
+        default=True,
+        help="Automatically clean up port conflicts (default: True)"
     )
 
     # Subcommand: test-postcodes
@@ -119,7 +158,13 @@ Examples:
         if args.command == "transformers-osm":
             import_transformers_osm(args.relation_id)
         elif args.command == "transformers-ui":
-            import_transformers_ui()
+            import_transformers_ui_with_options(
+                host=args.host,
+                port=args.port,
+                debug=args.debug,
+                cleanup=args.cleanup,
+                auto_cleanup=args.auto_cleanup,
+            )
         elif args.command == "test-postcodes":
             import_test_postcodes()
     except Exception as e:

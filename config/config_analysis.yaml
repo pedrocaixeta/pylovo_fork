@@ -22,10 +22,8 @@ PLOT_COLOR_DICT:
   1260: black
 
 # =============================================================================
-# PLOTLY CONFIGURATION
+# PLOTTING CONFIGURATION
 # =============================================================================
-PLOTLY:
-  ACCESS_TOKEN: 'pk.eyJ1IjoibXVza2F0bnVzcyIsImEiOiJjbGdxYnVyY28wN3lhM2VvMnBtYWwxZGl6In0.y5gIcGJSpwb0X4wgQQVolA'
 
 # =============================================================================
 # TUM COLOR PALETTE

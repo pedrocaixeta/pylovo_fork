@@ -6,8 +6,54 @@ including axis setup, color management, and legend formatting.
 """
 
 import matplotlib.pyplot as plt
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, List, Dict
 import matplotlib.axes as mpl_axes
+import plotly.colors
+
+# Standard Color Palette for Grid Comparison
+COLOR_MAP = {
+    "Real": "#2c3e50", # Dark Slate Blue/Grey for Real
+    "Real (SWF)": "#2c3e50",
+    "Synthetic v1": "#e67e22", # Orange for V1
+    "Synthetic v2": "#27ae60", # Green for V2
+}
+# Fallback colors for Plotly
+FALLBACK_COLORS = plotly.colors.qualitative.Plotly
+
+def get_color_map(sources: List[str]) -> Dict[str, str]:
+    """
+    Dynamically build a color map for Plotly based on present sources.
+    
+    Parameters
+    ----------
+    sources : List[str]
+        List of source names (e.g. ['Real', 'Synthetic v1']).
+        
+    Returns
+    -------
+    Dict[str, str]
+        Dictionary mapping source names to hex color codes.
+    """
+    cmap = {}
+    fallback_idx = 0
+    for s in sources:
+        # Check explicit keys
+        if s in COLOR_MAP:
+            cmap[s] = COLOR_MAP[s]
+            continue
+        
+        # Check partial matches
+        found = False
+        for k, v in COLOR_MAP.items():
+            if k in s:
+                cmap[s] = v
+                found = True
+                break
+        
+        if not found:
+            cmap[s] = FALLBACK_COLORS[fallback_idx % len(FALLBACK_COLORS)]
+            fallback_idx += 1
+    return cmap
 
 
 def setup_axes(
@@ -163,4 +209,3 @@ def add_limit_lines(
             linewidth=linewidth,
             label=label
         )
-

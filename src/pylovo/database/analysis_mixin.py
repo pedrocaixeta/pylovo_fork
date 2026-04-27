@@ -54,6 +54,27 @@ class AnalysisMixin(BaseMixin, ABC):
                              AND bcid = %s;""")
         self.cur.execute(insert_query, vars=(json_string, transformer_description, VERSION_ID, plz, kcid, bcid))
 
+    def has_clustering_parameters(self, plz: int, kcid: int, bcid: int) -> bool:
+        """
+        Check if parameters already exist for a specific grid.
+        
+        Args:
+            plz: Postal code
+            kcid: Grid cluster ID
+            bcid: Building cluster ID
+            
+        Returns:
+            bool: True if parameters exist, False otherwise
+        """
+        query = """
+            SELECT 1 
+            FROM clustering_parameters cp
+            JOIN grid_result gr ON cp.grid_result_id = gr.grid_result_id
+            WHERE gr.plz = %s AND gr.kcid = %s AND gr.bcid = %s AND gr.version_id = %s
+        """
+        self.cur.execute(query, (plz, kcid, bcid, VERSION_ID))
+        return bool(self.cur.fetchone())
+
     def count_clustering_parameters(self, plz: int) -> int:
         """
         :param plz:
