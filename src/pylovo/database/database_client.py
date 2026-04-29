@@ -167,6 +167,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
                    WHERE version_id = %(v)s
                      AND postcode_result_plz = %(p)s;"""
         self.cur.execute(query, {"v": version_id, "p": int(plz)})
+        self.refresh_materialized_views()
         self.conn.commit()
         self.logger.info(f"All data for PLZ {plz} and version {version_id} deleted")
 
@@ -174,6 +175,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         """Delete all entries of the given version ID from all tables."""
         query = "DELETE FROM version WHERE version_id = %(v)s;"
         self.cur.execute(query, {"v": version_id})
+        self.refresh_materialized_views()
         self.conn.commit()
         self.logger.info(f"Version {version_id} deleted from all tables")
 
