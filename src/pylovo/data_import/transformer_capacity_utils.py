@@ -28,18 +28,17 @@ def get_transformer_capacities() -> List[Dict[str, int]]:
             - cost_eur: Cost in EUR
             - typ: Equipment type (should be 'Transformer')
     """
-    if not CONFIG_GENERATION or 'EQUIPMENT_DATA' not in CONFIG_GENERATION:
+    if not CONFIG_GENERATION or 'TRANSFORMERS' not in CONFIG_GENERATION:
         return []
     
     transformer_capacities = []
-    for equipment in CONFIG_GENERATION['EQUIPMENT_DATA']:
-        if equipment.get('typ') == 'Transformer':
-            transformer_capacities.append({
-                'name': equipment['name'],
-                's_max_kva': equipment['s_max_kva'],
-                'cost_eur': equipment['cost_eur'],
-                'typ': equipment['typ']
-            })
+    for transformer in CONFIG_GENERATION['TRANSFORMERS']:
+        transformer_capacities.append({
+            'name': transformer['name'],
+            's_max_kva': transformer['s_max_kva'],
+            'cost_eur': transformer['cost_eur'],
+            'typ': transformer['typ']
+        })
     
     # Sort by capacity for consistent ordering
     transformer_capacities.sort(key=lambda x: x['s_max_kva'])

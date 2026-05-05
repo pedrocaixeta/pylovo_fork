@@ -89,11 +89,11 @@ class LineSpec(ComponentSpec):
     Line/Cable specification for distribution cables.
 
     All cables are 3-phase, underground NAYY cables.
-    Cable type name references equipment_data table.
+    Cable type name references the registered cable definitions.
     """
     bus1: str = ""  # From bus name
     bus2: str = ""  # To bus name
-    cable_name: str = ""  # Cable type from equipment_data (e.g. "NAYY_4_150")
+    cable_name: str = ""  # Cable type from configured cable definitions (e.g. "NAYY_4_150")
     length_km: float = 0.0  # Cable length in km
     parallel: int = 1  # Number of parallel cables
     coordinates: Optional[list] = None  # Line geometry for visualization

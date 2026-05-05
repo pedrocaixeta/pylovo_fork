@@ -187,7 +187,15 @@ if not CONSUMER_CATEGORIES.empty and "peak_load" in CONSUMER_CATEGORIES.columns:
     CONSUMER_CATEGORIES["peak_load"] = pd.to_numeric(CONSUMER_CATEGORIES["peak_load"], errors="coerce")
 
 # Equipment data
-EQUIPMENT_DATA = pd.DataFrame(CONFIG_GENERATION["EQUIPMENT_DATA"])
+TRANSFORMERS = pd.DataFrame(CONFIG_GENERATION["TRANSFORMERS"])
+FEEDER_CABLES = pd.DataFrame(CONFIG_GENERATION["FEEDER_CABLES"])
+CONSUMER_CONNECTION_CABLES = pd.DataFrame(CONFIG_GENERATION["CONSUMER_CONNECTION_CABLES"])
+
+# Derived combined equipment table for database storage and shared consumers.
+CONFIG_EQUIPMENT_DATA = pd.concat(
+    [TRANSFORMERS, FEEDER_CABLES, CONSUMER_CONNECTION_CABLES],
+    ignore_index=True,
+)
 
 # =============================================================================
 # VOLTAGE PROPERTIES (from CONFIG_GENERATION)
@@ -199,9 +207,10 @@ V_BAND_HIGH = CONFIG_GENERATION["V_BAND_HIGH"]
 # =============================================================================
 # CABLE DIMENSIONING PARAMETERS (from CONFIG_GENERATION)
 # =============================================================================
-# Calculate maximum cable current from equipment data (largest available cable)
-# This ensures the current limit is always based on the actual largest cable in the equipment list
-MAX_CABLE_CURRENT_KA = EQUIPMENT_DATA[EQUIPMENT_DATA["typ"] == "Cable"]["max_i_a"].max() / 1000  # Convert A to kA
+# Calculate maximum cable current from all configured cable pools (largest available cable)
+# This ensures the current limit is always based on the actual largest configured cable.
+ALL_CABLES = pd.concat([FEEDER_CABLES, CONSUMER_CONNECTION_CABLES], ignore_index=True)
+MAX_CABLE_CURRENT_KA = ALL_CABLES["max_i_a"].max() / 1000  # Convert A to kA
 
 # Load thresholds for different voltage drop limits
 SMALL_LOAD_THRESHOLD_KW = CONFIG_GENERATION["SMALL_LOAD_THRESHOLD_KW"]
@@ -213,8 +222,7 @@ VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM = CONFIG_GENERATION["VOLTAGE_DROP_LARGE_L
 # Voltage drop limit for feeder cables (total voltage drop as percentage of nominal voltage)
 VOLTAGE_DROP_DISTRIBUTION_PERCENT = CONFIG_GENERATION["VOLTAGE_DROP_DISTRIBUTION_PERCENT"]
 
-# Cables available for consumer connections (from feeder to buildings)
-CONSUMER_CONNECTION_AVAILABLE_CABLES = CONFIG_GENERATION["CONSUMER_CONNECTION_AVAILABLE_CABLES"]
+# Consumer connection cables are defined directly by CONSUMER_CONNECTION_CABLES.
 
 # =============================================================================
 # SETTLEMENT TYPE THRESHOLDS (from CONFIG_GENERATION)

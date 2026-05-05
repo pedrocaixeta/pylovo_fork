@@ -297,7 +297,7 @@ class GridGenerator:
         """
         Load data from config.
         """
-        self.dbc.insert_equipment_data_from_config(equipment_data=EQUIPMENT_DATA)
+        self.dbc.insert_equipment_data_from_config(equipment_data=CONFIG_EQUIPMENT_DATA)
         self.dbc.commit_changes() # only activate for debugging - otherwise multiprocessing does not work
         self.dbc.insert_consumer_categories_from_config(consumer_categories=CONSUMER_CATEGORIES)
 
@@ -780,8 +780,10 @@ class GridGenerator:
             load_type[row.vertice_id] = row.type
             gzf = CONSUMER_CATEGORIES.loc[CONSUMER_CATEGORIES.definition == row.type, "sim_factor"].item()
 
-            # Determine simultaneous load of each building in MW
-            sim_load_per_building[row.vertice_id] = utils.oneSimultaneousLoad(row.peak_load_in_kw * 1e-3, row.households_per_building, gzf)
+            # Determine simultaneous load of each building in kW.
+            sim_load_per_building[row.vertice_id] = utils.oneSimultaneousLoad(
+                row.peak_load_in_kw, row.households_per_building, gzf
+            )
 
         return sim_load_per_building, load_units, load_type
 
@@ -893,7 +895,10 @@ class GridGenerator:
             local_length_dict = {c: 0 for c in all_available_cables}
 
             # Create cable installer
-            installer = CableInstaller(backend, self.dbc, self.logger, cables)
+            installer = CableInstaller(
+                backend, self.dbc, self.logger, cables,
+                FEEDER_CABLES, CONSUMER_CONNECTION_CABLES
+            )
             
             # Create network components
             installer.create_lvmv_bus(self.plz, kcid, bcid)
@@ -925,7 +930,7 @@ class GridGenerator:
                     # Install consumer cables
                     local_length_dict = installer.install_consumer_cables(
                         self.plz, bcid, kcid, branch_deviation, connection_node_list,
-                        ont_vertice, vertices_dict, sim_load_per_building, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict,
+                        ont_vertice, vertices_dict, sim_load_per_building, local_length_dict,
                     )
 
                     # Connect to transformer
@@ -962,7 +967,7 @@ class GridGenerator:
                 # Install cables for this branch
                 local_length_dict = installer.install_consumer_cables(
                     self.plz, bcid, kcid, branch_deviation, branch_node_list,
-                    ont_vertice, vertices_dict, sim_load_per_building, CONSUMER_CONNECTION_AVAILABLE_CABLES, local_length_dict
+                    ont_vertice, vertices_dict, sim_load_per_building, local_length_dict
                 )
 
                 # Select appropriate cable and connect nodes

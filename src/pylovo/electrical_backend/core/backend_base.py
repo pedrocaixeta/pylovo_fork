@@ -24,7 +24,7 @@ Any backend implementation MUST:
 1. Implement all @abstractmethod functions defined below
 2. Accept ComponentSpec objects and translate to native API calls
 3. Handle pylovo grid conventions (400V LV, 20kV MV for German grids)
-4. Support cable types from equipment_data table
+4. Support cable types registered from the configured feeder and consumer cable pools
 5. Return consistent circuit metrics for analysis
 """
 

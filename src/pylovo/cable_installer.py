@@ -11,7 +11,8 @@ from pylovo.electrical_backend import normalize_cable_name
 class CableInstaller:
     """Handles cable installation for electrical grids using backend abstraction."""
 
-    def __init__(self, backend: IElectricalBackend, dbc, logger, cables: list):
+    def __init__(self, backend: IElectricalBackend, dbc, logger, cables: list,
+                 feeder_cables: pd.DataFrame, consumer_connection_cables: pd.DataFrame):
         """Initialize cable installer.
 
         Args:
@@ -19,13 +20,24 @@ class CableInstaller:
             dbc: Database client for accessing grid data
             logger: Logger instance
             cables: List of cable tuples from database (name, r_ohm_per_km, x_ohm_per_km, max_i_ka)
+            feeder_cables: Configured feeder cable definitions
+            consumer_connection_cables: Configured consumer connection cable definitions
         """
         self.backend = backend
         self.dbc = dbc
         self.logger = logger
+        self._feeder_available_cables = self._extract_cable_names(feeder_cables)
+        self._consumer_connection_cables = self._extract_cable_names(consumer_connection_cables)
 
         # Cache cable data from database as DataFrame (single source of truth)
         self._cable_df = self._build_cable_dataframe(cables)
+
+    @staticmethod
+    def _extract_cable_names(cable_df: pd.DataFrame) -> list[str]:
+        """Extract normalized cable names from a config cable DataFrame."""
+        if cable_df.empty or "name" not in cable_df.columns:
+            return []
+        return [normalize_cable_name(name) for name in cable_df["name"].tolist()]
 
     @staticmethod
     def _build_cable_dataframe(cables: list) -> pd.DataFrame:
@@ -145,7 +157,7 @@ class CableInstaller:
             node_geodata = self.dbc.get_node_geom(consumer)
             ltype = load_type[consumer]
             total_installed_kw = buildings_df[buildings_df["vertice_id"] == consumer]["peak_load_in_kw"].tolist()[0]
-            simultaneous_load_kw = sim_load_per_building[consumer] * 1e3
+            simultaneous_load_kw = sim_load_per_building[consumer]
             # Calculate reactive power from power factor
             phi = np.arccos(DEFAULT_POWER_FACTOR)
             kvar = simultaneous_load_kw * np.tan(phi)
@@ -173,12 +185,8 @@ class CableInstaller:
     def install_consumer_cables(self, plz: int, bcid: int, kcid: int,
                                 branch_deviation: float, branch_node_list: list,
                                 ont_vertice: int, vertices_dict: dict, Pd: dict,
-                                connection_available_cables: list[str],
                                 local_length_dict: dict) -> dict:
         """Install consumer connection cables."""
-        # Normalize cable names from config to match internal format
-        connection_available_cables = [normalize_cable_name(c) for c in connection_available_cables]
-
         consumer_list = self.dbc.get_vertices_from_connection_points(branch_node_list)
         branch_consumer_list = [n for n in consumer_list if n in vertices_dict.keys()]
 
@@ -196,7 +204,14 @@ class CableInstaller:
             length_km = (vertices_dict[end_vid] - vertices_dict[start_vid]) * 1e-3
             count = 1
             sim_load = Pd[end_vid]
-            Imax = sim_load * 1e-3 / (VN * V_BAND_LOW * np.sqrt(3))
+            Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
+
+            connection_available_cables = self._consumer_connection_cables
+            # Direct high-load supplies from a dedicated transformer connection point may use feeder cables as well.
+            if start_vid == ont_vertice and sim_load > SMALL_LOAD_THRESHOLD_KW:
+                connection_available_cables = list(dict.fromkeys(
+                    self._consumer_connection_cables + self._feeder_available_cables
+                ))
 
             voltage_available_cables_df = None
             line_df = self._cable_df
@@ -265,7 +280,10 @@ class CableInstaller:
         line_df = self._cable_df
 
         while True:
-            current_available_cables = line_df[(line_df["max_i_ka"] >= Imax / count)]
+            current_available_cables = line_df[
+                (line_df["max_i_ka"] >= Imax / count) &
+                (line_df.index.isin(self._feeder_available_cables))
+            ]
 
             if len(current_available_cables) == 0:
                 count += 1

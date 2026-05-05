@@ -19,7 +19,7 @@ class PreprocessingMixin(BaseMixin, ABC):
         try:
             # Use a more robust approach with ON CONFLICT to handle race conditions
             consumer_categories_str = CONSUMER_CATEGORIES.to_json().replace("'", "''")
-            connection_available_cables_str = str(CONSUMER_CONNECTION_AVAILABLE_CABLES).replace("'", "''")
+            connection_available_cables_str = str(CONSUMER_CONNECTION_CABLES["name"].tolist()).replace("'", "''")
             other_parameters_dict = {"LARGE_COMPONENT_LOWER_BOUND": LARGE_COMPONENT_LOWER_BOUND,
                                      "LARGE_COMPONENT_DIVIDER": LARGE_COMPONENT_DIVIDER, "VN": VN,
                                      "V_BAND_LOW": V_BAND_LOW, "V_BAND_HIGH": V_BAND_HIGH, }
@@ -45,7 +45,7 @@ class PreprocessingMixin(BaseMixin, ABC):
             raise
 
     def insert_equipment_data_from_config(self, equipment_data: pd.DataFrame):
-        """Populate equipment_data table from EQUIPMENT_DATA DataFrame defined in the version config.
+        """Populate equipment_data table from the combined config equipment DataFrame.
         Replaces former pandas.to_sql variant (replace) with conflict-safe inserts.
         Reasons:
         Strategy:
