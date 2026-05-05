@@ -1036,13 +1036,16 @@ class GridGenerator:
             powerflow_status = self.save_net(backend, kcid, bcid)
             if powerflow_status == "converged":
                 converged_count += 1
+            elif powerflow_status == "voltage_violation":
+                voltage_violation_count += 1
             else:
                 not_converged_count += 1
 
         self.logger.info(
             f"Cable installation finished for PLZ {self.plz}: processed_clusters={total_clusters}, "
             f"power_flow_converged={converged_count}/{total_clusters}, "
-            f"power_flow_not_converged={not_converged_count}"
+            f"power_flow_not_converged={not_converged_count}, "
+            f"voltage_band_violations={voltage_violation_count}"
         )
 
     def save_net(self, backend: IElectricalBackend, kcid, bcid) -> str:
@@ -1054,30 +1057,73 @@ class GridGenerator:
         try:
             converged = backend.solve_power_flow()
             if converged:
-                self.logger.info(f"Power flow converged for kcid={kcid}, bcid={bcid}")
-                powerflow_status = "converged"
+                metrics = backend.get_circuit_metrics()
+                min_voltage_pu = metrics.get("min_voltage_pu")
+                max_voltage_pu = metrics.get("max_voltage_pu")
+
+                voltage_out_of_band = False
+                if min_voltage_pu is not None and min_voltage_pu < V_BAND_LOW:
+                    voltage_out_of_band = True
+                if max_voltage_pu is not None and max_voltage_pu > V_BAND_HIGH:
+                    voltage_out_of_band = True
+
+                if voltage_out_of_band:
+                    powerflow_status = "voltage_violation"
+                    self.logger.warning(
+                        f"Power flow converged but voltage band was violated for kcid={kcid}, bcid={bcid} "
+                        f"(min_vm_pu={min_voltage_pu}, max_vm_pu={max_voltage_pu}, "
+                        f"allowed=[{V_BAND_LOW}, {V_BAND_HIGH}])."
+                    )
+                else:
+                    self.logger.info(f"Power flow converged for kcid={kcid}, bcid={bcid}")
+                    powerflow_status = "converged"
             else:
                 self.logger.warning(f"Power flow did NOT converge for kcid={kcid}, bcid={bcid}")
                 powerflow_status = "not_converged"
         except Exception as e:
             self.logger.warning(f"Power flow failed for kcid={kcid}, bcid={bcid}: {e}")
 
+        if powerflow_status != "converged":
+            self.logger.warning(
+                f"Grid with kcid:{kcid} bcid:{bcid} will be stored with status={powerflow_status}."
+            )
+
         if SAVE_GRID_FOLDER:
             savepath_folder = Path(RESULT_DIR, "grids", f"version_{VERSION_ID}", str(self.plz))
             savepath_folder.mkdir(parents=True, exist_ok=True)
             filename = f"kcid{kcid}bcid{bcid}.json"
             savepath_file = Path(savepath_folder, filename)
-            backend.export_to_format(filename=savepath_file)
+            try:
+                backend.export_to_format(filename=savepath_file)
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to export grid file for kcid={kcid}, bcid={bcid}, status={powerflow_status}: {e}"
+                )
 
-        json_string = backend.export_to_format(filename=None)
+        json_string = None
+        try:
+            json_string = backend.export_to_format(filename=None)
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to export grid JSON for kcid={kcid}, bcid={bcid}, status={powerflow_status}: {e}"
+            )
 
         if ELECTRICAL_BACKEND == "pandapower":
             transformer_description = backend.net.trafo.name[0]
         else:
             transformer_description = "N/A"
 
-        self.dbc.save_pp_net_with_json(self.plz, kcid, bcid, json_string, transformer_description)
+        self.dbc.save_pp_net_with_json(
+            self.plz,
+            kcid,
+            bcid,
+            json_string,
+            transformer_description,
+            powerflow_status,
+        )
 
-        self.logger.debug(f"Grid with kcid:{kcid} bcid:{bcid} is stored.")
+        self.logger.debug(
+            f"Grid with kcid:{kcid} bcid:{bcid} is stored with status={powerflow_status}."
+        )
         return powerflow_status
 

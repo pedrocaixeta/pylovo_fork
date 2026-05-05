@@ -80,6 +80,7 @@ CREATE_QUERIES = {
         transformer_description varchar(100),
         model_status integer,
         ont_vertice_id bigint,
+        power_flow_status varchar(32),
         grid json,
         CONSTRAINT cluster_identifier UNIQUE (version_id, kcid, bcid, plz),
         CONSTRAINT unique_grid_result_id_version_id UNIQUE (version_id, grid_result_id),
