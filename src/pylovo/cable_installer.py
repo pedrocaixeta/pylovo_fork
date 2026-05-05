@@ -11,6 +11,8 @@ from pylovo.electrical_backend import normalize_cable_name
 class CableInstaller:
     """Handles cable installation for electrical grids using backend abstraction."""
 
+    _NOMINAL_VOLTAGE_KV = VN * 1e-3
+
     def __init__(self, backend: IElectricalBackend, dbc, logger, cables: list,
                  feeder_cables: pd.DataFrame, consumer_connection_cables: pd.DataFrame):
         """Initialize cable installer.
@@ -230,9 +232,19 @@ class CableInstaller:
                 )
 
                 if sim_load <= SMALL_LOAD_THRESHOLD_KW:
-                    voltage_drop_limit = VN * VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM / 100
+                    voltage_drop_limit = (
+                        self._NOMINAL_VOLTAGE_KV
+                        * VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM
+                        / 100
+                        * length_km
+                    )
                 else:
-                    voltage_drop_limit = VN * VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM / 100
+                    voltage_drop_limit = (
+                        self._NOMINAL_VOLTAGE_KV
+                        * VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM
+                        / 100
+                        * length_km
+                    )
 
                 if Imax * length_km == 0:
                     voltage_available_cables_df = current_available_cables_df
@@ -303,7 +315,7 @@ class CableInstaller:
                 else:
                     voltage_available_cables = current_available_cables[
                         current_available_cables["cable_impedence"] <=
-                        VN * VOLTAGE_DROP_DISTRIBUTION_PERCENT / 100 / voltage_denominator
+                        self._NOMINAL_VOLTAGE_KV * VOLTAGE_DROP_DISTRIBUTION_PERCENT / 100 / voltage_denominator
                     ]
 
                 if len(voltage_available_cables) == 0:

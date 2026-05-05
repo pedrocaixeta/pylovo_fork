@@ -866,6 +866,7 @@ class GridGenerator:
         next_progress_checkpoint = 10
         converged_count = 0
         not_converged_count = 0
+        voltage_violation_count = 0
 
         for id in cluster_list:
             kcid, bcid = id
