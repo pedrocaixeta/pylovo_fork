@@ -550,9 +550,18 @@ class GridGenerator:
         while True:
             reclustering_iterations += 1
             # Try clustering with current parameters
-            invalid_cluster_dict, cluster_dict, _ = self.dbc.load_constrained_hierarchical_clustering(Z, cluster_amount, new_localid2vid, buildings,
-                                                                                                      consumer_cat_df, transformer_capacities,
-                                                                                                      double_trans)
+            invalid_cluster_dict, cluster_dict, _ = self.dbc.load_constrained_hierarchical_clustering(
+                Z,
+                cluster_amount,
+                new_localid2vid,
+                buildings,
+                consumer_cat_df,
+                transformer_capacities,
+                double_trans,
+                dist_mat=new_dist_mat if reclustering_iterations > 1 else dist_mat,
+                vid2localid={value: key for key, value in new_localid2vid.items()},
+                max_transformer_distance=MAX_GREENFIELD_TRAFO_DISTANCE,
+            )
 
             # Process valid clusters
             if cluster_dict:
@@ -743,8 +752,18 @@ class GridGenerator:
         # Calculate weighted distance (distance * load) for each potential location
         total_load_per_vertice = dist_mat.dot(loads)
 
+        # Prefer candidates that also satisfy the max-distance limit.
+        feasible_candidate_ids = np.flatnonzero(dist_mat.max(axis=1) <= MAX_GREENFIELD_TRAFO_DISTANCE)
+        if len(feasible_candidate_ids) > 0:
+            min_localid = feasible_candidate_ids[np.argmin(total_load_per_vertice[feasible_candidate_ids])]
+        else:
+            min_localid = int(np.argmin(total_load_per_vertice))
+            self.logger.warning(
+                f"Greenfield transformer placement for PLZ {plz}, KCID {kcid}, BCID {bcid} has no candidate within "
+                f"MAX_GREENFIELD_TRAFO_DISTANCE={MAX_GREENFIELD_TRAFO_DISTANCE} m; falling back to weighted minimum."
+            )
+
         # Select the point with minimum weighted distance as transformer location
-        min_localid = np.argmin(total_load_per_vertice)
         ont_connection_id = int(localid2vid[min_localid])
 
         # Update the database with the selected transformer position

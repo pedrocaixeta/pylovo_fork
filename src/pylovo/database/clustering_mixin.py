@@ -19,6 +19,25 @@ class ClusteringMixin(BaseMixin, ABC):
     def __init__(self):
         super().__init__()
 
+    @staticmethod
+    def cluster_has_feasible_transformer_position(
+        vid_list: list[int],
+        dist_mat: np.ndarray,
+        vid2localid: dict[int, int],
+        max_distance: float | None,
+    ) -> bool:
+        """Return whether any cluster connection point satisfies the max-distance limit."""
+        if max_distance is None or max_distance <= 0 or len(vid_list) <= 1:
+            return True
+
+        local_ids = [vid2localid[vid] for vid in vid_list if vid in vid2localid]
+        if len(local_ids) <= 1:
+            return True
+
+        cluster_dist_mat = dist_mat[np.ix_(local_ids, local_ids)]
+        best_max_distance = float(cluster_dist_mat.max(axis=1).min())
+        return best_max_distance <= max_distance
+
     def get_connected_component(self) -> tuple[np.ndarray, np.ndarray]:
         """
         Reads from ways_tem
@@ -189,7 +208,9 @@ class ClusteringMixin(BaseMixin, ABC):
         return load
 
     def load_constrained_hierarchical_clustering(self, Z: np.ndarray, cluster_amount: int, localid2vid: dict, buildings: pd.DataFrame,
-            consumer_cat_df: pd.DataFrame, transformer_capacities: np.ndarray, double_trans: np.ndarray, ) -> tuple[
+            consumer_cat_df: pd.DataFrame, transformer_capacities: np.ndarray, double_trans: np.ndarray,
+            dist_mat: np.ndarray | None = None, vid2localid: dict[int, int] | None = None,
+            max_transformer_distance: float | None = None, ) -> tuple[
         dict, dict, int]:
         """
         Attempts to cluster buildings based on hierarchical clustering linkage matrix Z and assigns transformers.
@@ -207,6 +228,10 @@ class ClusteringMixin(BaseMixin, ABC):
             consumer_cat_df (pd.DataFrame): DataFrame containing consumer category definitions (simultaneity factors).
             transformer_capacities (np.ndarray): Array of available single transformer capacities (sorted).
             double_trans (np.ndarray): Array of available double transformer capacities (sorted).
+            dist_mat (np.ndarray, optional): Pairwise street-distance matrix for the cluster candidates.
+            vid2localid (dict[int, int], optional): Reverse mapping for ``dist_mat`` lookup.
+            max_transformer_distance (float, optional): Maximum allowed distance from a greenfield
+                transformer point to any connection point in the cluster.
 
         Returns:
             tuple[dict, dict, int]:
@@ -225,7 +250,17 @@ class ClusteringMixin(BaseMixin, ABC):
         for cluster_id in range(cluster_count):
             vid_list = [localid2vid[lid[0]] for lid in np.argwhere(flat_groups == cluster_id)]
             total_sim_load = utils.simultaneousPeakLoad(buildings, consumer_cat_df, vid_list)
+            distance_feasible = True
+            if dist_mat is not None and vid2localid is not None:
+                distance_feasible = self.cluster_has_feasible_transformer_position(
+                    vid_list,
+                    dist_mat,
+                    vid2localid,
+                    max_transformer_distance,
+                )
             if (total_sim_load >= max(transformer_capacities) and len(vid_list) >= 5):  # the cluster is too big
+                invalid_cluster_dict[cluster_id] = vid_list
+            elif not distance_feasible:
                 invalid_cluster_dict[cluster_id] = vid_list
             elif total_sim_load < max(transformer_capacities):
                 # find the smallest transformer, that satisfies the load
