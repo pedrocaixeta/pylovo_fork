@@ -220,10 +220,11 @@ CREATE_QUERIES = {
         "grid_parameters": """CREATE TABLE IF NOT EXISTS grid_parameters (
         grid_result_id bigint PRIMARY KEY,
         feeder_lines integer,
-        house_connections integer,
-        cable_length double precision,
+        graph_length double precision,
         avg_trafo_distance double precision,
-        max_voltage_drop double precision,
+        max_trafo_distance double precision,
+        transformer_mva double precision,
+        graph_resistance double precision,
         CONSTRAINT fk_grid_parameters_grid_result
             FOREIGN KEY (grid_result_id)
             REFERENCES grid_result (grid_result_id)

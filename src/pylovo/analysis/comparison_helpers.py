@@ -31,10 +31,20 @@ def export_synthetic_comparison_parameters_for_plz(
     """Compute, persist, and export the active comparison parameter set for synthetic grids."""
     calculator.plz = plz
 
-    calculator.dbc.cur.execute(CREATE_QUERIES["grid_parameters"])
+    _reset_grid_parameters_table(calculator)
     calculator.dbc.conn.commit()
 
-    grids = calculator.dbc.get_list_from_plz(plz)
+    calculator.dbc.cur.execute(
+        """
+        SELECT kcid, bcid
+        FROM grid_result
+                WHERE plz = %s AND version_id = %s
+                    AND COALESCE(power_flow_status, 'converged') = 'converged'
+        ORDER BY kcid, bcid
+        """,
+        (plz, str(calculator.version_id)),
+    )
+    grids = calculator.dbc.cur.fetchall()
     if limit is not None:
         grids = grids[:limit]
     print(f"Calculating comparison parameters for {len(grids)} grids in PLZ {plz}...")
@@ -43,7 +53,7 @@ def export_synthetic_comparison_parameters_for_plz(
 
     for kcid, bcid in grids:
         try:
-            net = calculator.dbc.read_net_db(plz, kcid, bcid)
+            net = calculator.dbc.read_net_db(plz, kcid, bcid, version_id=calculator.version_id)
             if len(net.bus) < MINI_GRID_BUS_THRESHOLD:
                 continue
             calculator.dbc.cur.execute(
@@ -331,28 +341,44 @@ def _infer_real_grid_consumer_buses(net: pp.pandapowerNet, buildings_gdf: gpd.Ge
 
 
 def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result_id: int, params: dict) -> None:
-    """Persist the comparison parameter subset needed by the historical grid_parameters table."""
+    """Persist the active comparison metric set to ``grid_parameters``."""
     query = """
-        INSERT INTO grid_parameters (grid_result_id, feeder_lines, house_connections, cable_length, avg_trafo_distance, max_voltage_drop)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO grid_parameters (
+            grid_result_id,
+            feeder_lines,
+            graph_length,
+            avg_trafo_distance,
+            max_trafo_distance,
+            transformer_mva,
+            graph_resistance
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (grid_result_id) DO UPDATE SET
         feeder_lines = EXCLUDED.feeder_lines,
-        house_connections = EXCLUDED.house_connections,
-        cable_length = EXCLUDED.cable_length,
+        graph_length = EXCLUDED.graph_length,
         avg_trafo_distance = EXCLUDED.avg_trafo_distance,
-        max_voltage_drop = EXCLUDED.max_voltage_drop;
+        max_trafo_distance = EXCLUDED.max_trafo_distance,
+        transformer_mva = EXCLUDED.transformer_mva,
+        graph_resistance = EXCLUDED.graph_resistance;
     """
     calculator.dbc.cur.execute(
         query,
         (
             grid_result_id,
             params["feeder_lines"],
-            params["house_connections"],
-            params["cable_length"],
+            params["graph_length"],
             params["avg_trafo_distance"],
-            None,
+            params["max_trafo_distance"],
+            params["transformer_mva"],
+            params["graph_resistance"],
         ),
     )
+
+
+def _reset_grid_parameters_table(calculator: "ParameterCalculator") -> None:
+    """Recreate ``grid_parameters`` with the current comparison schema."""
+    calculator.dbc.cur.execute("DROP TABLE IF EXISTS grid_parameters")
+    calculator.dbc.cur.execute(CREATE_QUERIES["grid_parameters"])
 
 
 __all__ = [
