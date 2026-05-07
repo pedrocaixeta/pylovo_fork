@@ -32,24 +32,14 @@ def _get_transformer_mva(net: pp.pandapowerNet) -> float:
 def _calculate_resistance(
     calculator: "ParameterCalculator",
     net: pp.pandapowerNet,
-    graph,
 ) -> float:
     """Return the active comparison resistance proxy.
 
-    Real grids use only load rows explicitly tagged as HH. Synthetic grids do
-    not use the HH type tag, so all synthetic load rows are kept.
+    Comparison now uses aggregate routed-line resistance so the metric remains
+    meaningful for both real and synthetic grids even when house-connection
+    modelling differs or cable-distribution stations are absent.
     """
-    if net.load.empty or "bus" not in net.load.columns:
-        return 0.0
-
-    load_table = net.load.copy()
-    if not calculator.uses_synthetic_bus_naming(net) and "type" in load_table.columns:
-        household_mask = load_table["type"].fillna("").astype(str).str.upper().isin(REAL_HOUSEHOLD_LOAD_TYPES)
-        if household_mask.any():
-            load_table = load_table.loc[household_mask].copy()
-
-    proxy = calculator.calculate_household_path_impedance_proxy(net, graph, load_table=load_table)
-    return float(proxy["resistance"])
+    return calculator.calculate_graph_resistance(net, only_in_service=True)
 
 
 def compute_comparison_parameters(
@@ -76,12 +66,12 @@ def compute_comparison_parameters(
             if consumer_buses is not None
             else calculator.resolve_consumer_buses(net, uses_synthetic_naming)
         )
-        house_connections = calculator.count_consumers(resolved_consumer_buses)
 
         graph = pp.topology.create_nxgraph(net, respect_switches=True)
         feeder_lines = calculator.count_feeders(
             net, graph, root_idx, uses_synthetic_naming,
             bus_type_config=bus_type_config,
+            recursive_expansion=True,
         )
         avg_trafo_distance, max_trafo_distance = calculator.calculate_trafo_distances(
             graph,
@@ -94,22 +84,21 @@ def compute_comparison_parameters(
 
         traceback.print_exc()
         feeder_lines = 0
-        house_connections = len(net.load["bus"].unique()) if not net.load.empty else 0
         avg_trafo_distance = 0.0
         max_trafo_distance = 0.0
         graph = pp.topology.create_nxgraph(net, respect_switches=True)
 
     transformer_mva = _get_transformer_mva(net)
-    resistance = _calculate_resistance(calculator, net, graph)
+    graph_length = calculator.calculate_graph_length(net, only_in_service=True)
+    graph_resistance = _calculate_resistance(calculator, net)
 
     return {
         "feeder_lines": int(feeder_lines),
-        "house_connections": int(house_connections),
-        "cable_length": float(calculator.calculate_cable_length(net, only_in_service=True)),
+        "graph_length": float(graph_length),
         "avg_trafo_distance": float(avg_trafo_distance),
         "max_trafo_distance": float(max_trafo_distance),
         "transformer_mva": transformer_mva,
-        "resistance": resistance,
+        "graph_resistance": float(graph_resistance),
     }
 
 

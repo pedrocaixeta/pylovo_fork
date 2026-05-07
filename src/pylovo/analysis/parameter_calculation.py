@@ -279,6 +279,8 @@ class ParameterCalculator:
         root_idx: int,
         uses_synthetic_naming: bool,
         bus_type_config: Optional[Dict[str, str]] = None,
+        expand_kvs: bool = True,
+        recursive_expansion: bool = False,
     ) -> int:
         """Count feeders using a unified topology-aware algorithm.
 
@@ -305,6 +307,15 @@ class ParameterCalculator:
         bus_type_config : dict, optional
             Naming-pattern dictionary (see :data:`SWF_BUS_TYPE_CONFIG`).
             When ``None``, the config is inferred from *uses_synthetic_naming*.
+        expand_kvs : bool, default True
+            When ``True``, explicit KVS neighbors at the first branching point
+            are expanded into multiple feeders. When ``False``, every first-hop
+            downstream backbone neighbor counts as one feeder, regardless of
+            whether it is an explicit KVS bus.
+        recursive_expansion : bool, default False
+            When ``True``, count terminal feeder branches recursively in the
+            downstream backbone tree. This treats implicit synthetic split
+            points and explicit real KVS split points symmetrically.
         """
         if bus_type_config is None:
             bus_type_config = (
@@ -312,7 +323,15 @@ class ParameterCalculator:
             )
         bus_types = classify_bus_types(net, bus_type_config)
 
-        return self._count_feeders_unified(net, graph, root_idx, bus_types)
+        return self._count_feeders_unified(
+            net,
+            graph,
+            root_idx,
+            bus_types,
+            expand_kvs=expand_kvs,
+            recursive_expansion=recursive_expansion,
+            uses_synthetic_naming=uses_synthetic_naming,
+        )
 
     def _count_feeders_unified(
         self,
@@ -320,6 +339,9 @@ class ParameterCalculator:
         graph: nx.Graph,
         root_idx: int,
         bus_types: Dict[int, str],
+        expand_kvs: bool = True,
+        recursive_expansion: bool = False,
+        uses_synthetic_naming: bool = False,
     ) -> int:
         """Core feeder counting logic shared by all grid representations.
 
@@ -330,21 +352,23 @@ class ParameterCalculator:
         3. Classify each neighbor using *bus_types* and apply the counting rules
            documented in :meth:`count_feeders`.
         """
-        if root_idx not in graph:
+        graph_for_count = self._build_rooted_tree(graph, root_idx) if recursive_expansion else graph
+
+        if root_idx not in graph_for_count:
             return 0
 
         # --- walk past source stubs ----------------------------------------
         previous = None
         current = root_idx
 
-        while graph.degree[current] == 1:
-            neighbors = list(graph.neighbors(current))
+        while graph_for_count.degree[current] == 1:
+            neighbors = list(graph_for_count.neighbors(current))
             if not neighbors:
                 return 0
             previous, current = current, neighbors[0]
 
-        while previous is not None and graph.degree[current] == 2:
-            next_nodes = [n for n in graph.neighbors(current) if n != previous]
+        while previous is not None and graph_for_count.degree[current] == 2:
+            next_nodes = [n for n in graph_for_count.neighbors(current) if n != previous]
             if not next_nodes:
                 break
             previous, current = current, next_nodes[0]
@@ -353,14 +377,31 @@ class ParameterCalculator:
 
         # --- determine downstream neighbors --------------------------------
         if previous is not None:
-            downstream = [n for n in graph.neighbors(branch_point) if n != previous]
+            downstream = [n for n in graph_for_count.neighbors(branch_point) if n != previous]
         else:
             # Root itself is the branch point (e.g. synthetic LVbus).
             # Exclude trafo edges explicitly.
             downstream = [
-                n for n in graph.neighbors(branch_point)
+                n for n in graph_for_count.neighbors(branch_point)
                 if not self._is_trafo_edge(net, branch_point, n)
             ]
+
+        if recursive_expansion:
+            feeders = sum(
+                self._count_terminal_feeders(
+                    graph_for_count,
+                    neighbor,
+                    branch_point,
+                    bus_types,
+                    uses_synthetic_naming=uses_synthetic_naming,
+                    visited={branch_point},
+                )
+                for neighbor in downstream
+                if not self._is_house_connection_leaf(graph_for_count, neighbor, branch_point, bus_types)
+            )
+            if downstream and feeders == 0:
+                feeders = 1
+            return feeders
 
         # --- classify and count --------------------------------------------
         feeders = 0
@@ -374,7 +415,7 @@ class ParameterCalculator:
                 # Leaf house connection directly at the branch point – not a feeder.
                 continue
 
-            if btype == "kvs":
+            if btype == "kvs" and expand_kvs:
                 # KVS = transparent splitter.  Count non-house-connection
                 # children as individual feeders; if *all* children are
                 # house connections the KVS itself is one feeder.
@@ -396,6 +437,68 @@ class ParameterCalculator:
             feeders = 1
 
         return feeders
+
+    def _count_terminal_feeders(
+        self,
+        graph: nx.Graph,
+        node: int,
+        parent: int,
+        bus_types: Dict[int, str],
+        uses_synthetic_naming: bool,
+        visited: set[int],
+    ) -> int:
+        """Count terminal backbone branches in the downstream radial tree."""
+        if node in visited:
+            return 0
+
+        visited = set(visited)
+        visited.add(node)
+
+        if self._is_house_connection_leaf(graph, node, parent, bus_types):
+            return 0
+
+        backbone_children = [
+            child
+            for child in graph.neighbors(node)
+            if child != parent
+            and child not in visited
+            and not self._is_house_connection_leaf(graph, child, node, bus_types)
+        ]
+        if not backbone_children:
+            return 1
+
+        if not uses_synthetic_naming and bus_types.get(node, "backbone") != "kvs" and len(backbone_children) > 1:
+            return 1
+
+        return sum(
+            self._count_terminal_feeders(
+                graph,
+                child,
+                node,
+                bus_types,
+                uses_synthetic_naming,
+                visited,
+            )
+            for child in backbone_children
+        )
+
+    @staticmethod
+    def _build_rooted_tree(graph: nx.Graph, root_idx: int) -> nx.Graph:
+        """Project a graph to a rooted tree for path-based feeder counting."""
+        undirected_graph = nx.Graph(graph)
+        return nx.Graph(nx.bfs_tree(undirected_graph, root_idx))
+
+    @staticmethod
+    def _is_house_connection_leaf(
+        graph: nx.Graph,
+        node: int,
+        parent: int,
+        bus_types: Dict[int, str],
+    ) -> bool:
+        """Return whether a node is a terminal house-connection leaf."""
+        if bus_types.get(node, "backbone") != "house_connection":
+            return False
+        return not [neighbor for neighbor in graph.neighbors(node) if neighbor != parent]
 
     @staticmethod
     def _is_trafo_edge(net: pp.pandapowerNet, u: int, v: int) -> bool:
@@ -537,6 +640,51 @@ class ParameterCalculator:
         if only_in_service and "in_service" in line_df.columns:
             line_df = line_df[line_df["in_service"]]
         return line_df["length_km"].sum()
+
+    def calculate_graph_length(self, pandapower_net: pp.pandapowerNet, only_in_service: bool = False) -> float:
+        """Total topology length in km across unique line segments.
+
+        This metric intentionally ignores the ``parallel`` circuit multiplier and
+        therefore reflects the routed graph length rather than installed circuit
+        length. It is the appropriate length basis for real-vs-synthetic grid
+        comparisons.
+        """
+        line_df = pandapower_net.line
+        if line_df.empty or "length_km" not in line_df.columns:
+            return 0.0
+        if only_in_service and "in_service" in line_df.columns:
+            line_df = line_df[line_df["in_service"]]
+        return float(line_df["length_km"].fillna(0.0).sum())
+
+    def calculate_graph_resistance(self, pandapower_net: pp.pandapowerNet, only_in_service: bool = False) -> float:
+        """Return the aggregate line-resistance proxy in ohms.
+
+        The proxy sums the per-segment equivalent resistance
+        ``length_km * r_ohm_per_km / parallel`` over active line segments and
+        uses the same impedance-ready line-table validation as the path-based
+        impedance routines. Unlike :meth:`calculate_graph_length`, this metric
+        treats parallel conductors electrically, so grids that use many smaller
+        parallel cables do not collapse onto the same resistance proxy as a
+        single-conductor layout with the same routed length.
+        """
+        line_table = self._build_impedance_line_table(pandapower_net)
+        if line_table.empty:
+            return 0.0
+        if only_in_service and "in_service" in line_table.columns:
+            line_table = line_table[line_table["in_service"]]
+        if line_table.empty:
+            return 0.0
+        parallel = (
+            line_table["parallel"].fillna(1.0).replace(0, 1.0)
+            if "parallel" in line_table.columns
+            else 1.0
+        )
+        resistance = (
+            line_table["length_km"].fillna(0.0)
+            * line_table["r_ohm_per_km"].fillna(0.0)
+            / parallel
+        )
+        return float(resistance.sum())
 
     def calculate_average_house_distance(self, pandapower_net: pp.pandapowerNet) -> float:
         """Calculate a spatial neighborhood distance proxy for consumer locations.
