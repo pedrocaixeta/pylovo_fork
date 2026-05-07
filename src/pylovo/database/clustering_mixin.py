@@ -147,6 +147,35 @@ class ClusteringMixin(BaseMixin, ABC):
                 WHERE vertice_id IN %(v)s;"""
         self.cur.execute(query, {"v": tuple(map(int, vertices))})
 
+    @staticmethod
+    def _format_bytes(byte_count: int) -> str:
+        units = ["B", "KiB", "MiB", "GiB", "TiB"]
+        size = float(byte_count)
+        for unit in units:
+            if size < 1024 or unit == units[-1]:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+
+    def get_kcid_distance_matrix_stats(self, kcid: int) -> dict[str, int]:
+        """Return pre-flight sizing stats for the KCID distance matrix query."""
+        query = """SELECT COUNT(*) AS building_count,
+                          COUNT(DISTINCT connection_point) AS connection_point_count
+                   FROM buildings_tem
+                   WHERE kcid = %(k)s
+                     AND bcid ISNULL
+                     AND connection_point IS NOT NULL
+                     AND type != 'Transformer';"""
+        self.cur.execute(query, {"k": kcid})
+        building_count, connection_point_count = self.cur.fetchone()
+        point_count = int(connection_point_count or 0)
+
+        return {
+            "building_count": int(building_count or 0),
+            "connection_point_count": point_count,
+            "estimated_pair_count": point_count * point_count,
+            "estimated_dense_matrix_bytes": point_count * point_count * 8,
+        }
+
     def get_distance_matrix_from_kcid(self, kcid: int) -> tuple[dict, np.ndarray, dict]:
         """
         Creates a distance matrix from the buildings in the kcid
@@ -154,6 +183,17 @@ class ClusteringMixin(BaseMixin, ABC):
             kcid: k-means cluster id
         Returns: The distance matrix of the buildings in the k-means cluster as np.array and the mapping between vertice_id and local ID as dict
         """
+
+        stats = self.get_kcid_distance_matrix_stats(kcid)
+        self.logger.info(
+            "KCID %s distance-matrix preflight: buildings=%s, connection_points=%s, "
+            "estimated_pairs=%s, dense_matrix_estimate=%s",
+            kcid,
+            stats["building_count"],
+            stats["connection_point_count"],
+            stats["estimated_pair_count"],
+            self._format_bytes(stats["estimated_dense_matrix_bytes"]),
+        )
 
         costmatrix_query = """SELECT * \
                               FROM pgr_dijkstraCostMatrix( \
