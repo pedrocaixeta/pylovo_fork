@@ -128,7 +128,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
         return data_list, data_labels, trafo_dict
 
-    def read_net_db(self, plz: int, kcid: int, bcid: int) -> pp.pandapowerNet:
+    def read_net_db(self, plz: int, kcid: int, bcid: int, version_id: str | None = None) -> pp.pandapowerNet:
         """
         Reads a pandapower network from the database for the specified grid.
 
@@ -143,12 +143,15 @@ class AnalysisMixin(BaseMixin, ABC):
         Raises:
             ValueError: If the requested grid does not exist in the database
         """
+        effective_version_id = VERSION_ID if version_id is None else str(version_id)
         read_query = "SELECT grid FROM grid_result WHERE version_id = %s AND plz = %s AND kcid = %s AND bcid = %s LIMIT 1"
-        self.cur.execute(read_query, vars=(VERSION_ID, plz, kcid, bcid))
+        self.cur.execute(read_query, vars=(effective_version_id, plz, kcid, bcid))
 
         result = self.cur.fetchall()
         if not result:
-            self.logger.error(f"Grid not found for plz={plz}, kcid={kcid}, bcid={bcid}, version_id={VERSION_ID}")
+            self.logger.error(
+                f"Grid not found for plz={plz}, kcid={kcid}, bcid={bcid}, version_id={effective_version_id}"
+            )
             raise ValueError(f"Grid not found for plz={plz}, kcid={kcid}, bcid={bcid}")
 
         grid_tuple = result[0]
