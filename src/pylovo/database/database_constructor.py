@@ -11,7 +11,7 @@ import pandas as pd
 from pylovo.config_loader import *
 
 # Import table structure from packaged module (reliable for installed/editable usage)
-from pylovo.database.config_table_structure import CREATE_QUERIES
+from pylovo.database.config_table_structure import CREATE_QUERIES, INFDB_OPTIONAL_TABLES
 
 import pylovo.database.database_client as dbc
 from pylovo.infdb.infdb_client import InfdbClient
@@ -78,7 +78,15 @@ class DatabaseConstructor:
         if table_name == "all":
             try:
                 with self.dbc.conn.cursor() as cur:
-                    for table_name, query in CREATE_QUERIES.items():
+                    create_queries = CREATE_QUERIES
+                    if USE_INFDB:
+                        create_queries = {
+                            name: query
+                            for name, query in CREATE_QUERIES.items()
+                            if name not in INFDB_OPTIONAL_TABLES
+                        }
+
+                    for table_name, query in create_queries.items():
                         cur.execute(query)
                         print(f"CREATE TABLE {table_name}")
                 self.dbc.conn.commit()

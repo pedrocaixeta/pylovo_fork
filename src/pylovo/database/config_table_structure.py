@@ -1,4 +1,6 @@
 # Database schema - table structure
+INFDB_OPTIONAL_TABLES = {"ags_log", "res", "oth", "ways"}
+
 CREATE_QUERIES = {
     "version": """CREATE TABLE IF NOT EXISTS version (
         version_id varchar(10) PRIMARY KEY,
@@ -221,6 +223,7 @@ CREATE_QUERIES = {
         grid_result_id bigint PRIMARY KEY,
         power_flow_status varchar(32),
         feeder_lines integer,
+        buildings_per_feeder double precision,
         graph_length double precision,
         avg_trafo_distance double precision,
         max_trafo_distance double precision,
