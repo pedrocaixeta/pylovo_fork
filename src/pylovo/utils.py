@@ -76,28 +76,39 @@ def create_logger(name, log_file, log_level):
     return logger
 
 
+SIMULTANEITY_CATEGORY_GROUPS = (
+    ("Residential", "SFH", ("SFH", "MFH", "AB", "TH")),
+    ("Commercial", "Commercial", ("Commercial",)),
+    ("Public", "Public", ("Public",)),
+    ("Industrial", "Industrial", ("Industrial",)),
+)
+
+
+def _get_sim_factor(consumer_cat_df, definition):
+    if "definition" in consumer_cat_df.columns:
+        return consumer_cat_df.loc[consumer_cat_df["definition"] == definition, "sim_factor"].item()
+    return consumer_cat_df.loc[definition]["sim_factor"]
+
+
 def simultaneousPeakLoad(buildings_df, consumer_cat_df, vertice_ids):
     # Calculates the simultaneous peak load of buildings with given vertice ids
     subset_df = buildings_df[buildings_df['connection_point'].isin(vertice_ids)]
-    # print(f"{len(subset_df)} buildings are given.")
-    # print(subset_df)
-    occurring_categories = (['SFH', 'MFH', 'AB', 'TH'], ['Commercial'], ['Public'], ['Industrial'])
 
     # Sim loads from each category to dictionary
     category_load_dict = {}
-    for cat in occurring_categories:
+    for _group_name, factor_definition, member_types in SIMULTANEITY_CATEGORY_GROUPS:
         # Aggregate total installed power from the category cat
-        installed_power = subset_df[subset_df['type'].isin(cat)]["peak_load_in_kw"].values.sum()  # n*P_0
+        installed_power = subset_df[subset_df['type'].isin(member_types)]["peak_load_in_kw"].values.sum()  # n*P_0
         # building amount from cat
-        load_count = subset_df[subset_df['type'].isin(cat)]['households_per_building'].values.sum()
+        load_count = subset_df[subset_df['type'].isin(member_types)]['households_per_building'].values.sum()
         if load_count == 0:
             continue
 
-        sim_factor = consumer_cat_df.loc[cat[0]]['sim_factor']  # g_inf
+        sim_factor = _get_sim_factor(consumer_cat_df, factor_definition)  # g_inf
 
         # Calculate simultaneous load (Kerber.2011) Gl. 3.2 - S. 23
         sim_load = oneSimultaneousLoad(installed_power, load_count, sim_factor)
-        category_load_dict[cat[0]] = sim_load
+        category_load_dict[factor_definition] = sim_load
 
     # print(category_load_dict)
     # Calculate total sim load (Kiefer S. 142)
@@ -105,6 +116,61 @@ def simultaneousPeakLoad(buildings_df, consumer_cat_df, vertice_ids):
     # print(f"Total sim load: {total_sim_load}")
 
     return total_sim_load
+
+
+def allocate_consumer_simultaneous_loads(consumer_list, buildings_df, consumer_cat_df):
+    """Allocate grouped simultaneity-consistent loads to consumer vertices.
+
+    Transformer and feeder sizing use grouped simultaneity per main category.
+    Power-flow loads, however, are attached to consumer vertices. This helper
+    distributes the grouped category load back to those consumer vertices while
+    preserving the grouped total and aggregating duplicate building rows per
+    vertex.
+    """
+    sim_load_per_building = {consumer: 0.0 for consumer in consumer_list}
+    load_units = {consumer: 0 for consumer in consumer_list}
+    load_type = {consumer: "SFH" for consumer in consumer_list}
+    scale_by_type = {}
+
+    for _group_name, factor_definition, member_types in SIMULTANEITY_CATEGORY_GROUPS:
+        category_rows = buildings_df[buildings_df["type"].isin(member_types)]
+        if category_rows.empty:
+            continue
+
+        total_individual_sim_kw = 0.0
+        for row in category_rows.itertuples():
+            sim_factor = _get_sim_factor(consumer_cat_df, row.type)
+            total_individual_sim_kw += oneSimultaneousLoad(
+                row.peak_load_in_kw, row.households_per_building, sim_factor
+            )
+
+        grouped_sim_kw = oneSimultaneousLoad(
+            category_rows["peak_load_in_kw"].sum(),
+            category_rows["households_per_building"].sum(),
+            _get_sim_factor(consumer_cat_df, factor_definition),
+        )
+        scale = grouped_sim_kw / total_individual_sim_kw if total_individual_sim_kw > 0 else 0.0
+        for member_type in member_types:
+            scale_by_type[member_type] = scale
+
+    for row in buildings_df.itertuples():
+        load_units[row.vertice_id] += row.households_per_building
+        if load_type[row.vertice_id] == "SFH":
+            load_type[row.vertice_id] = row.type
+        elif load_type[row.vertice_id] != row.type:
+            load_type[row.vertice_id] = "Mixed"
+
+        sim_load_per_building[row.vertice_id] += oneSimultaneousLoad(
+            row.peak_load_in_kw,
+            row.households_per_building,
+            _get_sim_factor(consumer_cat_df, row.type),
+        ) * scale_by_type.get(row.type, 1.0)
+
+    for consumer, consumer_type in load_type.items():
+        if consumer_type == "Mixed":
+            load_type[consumer] = "Commercial"
+
+    return sim_load_per_building, load_units, load_type
 
 
 def oneSimultaneousLoad(installed_power, load_count, sim_factor):

@@ -788,23 +788,13 @@ class GridGenerator:
 
         return (vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes,)
 
-    def get_building_simultaneous_load_dict(self, consumer_list: list, buildings_df: pd.DataFrame) -> tuple[
+    def get_consumer_allocated_loads(self, consumer_list: list, buildings_df: pd.DataFrame) -> tuple[
         dict, dict, dict]:
-        sim_load_per_building = {consumer: 0 for consumer in consumer_list}  # dict of all vertices in bc, 0 as default
-        load_units = {consumer: 0 for consumer in consumer_list}
-        load_type = {consumer: "SFH" for consumer in consumer_list}
-
-        for row in buildings_df.itertuples():
-            load_units[row.vertice_id] = row.households_per_building
-            load_type[row.vertice_id] = row.type
-            gzf = CONSUMER_CATEGORIES.loc[CONSUMER_CATEGORIES.definition == row.type, "sim_factor"].item()
-
-            # Determine simultaneous load of each building in kW.
-            sim_load_per_building[row.vertice_id] = utils.oneSimultaneousLoad(
-                row.peak_load_in_kw, row.households_per_building, gzf
-            )
-
-        return sim_load_per_building, load_units, load_type
+        return utils.allocate_consumer_simultaneous_loads(
+            consumer_list,
+            buildings_df,
+            CONSUMER_CATEGORIES,
+        )
 
 
     def find_furthest_node_path_list(self, connection_node_list: list, vertices_dict: dict, ont_vertice: int) -> list:
@@ -1118,7 +1108,7 @@ class GridGenerator:
             vertices_dict, ont_vertice, vertices_list, buildings_df, consumer_df, consumer_list, connection_nodes = (
                 self.prepare_vertices_list(self.plz, kcid, bcid)
             )
-            sim_load_per_building, load_units, load_type = self.get_building_simultaneous_load_dict(consumer_list, buildings_df)
+            sim_load_per_building, load_units, load_type = self.get_consumer_allocated_loads(consumer_list, buildings_df)
 
             # Initialize backend using configuration
             backend = create_backend(ELECTRICAL_BACKEND, logger=self.logger)
