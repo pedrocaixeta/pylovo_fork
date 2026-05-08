@@ -91,18 +91,6 @@ class CableInstaller:
 
         self.backend.create_component(ExtGridSpec(name="External grid", bus="MVbus 1", vm_pu=1))
 
-        # Add busbar line between MV and LV buses 
-        busbar_line_spec = LineSpec(
-            name="MV-LV Busbar",
-            bus1="MVbus 1",
-            bus2="LVbus 1",
-            cable_name="NAYY_4_185",
-            length_km=0.001,
-            parallel=1,
-            coordinates=[mv_geodata, lv_geodata]
-        )
-        self.backend.create_component(busbar_line_spec)
-
     def create_transformer(self, plz: int, kcid: int, bcid: int) -> None:
         """
         Create a transformer based on the required rated power.
