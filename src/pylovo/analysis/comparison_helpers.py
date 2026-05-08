@@ -28,7 +28,10 @@ def export_synthetic_comparison_parameters_for_plz(
     limit: int = None,
     output_dir: Path | None = None,
 ) -> pd.DataFrame:
-    """Compute, persist, and export the active comparison parameter set for synthetic grids."""
+    """Compute, persist, and export the active comparison parameter set for synthetic grids.
+
+    ``synthetic_grid_metrics.csv`` contains all synthetic grids with ``power_flow_status``.
+    """
     calculator.plz = plz
 
     _reset_grid_parameters_table(calculator)
@@ -36,10 +39,9 @@ def export_synthetic_comparison_parameters_for_plz(
 
     calculator.dbc.cur.execute(
         """
-        SELECT kcid, bcid
+        SELECT kcid, bcid, COALESCE(power_flow_status, 'converged')
         FROM grid_result
                 WHERE plz = %s AND version_id = %s
-                    AND COALESCE(power_flow_status, 'converged') = 'converged'
         ORDER BY kcid, bcid
         """,
         (plz, str(calculator.version_id)),
@@ -51,7 +53,7 @@ def export_synthetic_comparison_parameters_for_plz(
 
     metrics_list = []
 
-    for kcid, bcid in grids:
+    for kcid, bcid, power_flow_status in grids:
         try:
             net = calculator.dbc.read_net_db(plz, kcid, bcid, version_id=calculator.version_id)
             if len(net.bus) < MINI_GRID_BUS_THRESHOLD:
@@ -63,6 +65,7 @@ def export_synthetic_comparison_parameters_for_plz(
             grid_result_id = calculator.dbc.cur.fetchone()[0]
 
             params = compute_comparison_parameters(calculator, net)
+            params["power_flow_status"] = power_flow_status
             params["grid_result_id"] = grid_result_id
             params["kcid"] = kcid
             params["bcid"] = bcid
@@ -345,6 +348,7 @@ def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result
     query = """
         INSERT INTO grid_parameters (
             grid_result_id,
+            power_flow_status,
             feeder_lines,
             graph_length,
             avg_trafo_distance,
@@ -352,8 +356,9 @@ def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result
             transformer_mva,
             graph_resistance
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (grid_result_id) DO UPDATE SET
+        power_flow_status = EXCLUDED.power_flow_status,
         feeder_lines = EXCLUDED.feeder_lines,
         graph_length = EXCLUDED.graph_length,
         avg_trafo_distance = EXCLUDED.avg_trafo_distance,
@@ -365,6 +370,7 @@ def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result
         query,
         (
             grid_result_id,
+            params["power_flow_status"],
             params["feeder_lines"],
             params["graph_length"],
             params["avg_trafo_distance"],
