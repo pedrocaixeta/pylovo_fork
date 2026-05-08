@@ -12,7 +12,6 @@ import seaborn as sns
 from IPython.display import Markdown, display
 
 from pylovo.analysis.comparison_helpers import (
-    SYNTHETIC_METRICS_FILENAME,
     compute_wasserstein_summary,
     iter_real_grid_files,
 )
@@ -92,7 +91,7 @@ def resolve_metrics_path(filename: str, metrics_dir: Path | None = None) -> Path
 
 
 def _load_synthetic_metrics(metrics_dir: Path | None = None) -> tuple[pd.DataFrame, Path]:
-    synthetic_path = resolve_metrics_path(SYNTHETIC_METRICS_FILENAME, metrics_dir)
+    synthetic_path = resolve_metrics_path("synthetic_grid_metrics.csv", metrics_dir)
     if synthetic_path is None:
         raise FileNotFoundError(
             "Synthetic comparison metrics CSV was not found. Run `uv run pylovo-validate compare-grids`."
