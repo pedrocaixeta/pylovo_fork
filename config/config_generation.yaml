@@ -2,7 +2,7 @@
 # Version CONFIGURATION
 # =============================================================================
 VERSION_ID: "1" # Change version if you changed any grid parameters or queries (e.g. transformer query)
-VERSION_COMMENT: base # State here which parameters, queries are used to compute the grids with current VERSION_ID
+VERSION_COMMENT: default # State here which parameters, queries are used to compute the grids with current VERSION_ID
 
 # =============================================================================
 # EXECUTION CONFIGURATION
@@ -20,7 +20,7 @@ TESTING: False # If True, only a small subset of data is used for faster testing
 # =============================================================================
 ELECTRICAL_BACKEND: pandapower # Electrical backend configuration - Options: 'pandapower', 'opendss'
 ### Electrical load calculation parameters
-PEAK_LOAD_HOUSEHOLD: 30 # default: 14.5kW, 30 kW if electric hot water supply is included
+PEAK_LOAD_HOUSEHOLD: 17.425 # default: 14.5kW, around 15% of buildings have 30 kW with electric hot water supply
 SIM_FACTOR: {Residential: 0.07, Public: 0.6, Commercial: 0.5} # Simultaneous load factor - formula: simultaneous_load(n) = peak_load * (sim_factor + (1 - sim_factor) * (n ** (-3 / 4)))
 DEFAULT_POWER_FACTOR: 0.95  # cos(phi) for residential loads
 
@@ -38,6 +38,7 @@ TRANSFORMERS:
   - {name: Tr_250, s_max_kva: 250, cost_eur: 5000, typ: Transformer}
   - {name: Tr_400, s_max_kva: 400, cost_eur: 8000, typ: Transformer}
   - {name: Tr_630, s_max_kva: 630, cost_eur: 12000, typ: Transformer}
+  - {name: Tr_800, s_max_kva: 800, cost_eur: 16000, typ: Transformer}
 
 FEEDER_CABLES:
   - {name: NAYY_4_120, max_i_a: 242, r_mohm_per_km: 225, x_mohm_per_km: 80, z_mohm_per_km: 239, cost_eur: 19, typ: Cable}
@@ -59,8 +60,8 @@ CONSUMER_CONNECTION_CABLES:
 
 ### CABLE DIMENSIONING PARAMETERS
 VN: 400  # Nominal voltage in the low voltage grid
-V_BAND_LOW: 0.95  # Relevant for worst case condition - Only for pandapower - not for dimensioning
-V_BAND_HIGH: 1.05
+V_BAND_LOW: 0.9  # Relevant for worst case condition - Only for pandapower - not for dimensioning
+V_BAND_HIGH: 1.1
 # Minimum routed distance from transformer to an existing upstream split point before a later branch may reuse
 #  that point instead of starting as a separate transformer feeder. Switch the feature off by setting a very high value.
 MIN_SHARED_PREFIX_LENGTH_M: 50
@@ -86,7 +87,7 @@ URBAN_MAX_BUILDING_DISTANCE: 20 # Maximum average distance between buildings for
 TRANSFORMER_MAPPING:
   1: [250, 400, 630]
   2: [400, 630]
-  3: [400, 630]
+  3: [400, 630, 800]
 
 ### Clustering
 # Transformer placement parameters
