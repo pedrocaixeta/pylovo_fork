@@ -12,6 +12,7 @@ class CableInstaller:
     """Handles cable installation for electrical grids using backend abstraction."""
 
     _NOMINAL_VOLTAGE_KV = VN * 1e-3
+    _THREE_PHASE_FACTOR = np.sqrt(3)
 
     def __init__(self, backend: IElectricalBackend, dbc, logger, cables: list,
                  feeder_cables: pd.DataFrame, consumer_connection_cables: pd.DataFrame):
@@ -71,6 +72,27 @@ class CableInstaller:
             }
 
         return pd.DataFrame.from_dict(cable_data, orient="index")
+
+    def _max_allowable_impedance_per_km(
+        self,
+        voltage_drop_percent: float,
+        line_current_ka: float,
+        distance_km: float,
+        parallel_count: int,
+    ) -> float:
+        """Return the maximum allowable cable impedance magnitude in ohm/km.
+
+        The planning budget uses three-phase line voltage, so the voltage-drop
+        criterion is based on
+
+            delta_u = sqrt(3) * I * Z * L
+
+        with ``I`` in kA, ``Z`` in ohm/km, and ``L`` in km.
+        """
+        voltage_denominator = self._THREE_PHASE_FACTOR * line_current_ka * distance_km / parallel_count
+        if voltage_denominator <= 0 or not np.isfinite(voltage_denominator):
+            return np.inf
+        return self._NOMINAL_VOLTAGE_KV * voltage_drop_percent / 100 / voltage_denominator
 
     def create_lvmv_bus(self, plz: int, kcid: int, bcid: int) -> None:
         """Create LV and MV buses."""
@@ -146,7 +168,7 @@ class CableInstaller:
         for consumer in consumer_list:
             node_geodata = self.dbc.get_node_geom(consumer)
             ltype = load_type[consumer]
-            total_installed_kw = buildings_df[buildings_df["vertice_id"] == consumer]["peak_load_in_kw"].tolist()[0]
+            total_installed_kw = buildings_df[buildings_df["vertice_id"] == consumer]["peak_load_in_kw"].sum()
             simultaneous_load_kw = sim_load_per_building[consumer]
             # Calculate reactive power from power factor
             phi = np.arccos(DEFAULT_POWER_FACTOR)
@@ -204,6 +226,11 @@ class CableInstaller:
                 ))
 
             voltage_available_cables_df = None
+            voltage_drop_percent = (
+                VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM
+                if sim_load <= SMALL_LOAD_THRESHOLD_KW
+                else VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM
+            )
             line_df = self._cable_df
             while True:
                 current_available_cables_df = line_df[
@@ -219,27 +246,17 @@ class CableInstaller:
                     current_available_cables_df["x_ohm_per_km"] ** 2
                 )
 
-                if sim_load <= SMALL_LOAD_THRESHOLD_KW:
-                    voltage_drop_limit = (
-                        self._NOMINAL_VOLTAGE_KV
-                        * VOLTAGE_DROP_SMALL_LOAD_PERCENT_PER_KM
-                        / 100
-                        * length_km
-                    )
-                else:
-                    voltage_drop_limit = (
-                        self._NOMINAL_VOLTAGE_KV
-                        * VOLTAGE_DROP_LARGE_LOAD_PERCENT_PER_KM
-                        / 100
-                        * length_km
-                    )
-
                 if Imax * length_km == 0:
                     voltage_available_cables_df = current_available_cables_df
                 else:
+                    max_impedance = self._max_allowable_impedance_per_km(
+                        voltage_drop_percent,
+                        Imax,
+                        length_km,
+                        count,
+                    )
                     voltage_available_cables_df = current_available_cables_df[
-                        current_available_cables_df["cable_impedence"] <=
-                        voltage_drop_limit / (Imax * length_km / count)
+                        current_available_cables_df["cable_impedence"] <= max_impedance
                     ]
 
                 if len(voltage_available_cables_df) == 0:
@@ -274,10 +291,17 @@ class CableInstaller:
         return local_length_dict
 
     def find_minimal_available_cable(self, Imax: float, distance: int = 0) -> tuple[str, int]:
-        """Find the smallest cable that meets requirements."""
+        """Find the smallest feeder cable that meets current and voltage-drop limits.
+
+        ``distance`` is the routed feeder length in meters, matching the
+        ``agg_cost`` values returned by the pgRouting queries used throughout
+        grid generation. The voltage-drop check therefore converts it to km
+        before combining it with ``r_ohm_per_km`` / ``x_ohm_per_km`` cable data.
+        """
         count = 1
         cable = None
         line_df = self._cable_df
+        distance_km = distance * 1e-3
 
         while True:
             current_available_cables = line_df[
@@ -289,21 +313,23 @@ class CableInstaller:
                 count += 1
                 continue
 
-            if distance != 0:
+            if distance_km != 0:
                 current_available_cables["cable_impedence"] = np.sqrt(
                     current_available_cables["r_ohm_per_km"] ** 2 +
                     current_available_cables["x_ohm_per_km"] ** 2
                 )
 
-                # Guard against zero/non-finite denominator (for example Imax == 0).
-                # In this edge case, skip voltage-drop filtering and keep current-based candidates.
-                voltage_denominator = Imax * distance / count
-                if voltage_denominator <= 0 or not np.isfinite(voltage_denominator):
+                max_impedance = self._max_allowable_impedance_per_km(
+                    VOLTAGE_DROP_DISTRIBUTION_PERCENT,
+                    Imax,
+                    distance_km,
+                    count,
+                )
+                if not np.isfinite(max_impedance):
                     voltage_available_cables = current_available_cables
                 else:
                     voltage_available_cables = current_available_cables[
-                        current_available_cables["cable_impedence"] <=
-                        self._NOMINAL_VOLTAGE_KV * VOLTAGE_DROP_DISTRIBUTION_PERCENT / 100 / voltage_denominator
+                        current_available_cables["cable_impedence"] <= max_impedance
                     ]
 
                 if len(voltage_available_cables) == 0:

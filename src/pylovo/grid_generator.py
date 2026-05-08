@@ -860,6 +860,229 @@ class GridGenerator:
 
         return branch_node_list, Imax
 
+    def find_branch_attachment_node(
+        self,
+        branch_start_node: int,
+        ont_vertice: int,
+        vertices_dict: dict[int, float],
+        installed_connection_nodes: set[int],
+    ) -> int:
+        """Return the deepest already-installed upstream node for a new branch.
+
+        The branch paths returned by ``get_path_to_bus`` are ordered from the
+        branch node towards the transformer. Reusing the first installed ancestor
+        on that path bundles later splits at existing street-corner nodes instead
+        of reconnecting every branch at the transformer. To avoid collapsing too
+        many feeders close to the transformer, only reuse split points whose
+        routed distance from the transformer exceeds ``MIN_SHARED_PREFIX_LENGTH_M``.
+        """
+        node_path_list = self.dbc.get_path_to_bus(branch_start_node, ont_vertice)
+        for node in node_path_list[1:]:
+            if node in installed_connection_nodes:
+                if vertices_dict.get(node, 0.0) < MIN_SHARED_PREFIX_LENGTH_M:
+                    return ont_vertice
+                return node
+        return ont_vertice
+
+    def _plan_backbone_branches(
+        self,
+        connection_nodes: list[int],
+        vertices_dict: dict[int, float],
+        ont_vertice: int,
+        buildings_df: pd.DataFrame,
+        consumer_df: pd.DataFrame,
+        installer: CableInstaller,
+        kcid: int,
+        bcid: int,
+    ) -> list[dict[str, int | list[int]]]:
+        """Freeze the finalized branch topology before any feeder cable is sized.
+
+        The previous implementation sized and installed branch backbones inside the
+        greedy branch-selection loop. Once later branches were attached to an
+        already-installed upstream node, those shared segments kept the original
+        cable choice instead of being resized for the combined downstream load.
+
+        This planning pass preserves the existing branch-selection logic and the
+        chosen attachment nodes, but delays backbone line creation until the full
+        branch tree is known.
+        """
+        branch_plans: list[dict[str, int | list[int]]] = []
+        branch_deviation = 0
+        branch_index = 0
+        connection_node_list = list(connection_nodes)
+        installed_connection_nodes = set()
+
+        while connection_node_list:
+            if len(connection_node_list) == 1:
+                remaining = connection_node_list[0]
+                self.logger.debug(
+                    f"Final remaining connection node {remaining} (kcid={kcid}, bcid={bcid}); preserving direct branch."
+                )
+                branch_node_list = [remaining]
+                attachment_node = ont_vertice
+            else:
+                furthest_node_path_list = self.find_furthest_node_path_list(
+                    connection_node_list, vertices_dict, ont_vertice
+                )
+                branch_node_list, Imax = self.determine_maximum_load_branch(
+                    furthest_node_path_list, buildings_df, consumer_df
+                )
+                self.logger.debug(
+                    f"Selected branch {branch_index} (nodes={len(branch_node_list)}, first={branch_node_list[0]}, "
+                    f"last={branch_node_list[-1]}, Imax={Imax:.3f} kA)"
+                )
+                attachment_node = self.find_branch_attachment_node(
+                    branch_node_list[-1],
+                    ont_vertice,
+                    vertices_dict,
+                    installed_connection_nodes,
+                )
+
+            branch_plans.append(
+                {
+                    "branch_index": branch_index,
+                    "branch_deviation": branch_deviation,
+                    "attachment_node": attachment_node,
+                    "branch_nodes": list(branch_node_list),
+                }
+            )
+
+            for vertice in branch_node_list:
+                connection_node_list.remove(vertice)
+            installed_connection_nodes.update(branch_node_list)
+
+            installer.deviate_bus_geodata(branch_node_list, branch_deviation)
+            branch_deviation += 1
+            branch_index += 1
+
+        return branch_plans
+
+    def _install_backbone_lines_two_pass(
+        self,
+        installer: CableInstaller,
+        branch_plans: list[dict[str, int | list[int]]],
+        buildings_df: pd.DataFrame,
+        consumer_df: pd.DataFrame,
+        vertices_dict: dict[int, float],
+        ont_vertice: int,
+        local_length_dict: dict,
+        kcid: int,
+        bcid: int,
+    ) -> dict:
+        """Install planned backbone lines on the finalized split tree."""
+        children_by_node: dict[int, list[int]] = {}
+        downstream_nodes_by_node: dict[int, list[int]] = {}
+
+        for plan in branch_plans:
+            branch_nodes = list(plan["branch_nodes"])
+            attachment_node = int(plan["attachment_node"])
+
+            for index in range(len(branch_nodes) - 1):
+                parent = int(branch_nodes[index + 1])
+                child = int(branch_nodes[index])
+                children_by_node.setdefault(parent, []).append(child)
+
+            branch_start_node = int(branch_nodes[-1])
+            if branch_start_node != ont_vertice:
+                children_by_node.setdefault(attachment_node, []).append(branch_start_node)
+
+        def _collect_downstream_nodes(node: int) -> list[int]:
+            cached_nodes = downstream_nodes_by_node.get(node)
+            if cached_nodes is not None:
+                return cached_nodes
+
+            downstream_nodes = [] if node == ont_vertice else [node]
+            for child in children_by_node.get(node, []):
+                downstream_nodes.extend(_collect_downstream_nodes(child))
+
+            downstream_nodes_by_node[node] = downstream_nodes
+            return downstream_nodes
+
+        _collect_downstream_nodes(ont_vertice)
+
+        for plan in branch_plans:
+            branch_nodes = list(plan["branch_nodes"])
+            branch_deviation = int(plan["branch_deviation"])
+            branch_index = int(plan["branch_index"])
+            attachment_node = int(plan["attachment_node"])
+
+            for index in range(len(branch_nodes) - 1):
+                parent = int(branch_nodes[index + 1])
+                child = int(branch_nodes[index])
+                sim_load = utils.simultaneousPeakLoad(
+                    buildings_df, consumer_df, downstream_nodes_by_node[child]
+                )
+                Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
+                edge_distance = vertices_dict[child] - vertices_dict[parent]
+                cable, count = installer.find_minimal_available_cable(Imax, edge_distance)
+                local_length_dict = installer.create_line_node_to_node(
+                    self.plz,
+                    kcid,
+                    bcid,
+                    [child, parent],
+                    branch_deviation,
+                    vertices_dict,
+                    local_length_dict,
+                    cable,
+                    ont_vertice,
+                    count,
+                )
+
+            branch_start_node = int(branch_nodes[-1])
+            if branch_start_node == ont_vertice:
+                sim_load = utils.simultaneousPeakLoad(
+                    buildings_df, consumer_df, downstream_nodes_by_node[branch_start_node]
+                )
+                Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3)) if sim_load > 0 else 0.0
+                cable, count = installer.find_minimal_available_cable(Imax)
+                installer.create_line_ont_to_lv_bus(
+                    self.plz, bcid, kcid, branch_start_node, branch_deviation, cable, count, ont_vertice
+                )
+                self.logger.debug(
+                    f"Branch {branch_index} connected directly to transformer after two-pass sizing "
+                    f"(cable={cable}, parallels={count}, load_kw={sim_load:.2f})."
+                )
+            elif attachment_node != ont_vertice:
+                sim_load = utils.simultaneousPeakLoad(
+                    buildings_df, consumer_df, downstream_nodes_by_node[branch_start_node]
+                )
+                Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
+                edge_distance = vertices_dict[branch_start_node] - vertices_dict[attachment_node]
+                cable, count = installer.find_minimal_available_cable(Imax, edge_distance)
+                local_length_dict = installer.create_line_node_to_node(
+                    self.plz,
+                    kcid,
+                    bcid,
+                    [branch_start_node, attachment_node],
+                    branch_deviation,
+                    vertices_dict,
+                    local_length_dict,
+                    cable,
+                    ont_vertice,
+                    count,
+                )
+                self.logger.debug(
+                    f"Branch {branch_index} attached to finalized split node {attachment_node} after two-pass sizing "
+                    f"(cable={cable}, parallels={count}, load_kw={sim_load:.2f})."
+                )
+            else:
+                sim_load = utils.simultaneousPeakLoad(
+                    buildings_df, consumer_df, downstream_nodes_by_node[branch_start_node]
+                )
+                Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
+                cable, count = installer.find_minimal_available_cable(Imax, vertices_dict[branch_start_node])
+                length = installer.create_line_start_to_lv_bus(
+                    self.plz, bcid, kcid, branch_start_node, branch_deviation,
+                    vertices_dict, cable, count, ont_vertice
+                )
+                local_length_dict[cable] += length
+                self.logger.debug(
+                    f"Branch {branch_index} connected to LV bus after two-pass sizing "
+                    f"(cable={cable}, parallels={count}, length_km={length:.4f}, load_kw={sim_load:.2f})."
+                )
+
+        return local_length_dict
+
     def install_cables(self):
         """
         Installs electrical cables using the electrical backend pattern.
@@ -932,102 +1155,45 @@ class GridGenerator:
                 f"loads={backend.get_component_count('loads')}, transformer_rated_power={trafo_power} kVA)"
             )
 
-            # Install cables branch by branch (same logic as original)
-            branch_deviation = 0
-            connection_node_list = connection_nodes
-            branch_index = 0
+            # First finalize the split topology, then size every backbone segment on
+            # the resulting tree so shared prefixes carry the full downstream load.
+            branch_plans = self._plan_backbone_branches(
+                connection_nodes,
+                vertices_dict,
+                ont_vertice,
+                buildings_df,
+                consumer_df,
+                installer,
+                kcid,
+                bcid,
+            )
 
-            while connection_node_list:
-                # Handle single remaining node case
-                if len(connection_node_list) == 1:
-                    remaining = connection_node_list[0]
-                    self.logger.debug(
-                        f"Final remaining connection node {remaining} (kcid={kcid}, bcid={bcid}); installing direct connection."
-                    )
-                    sim_load = utils.simultaneousPeakLoad(buildings_df, consumer_df, connection_node_list)
-                    Imax = sim_load / (VN * V_BAND_LOW * np.sqrt(3))
-
-                    # Install consumer cables
-                    local_length_dict = installer.install_consumer_cables(
-                        self.plz, bcid, kcid, branch_deviation, connection_node_list,
-                        ont_vertice, vertices_dict, sim_load_per_building, local_length_dict,
-                    )
-
-                    # Connect to transformer
-                    if connection_node_list[0] == ont_vertice:
-                        cable, count = installer.find_minimal_available_cable(Imax)
-                        installer.create_line_ont_to_lv_bus(
-                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation, cable, count, ont_vertice
-                        )
-                    else:
-                        cable, count = installer.find_minimal_available_cable(
-                            Imax, vertices_dict[connection_nodes[0]]
-                        )
-                        length = installer.create_line_start_to_lv_bus(
-                            self.plz, bcid, kcid, connection_node_list[0], branch_deviation,
-                            vertices_dict, cable, count, ont_vertice
-                        )
-                        local_length_dict[cable] += length
-                        self.logger.debug(
-                            f"Final branch backbone installed (PLZ={self.plz}, kcid={kcid}, bcid={bcid}, "
-                            f"start_node={connection_node_list[0]}, cable={cable}, parallels={count}, length_km={length:.4f})"
-                        )
-                    break
-                furthest_node_path_list = self.find_furthest_node_path_list(
-                    connection_node_list, vertices_dict, ont_vertice
-                )
-                branch_node_list, Imax = self.determine_maximum_load_branch(
-                    furthest_node_path_list, buildings_df, consumer_df
-                )
-                self.logger.debug(
-                    f"Selected branch {branch_index} (nodes={len(branch_node_list)}, first={branch_node_list[0]}, "
-                    f"last={branch_node_list[-1]}, Imax={Imax:.3f} kA)"
-                )
-
-                # Install cables for this branch
+            for plan in branch_plans:
                 local_length_dict = installer.install_consumer_cables(
-                    self.plz, bcid, kcid, branch_deviation, branch_node_list,
-                    ont_vertice, vertices_dict, sim_load_per_building, local_length_dict
+                    self.plz,
+                    bcid,
+                    kcid,
+                    int(plan["branch_deviation"]),
+                    list(plan["branch_nodes"]),
+                    ont_vertice,
+                    vertices_dict,
+                    sim_load_per_building,
+                    local_length_dict,
                 )
 
-                # Select appropriate cable and connect nodes
-                branch_distance = vertices_dict[branch_node_list[0]]
-                cable, count = installer.find_minimal_available_cable(
-                    Imax, branch_distance
-                )
+            local_length_dict = self._install_backbone_lines_two_pass(
+                installer,
+                branch_plans,
+                buildings_df,
+                consumer_df,
+                vertices_dict,
+                ont_vertice,
+                local_length_dict,
+                kcid,
+                bcid,
+            )
 
-                if len(branch_node_list) >= 2:
-                    local_length_dict = installer.create_line_node_to_node(
-                        self.plz, kcid, bcid, branch_node_list, branch_deviation,
-                        vertices_dict, local_length_dict, cable, ont_vertice, count
-                    )
-
-                # Connect branch to transformer
-                branch_start_node = branch_node_list[-1]
-                if branch_start_node == ont_vertice:
-                    installer.create_line_ont_to_lv_bus(
-                        self.plz, bcid, kcid, branch_start_node, branch_deviation, cable, count, ont_vertice
-                    )
-                    self.logger.debug(
-                        f"Branch {branch_index} connected directly to transformer (cable={cable}, parallels={count})."
-                    )
-                else:
-                    length = installer.create_line_start_to_lv_bus(
-                        self.plz, bcid, kcid, branch_start_node, branch_deviation,
-                        vertices_dict, cable, count, ont_vertice
-                    )
-                    local_length_dict[cable] += length
-                    self.logger.debug(
-                        f"Branch {branch_index} connected to LV bus (cable={cable}, parallels={count}, length_km={length:.4f})."
-                    )
-
-                # Update processed nodes and visualization
-                for vertice in branch_node_list:
-                    connection_node_list.remove(vertice)
-
-                installer.deviate_bus_geodata(branch_node_list, branch_deviation)
-                branch_deviation += 1
-                branch_index += 1
+            branch_index = len(branch_plans)
 
             # Cluster summary
             total_length = sum(local_length_dict.values())

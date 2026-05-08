@@ -219,6 +219,7 @@ CREATE_QUERIES = {
     """,
         "grid_parameters": """CREATE TABLE IF NOT EXISTS grid_parameters (
         grid_result_id bigint PRIMARY KEY,
+        power_flow_status varchar(32),
         feeder_lines integer,
         graph_length double precision,
         avg_trafo_distance double precision,
