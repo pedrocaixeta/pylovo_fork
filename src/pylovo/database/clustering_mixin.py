@@ -185,7 +185,7 @@ class ClusteringMixin(BaseMixin, ABC):
         """
 
         stats = self.get_kcid_distance_matrix_stats(kcid)
-        self.logger.info(
+        self.logger.debug(
             "KCID %s distance-matrix preflight: buildings=%s, connection_points=%s, "
             "estimated_pairs=%s, dense_matrix_estimate=%s",
             kcid,
