@@ -350,16 +350,18 @@ def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result
             grid_result_id,
             power_flow_status,
             feeder_lines,
+            buildings_per_feeder,
             graph_length,
             avg_trafo_distance,
             max_trafo_distance,
             transformer_mva,
             graph_resistance
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (grid_result_id) DO UPDATE SET
         power_flow_status = EXCLUDED.power_flow_status,
         feeder_lines = EXCLUDED.feeder_lines,
+        buildings_per_feeder = EXCLUDED.buildings_per_feeder,
         graph_length = EXCLUDED.graph_length,
         avg_trafo_distance = EXCLUDED.avg_trafo_distance,
         max_trafo_distance = EXCLUDED.max_trafo_distance,
@@ -372,6 +374,7 @@ def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result
             grid_result_id,
             params["power_flow_status"],
             params["feeder_lines"],
+            params["buildings_per_feeder"],
             params["graph_length"],
             params["avg_trafo_distance"],
             params["max_trafo_distance"],

@@ -42,6 +42,21 @@ def _calculate_resistance(
     return calculator.calculate_graph_resistance(net, only_in_service=True)
 
 
+def _calculate_buildings_per_feeder(
+    consumer_buses: list[int],
+    feeder_lines: int,
+) -> float:
+    """Return feeder occupancy based on resolved consumer connection points.
+
+    The active comparison workflow resolves consumer points differently for
+    synthetic and real grids, but both represent the occupancy carried by the
+    feeder structure. This keeps the comparison metric aligned across sources.
+    """
+    if feeder_lines <= 0:
+        return 0.0
+    return float(len(consumer_buses)) / float(feeder_lines)
+
+
 def compute_comparison_parameters(
     calculator: "ParameterCalculator",
     net: pp.pandapowerNet,
@@ -91,9 +106,14 @@ def compute_comparison_parameters(
     transformer_mva = _get_transformer_mva(net)
     graph_length = calculator.calculate_graph_length(net, only_in_service=True)
     graph_resistance = _calculate_resistance(calculator, net)
+    buildings_per_feeder = _calculate_buildings_per_feeder(
+        resolved_consumer_buses,
+        feeder_lines,
+    )
 
     return {
         "feeder_lines": int(feeder_lines),
+        "buildings_per_feeder": float(buildings_per_feeder),
         "graph_length": float(graph_length),
         "avg_trafo_distance": float(avg_trafo_distance),
         "max_trafo_distance": float(max_trafo_distance),
