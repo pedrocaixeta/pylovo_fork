@@ -4,6 +4,11 @@ import shutil
 import os
 from pathlib import Path
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+UTC_PLUS_1 = ZoneInfo("Europe/Berlin")
 
 
 def get_user_data_dir() -> Path:
@@ -58,6 +63,7 @@ def create_logger(name, log_file, log_level):
     logger.handlers.clear()  # Clear existing handlers to prevent duplication
 
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter.converter = lambda timestamp: datetime.fromtimestamp(timestamp, tz=UTC_PLUS_1).timetuple()
 
     # to print log messages to a file
     file_handler = logging.FileHandler(log_file)
