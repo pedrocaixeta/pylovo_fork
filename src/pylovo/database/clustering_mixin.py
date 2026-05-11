@@ -587,6 +587,7 @@ class ClusteringMixin(BaseMixin, ABC):
         existing_capacity = self.get_existing_transformer_capacity_trafo_ui(plz, kcid, bcid)
         if existing_capacity is not None:
             # Use the existing transformer capacity
+            existing_capacity = int(existing_capacity)
             update_query = """UPDATE grid_result
                               SET transformer_rated_power = %(n)s
                               WHERE version_id = %(v)s
@@ -611,8 +612,9 @@ class ClusteringMixin(BaseMixin, ABC):
             self.cur.execute(old_query, {"v": VERSION_ID, "p": plz, "k": kcid, "b": bcid})
             transformer_rated_power = self.cur.fetchone()[0]
 
-            new_transformer_rated_power = transformer_capacities[transformer_capacities > transformer_rated_power][
-                0].item()
+            new_transformer_rated_power = int(
+                transformer_capacities[transformer_capacities > transformer_rated_power][0].item()
+            )
             update_query = """UPDATE grid_result
                               SET transformer_rated_power = %(n)s
                               WHERE version_id = %(v)s
@@ -635,7 +637,7 @@ class ClusteringMixin(BaseMixin, ABC):
             transformer_rated_power = self.cur.fetchone()[0]
             if transformer_rated_power in combined.tolist():
                 return None
-            new_transformer_rated_power = np.ceil(transformer_rated_power / 630) * 630
+            new_transformer_rated_power = int(np.ceil(transformer_rated_power / 630) * 630)
             update_query = """UPDATE grid_result
                               SET transformer_rated_power = %(n)s
                               WHERE version_id = %(v)s
