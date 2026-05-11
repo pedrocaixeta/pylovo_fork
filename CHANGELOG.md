@@ -11,6 +11,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 - Add new changes here before merging into the next official version.
 
+## [0.7.0] - 2026-05-11
+### Changed
+- Enable feeder branching with split-point reuse to model cable branching controlled by a minimum shared-prefix distance and a sizing workflow for upstream segments that considers the aggregated downstream load
+- Rework transformer placement and cluster validation by adding a maximum greenfield transformer distance for transformer locations
+- Introduce separated feeder and consumer connection cable sets
+- Update the grid default generation configuration, e.g. a higher household peak load, revised settlement thresholds, and an updated brownfield assignment distance
+- Reduce heavy and add optional dependencies 
+- Update database table structures to include analysis parameters and powerflow status in grid results
+- Adjust ways query to latest InfDB version v4.0.0
+- Added metrics calculation functions for grid comparison
+
+### Fixed
+- Fix percentage incrementation in analysis
+- Fix `.env.example` variable names and path examples for a clearer and more accurate environment setup
+- Remove non-standard extra MV-LV line
+
+### Added
+- Add a municipal register import pipeline and region resolver that combine Regiostar and Gemeindeverzeichnis data for postcode- and municipality-based workflows
+- Add installable CLI entry points for setup, generation, classification, analysis, import, export, deletion, and validation, together with a public `pylovo` package interface
+- Add comprehensive plotting defaults to `config_analysis.yaml`
+- Add convergence summary for grids
+
 ## [0.6.0] - 2026-01-07
 ### Changed
 - Introduce electrical backend architecture that decouples grid construction algorithms from electrical simulation softwares such as pandapower
