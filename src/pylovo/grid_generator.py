@@ -75,20 +75,22 @@ class GridGenerator:
         except KeyboardInterrupt:
             interrupted = True
             self.logger.warning(f"Grid generation interrupted by user for PLZ {self.plz}.")
-            self.dbc.conn.rollback()
+            self.dbc.rollback_changes()
         except Exception as e:
             self.logger.error(f"Error during grid generation for PLZ {self.plz}: {e}")
             self.logger.info(f"Skipped PLZ {self.plz} due to generation error.")
-            self.dbc.conn.rollback()  # rollback the transaction
-            self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)  # delete from sample set
+            self.dbc.rollback_changes()
+            try:
+                self.dbc.delete_plz_from_sample_set_table(str(CLASSIFICATION_VERSION), self.plz)
+            except Exception as cleanup_error:
+                self.logger.warning(
+                    f"Failed to remove PLZ {self.plz} from the sample set after generation error: {cleanup_error}"
+                )
             traceback.print_exc()
         finally:
             # Always clean up temporary tables, even if there was an error.
             # Roll back first so cleanup can run after SQL errors/interrupts.
-            try:
-                self.dbc.conn.rollback()
-            except Exception:
-                pass
+            self.dbc.rollback_changes()
 
             try:
                 self.dbc.drop_temp_tables(plz)  # drop PLZ-suffixed temp tables
@@ -104,8 +106,11 @@ class GridGenerator:
 
         if refresh_mv:
             # update the materialized views to reflect changes in their base tables
+            self.dbc.ensure_connection()
             self.dbc.refresh_materialized_views()
-        self.dbc.commit_changes()  # commit the changes to the database
+            self.dbc.commit_changes()
+        else:
+            self.dbc.commit_changes()  # commit the changes to the database
         print('-------------------- end', self.plz, '-----------------------------')
 
     def generate_grid_for_multiple_plz(
@@ -133,6 +138,7 @@ class GridGenerator:
         print(f"   - Number of PLZ to process: {len(plz_list)}")
         print(f"   - Available CPU cores: {N_JOBS}")
         print(f"   - Will use parallel processing: {should_use_parallel}")
+        failed_plz = []
         
         if should_use_parallel:
             # Use parallel processing for multiple PLZ
@@ -165,6 +171,7 @@ class GridGenerator:
                             # Log the exception to record the failed PLZ without stopping the execution
                             # for other, potentially successful, PLZs.
                             self.logger.error(f"PLZ {plz} generated an exception: {exc}")
+                            failed_plz.append(plz)
                             traceback.print_exc()
                             print(f"✗ Failed PLZ {plz} ({completed_count}/{total_count})")
                             
@@ -220,11 +227,24 @@ class GridGenerator:
 
         # refresh materialized views once after all grids have been generated
         try:
+            self.dbc.ensure_connection()
             self.dbc.refresh_materialized_views()
             self.dbc.commit_changes()
         except Exception as e:
             self.logger.error(f"Error refreshing materialized views: {e}")
             # Don't re-raise here as individual PLZ processing might have succeeded
+
+        if should_use_parallel:
+            if failed_plz:
+                failed_plz = sorted(set(failed_plz))
+                failed_plz_str = ", ".join(str(plz) for plz in failed_plz)
+                summary = f"Parallel grid generation finished with {len(failed_plz)} failed PLZ: {failed_plz_str}"
+                print(summary)
+                self.logger.warning(summary)
+            else:
+                summary = "Parallel grid generation finished with no failed PLZ."
+                print(summary)
+                self.logger.info(summary)
 
     @staticmethod
     def _worker(plz: int, analyze_grids: bool) -> None:
@@ -232,7 +252,7 @@ class GridGenerator:
         log_file = Path("log") / f"log_{plz}.txt"
         if log_file.exists():
             log_file.unlink()  # Overwrite log file if it exists
-        
+
         # Create a dedicated GridGenerator instance for this worker
         # This ensures each worker has its own database connection and logger
         gg = None
@@ -240,23 +260,23 @@ class GridGenerator:
             print(f"Worker starting for PLZ {plz}...")
             gg = GridGenerator(log_file=log_file)  # dedicated logger per PLZ
             print(f"Worker initialized for PLZ {plz}")
-            
+
             # Generate grid with proper error handling
             gg.generate_grid_for_single_plz(
                 plz=plz, analyze_grids=analyze_grids, refresh_mv=False
             )
-            
+
             print(f"Worker completed for PLZ {plz}")
-            
+
         except Exception as e:
             print(f"Worker failed for PLZ {plz}: {e}")
             import traceback
             traceback.print_exc()
-            
+
             # Ensure proper cleanup even on failure
             if gg and hasattr(gg, 'dbc') and gg.dbc:
                 try:
-                    gg.dbc.conn.rollback()
+                    gg.dbc.rollback_changes()
                 except Exception as rollback_error:
                     print(f"Rollback error for PLZ {plz}: {rollback_error}")
             raise
@@ -268,14 +288,14 @@ class GridGenerator:
                     gg.dbc.close()
                 except Exception as cleanup_error:
                     print(f"Cleanup error for PLZ {plz}: {cleanup_error}")
-            
+
             # Also ensure GridGenerator cleanup
             if gg:
                 try:
                     gg.__del__()
                 except Exception as del_error:
                     print(f"GridGenerator cleanup error for PLZ {plz}: {del_error}")
-            
+
             print(f"Worker cleanup completed for PLZ {plz}")
 
     def generate_grid(self):

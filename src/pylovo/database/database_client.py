@@ -21,21 +21,17 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         self.logger = utils.create_logger(
             "DatabaseClient", log_file=kwargs.get("log_file", "../log.txt"), log_level=LOG_LEVEL
         )
+        self._connect_kwargs = {
+            "database": dbname,
+            "user": user,
+            "password": pw,
+            "host": host,
+            "port": port,
+            "options": f"-c search_path={TARGET_SCHEMA},public",
+        }
+        self.db_path = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{dbname}"
         try:
-            self.conn = psy.connect(
-                database=dbname,
-                user=user,
-                password=pw,
-                host=host,
-                port=port,
-                options=f"-c search_path={TARGET_SCHEMA},public",
-            )
-            self.cur = self.conn.cursor()
-            self.db_path = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{dbname}"
-            self.sqla_engine = create_engine(
-                self.db_path,
-                connect_args={"options": f"-c search_path={TARGET_SCHEMA},public"},
-            )
+            self._connect()
         except psy.OperationalError as err:
             self.logger.warning(
                 f"Connecting to {dbname} was not successful. Make sure, that you have established the SSH connection with correct port mapping."
@@ -47,6 +43,60 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
         self.logger.debug(f"DatabaseClient is constructed and connected to {self.db_path}.")
 
+    def _connect(self) -> None:
+        self.conn = psy.connect(**self._connect_kwargs)
+        self.cur = self.conn.cursor()
+        self.sqla_engine = create_engine(
+            self.db_path,
+            connect_args={"options": self._connect_kwargs["options"]},
+        )
+
+    def _close_handles(self) -> None:
+        try:
+            if hasattr(self, 'cur') and self.cur:
+                self.cur.close()
+        except Exception as e:
+            print(f"Warning: Error closing cursor: {e}")
+
+        try:
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
+        except Exception as e:
+            print(f"Warning: Error closing connection: {e}")
+
+        try:
+            if hasattr(self, 'sqla_engine') and self.sqla_engine:
+                self.sqla_engine.dispose()
+        except Exception as e:
+            print(f"Warning: Error disposing SQLAlchemy engine: {e}")
+
+    def _is_connection_usable(self) -> bool:
+        if not hasattr(self, 'conn') or self.conn is None or self.conn.closed != 0:
+            return False
+
+        try:
+            with self.conn.cursor() as probe_cursor:
+                probe_cursor.execute("SELECT 1;")
+                probe_cursor.fetchone()
+            return True
+        except psy.Error:
+            return False
+
+    def ensure_connection(self, force: bool = False) -> None:
+        if not force and self._is_connection_usable():
+            return
+
+        self._close_handles()
+        self._connect()
+        self.logger.info("Re-established database connection.")
+
+    def rollback_changes(self) -> None:
+        try:
+            if hasattr(self, 'conn') and self.conn and self.conn.closed == 0:
+                self.conn.rollback()
+        except (psy.InterfaceError, psy.OperationalError) as err:
+            self.logger.warning(f"Rollback skipped because the database connection is unavailable: {err}")
+
     def __enter__(self):
         """Context manager entry."""
         return self
@@ -57,23 +107,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
     
     def close(self):
         """Explicitly close all database connections."""
-        try:
-            if hasattr(self, 'cur') and self.cur:
-                self.cur.close()
-        except Exception as e:
-            print(f"Warning: Error closing cursor: {e}")
-        
-        try:
-            if hasattr(self, 'conn') and self.conn:
-                self.conn.close()
-        except Exception as e:
-            print(f"Warning: Error closing connection: {e}")
-        
-        try:
-            if hasattr(self, 'sqla_engine') and self.sqla_engine:
-                self.sqla_engine.dispose()
-        except Exception as e:
-            print(f"Warning: Error disposing SQLAlchemy engine: {e}")
+        self._close_handles()
     
     def __del__(self):
         """Clean up database connections."""
