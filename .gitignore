@@ -1,16 +1,17 @@
 ### Chosen directories/files to ignore
-/raw_data/buildings/*
-/raw_data/ways/ways_public_2po_4pgr.sql
-/raw_data/postcode.csv
+/data/buildings/*
+/data/ways/ways_public_2po_4pgr.sql
+/data/postcode.csv
+/validation/grid_comparison/metrics/*
 
 # Keep default transformers for bavaria in git - ignore other generated input files
-/raw_data/transformer_data/fetched_trafos/*
-!/raw_data/transformer_data/fetched_trafos/2145268_shopping_mall.geojson
-!/raw_data/transformer_data/fetched_trafos/2145268_substations.geojson
+/data/transformer_data/fetched_trafos/*
+!/data/transformer_data/fetched_trafos/2145268_shopping_mall.geojson
+!/data/transformer_data/fetched_trafos/2145268_substations.geojson
 
-/raw_data/transformer_data/processed_trafos/*
-!/raw_data/transformer_data/processed_trafos/2145268_trafos_processed.geojson
-!/raw_data/transformer_data/processed_trafos/2145268_trafos_processed_3035.geojson
+/data/transformer_data/processed_trafos/*
+!/data/transformer_data/processed_trafos/2145268_trafos_processed.geojson
+!/data/transformer_data/processed_trafos/2145268_trafos_processed_3035.geojson
 
 src/classification/results
 tutorials/.ipynb_checkpoints/
@@ -166,4 +167,5 @@ cython_debug/
 
 # for macOS users
 *.DS_Store
-/src/analysis/grid_data/
+validation/grid_comparison/metrics/real_grid_metrics.csv
+validation/grid_comparison/metrics/synthetic_grid_metrics.csv

@@ -46,7 +46,8 @@ Data Source Tables
 +---------------------+--------------------------------------------------------------------------------------+
 | ways                | Street data is imported here.                                                        |
 +---------------------+--------------------------------------------------------------------------------------+
-| equipment_data      | Electrical equipment specifications and costs, directly imported from a CSV-file.    |
+| equipment_data      | Electrical equipment specifications and costs, derived from the YAML transformer and |
+|                     | cable configuration blocks.                                                          |
 +---------------------+--------------------------------------------------------------------------------------+
 | transformers        | Transformer infrastructure from OpenStreetMap data.                                  |
 +---------------------+--------------------------------------------------------------------------------------+

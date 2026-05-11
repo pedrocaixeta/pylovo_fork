@@ -17,7 +17,7 @@ The configuration system consists of the following files located in the ``config
    * - ``config_database.yaml``
      - Database connection settings and InfDB configuration
    * - ``config_generation.yaml``
-     - Grid generation parameters, regional settings, and equipment data
+     - Grid generation parameters, regional settings, and transformer/cable definitions
    * - ``config_analysis.yaml``
      - Analysis and plotting configuration, municipal register settings
    * - ``config_classification.yaml``
@@ -106,8 +106,9 @@ Main configuration file for grid generation with the following sections:
 - Includes peak loads, consumption rates, and simultaneous factors
 
 **Equipment Data:**
-- Transformer specifications (capacity, cost, application area)
-- Cable specifications (current rating, impedance, cost)
+- ``TRANSFORMERS`` defines available transformer types
+- ``FEEDER_CABLES`` defines cables allowed for feeder and backbone routing
+- ``CONSUMER_CONNECTION_CABLES`` defines cables available for house connections
 
 **Cable Dimensioning:**
 - Voltage drop limits and thresholds
@@ -165,7 +166,7 @@ The configuration system is loaded through ``src/config_loader.py``, which:
 
 1. Loads all YAML configuration files
 2. Reads environment variables from ``.env`` file
-3. Validates required settings
+3. Validates required settings and cable-list consistency
 4. Provides centralized access to all configuration values
 
 The loader automatically:
