@@ -44,6 +44,7 @@ FEEDER_CABLES:
   - {name: NAYY_4_120, max_i_a: 242, r_mohm_per_km: 225, x_mohm_per_km: 80, z_mohm_per_km: 239, cost_eur: 19, typ: Cable}
   - {name: NAYY_4_150, max_i_a: 270, r_mohm_per_km: 208, x_mohm_per_km: 80, z_mohm_per_km: 223, cost_eur: 24, typ: Cable}
   - {name: NAYY_4_185, max_i_a: 313, r_mohm_per_km: 164, x_mohm_per_km: 80, z_mohm_per_km: 181, cost_eur: 33, typ: Cable}
+  - {name: NAYY_4_240, max_i_a: 357, r_mohm_per_km: 127, x_mohm_per_km: 80, z_mohm_per_km: 150, cost_eur: 45, typ: Cable}
 # - {name: NA2XS(F)2Y_1x240RM_12_20kV_ir_240, max_i_a: 456, r_mohm_per_km: 144, x_mohm_per_km: 182, z_mohm_per_km: 236, cost_eur: 45, typ: Cable}
 # - {name: NA2XS(F)2Y_1x150RM_12_20kV_ir_150, max_i_a: 353, r_mohm_per_km: 227, x_mohm_per_km: 195, z_mohm_per_km: 299, cost_eur: 35, typ: Cable}
 # - {name: NAYY_4_95, max_i_a: 215, r_mohm_per_km: 320, x_mohm_per_km: 82, z_mohm_per_km: 330, cost_eur: 21, typ: Cable}
