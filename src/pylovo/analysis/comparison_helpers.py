@@ -38,9 +38,9 @@ def export_synthetic_comparison_parameters_for_plz(
     calculator.dbc.conn.commit()
 
     calculator.dbc.cur.execute(
-        """
+        f"""
         SELECT kcid, bcid, COALESCE(power_flow_status, 'converged')
-        FROM grid_result
+        FROM pylovo.grid_result
                 WHERE plz = %s AND version_id = %s
         ORDER BY kcid, bcid
         """,
@@ -59,7 +59,7 @@ def export_synthetic_comparison_parameters_for_plz(
             if len(net.bus) < MINI_GRID_BUS_THRESHOLD:
                 continue
             calculator.dbc.cur.execute(
-                "SELECT grid_result_id FROM grid_result WHERE plz=%s AND kcid=%s AND bcid=%s AND version_id=%s",
+                f"SELECT grid_result_id FROM pylovo.grid_result WHERE plz=%s AND kcid=%s AND bcid=%s AND version_id=%s",
                 (plz, kcid, bcid, calculator.version_id),
             )
             grid_result_id = calculator.dbc.cur.fetchone()[0]
@@ -300,8 +300,8 @@ def _load_buildings_for_plz(dbc: DatabaseClient, plz: int) -> gpd.GeoDataFrame |
     try:
         query = f"""
             SELECT br.osm_id, br.peak_load_in_kw, ST_AsText(br.geom) as wkt
-            FROM buildings_result br
-            JOIN grid_result gr ON br.grid_result_id = gr.grid_result_id
+            FROM pylovo.buildings_result br
+            JOIN pylovo.grid_result gr ON br.grid_result_id = gr.grid_result_id
             WHERE gr.plz = {plz} AND br.version_id = '{VERSION_ID}'
         """
         buildings_df = pd.read_sql(query, dbc.sqla_engine)
@@ -345,8 +345,8 @@ def _infer_real_grid_consumer_buses(net: pp.pandapowerNet, buildings_gdf: gpd.Ge
 
 def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result_id: int, params: dict) -> None:
     """Persist the active comparison metric set to ``grid_parameters``."""
-    query = """
-        INSERT INTO grid_parameters (
+    query = f"""
+        INSERT INTO pylovo.grid_parameters (
             grid_result_id,
             power_flow_status,
             feeder_lines,
@@ -386,7 +386,7 @@ def _upsert_comparison_parameters(calculator: "ParameterCalculator", grid_result
 
 def _reset_grid_parameters_table(calculator: "ParameterCalculator") -> None:
     """Recreate ``grid_parameters`` with the current comparison schema."""
-    calculator.dbc.cur.execute("DROP TABLE IF EXISTS grid_parameters")
+    calculator.dbc.cur.execute("DROP TABLE IF EXISTS pylovo.grid_parameters")
     calculator.dbc.cur.execute(CREATE_QUERIES["grid_parameters"])
 
 

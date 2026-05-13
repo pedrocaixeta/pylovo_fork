@@ -27,7 +27,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
             "password": pw,
             "host": host,
             "port": port,
-            "options": f"-c search_path={TARGET_SCHEMA},public",
+            "options": "-c search_path=pylovo,public",
         }
         self.db_path = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{dbname}"
         try:
@@ -140,7 +140,8 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
             True if table is empty or doesn't exist, False if it has data
         """
         try:
-            query = f"SELECT COUNT(*) FROM {table_name};"
+            qualified_table_name = table_name if "." in table_name else f"pylovo.{table_name}"
+            query = f"SELECT COUNT(*) FROM {qualified_table_name};"
             self.cur.execute(query)
             count = self.cur.fetchone()[0]
             return count == 0
@@ -172,21 +173,21 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
         # Save building results
         query = f"""
-                INSERT INTO buildings_result
+            INSERT INTO pylovo.buildings_result
                 (version_id, osm_id, grid_result_id, area, type, geom, households_per_building, center,
                 peak_load_in_kw, vertice_id, floors, construction_year, connection_point)
                 SELECT '{VERSION_ID}' as version_id, osm_id, gr.grid_result_id, area, type, geom, households_per_building,
                 center, peak_load_in_kw, vertice_id, floors, bt.construction_year, bt.connection_point
-                FROM {buildings_table} bt
-                JOIN grid_result gr
+            FROM pylovo.{buildings_table} bt
+            JOIN pylovo.grid_result gr
                 ON bt.plz = gr.plz AND bt.kcid = gr.kcid AND bt.bcid = gr.bcid and gr.version_id = '{VERSION_ID}'
                 WHERE peak_load_in_kw != 0 AND peak_load_in_kw != -1;"""
         self.cur.execute(query)
 
         # Save ways results
-        query = f"""INSERT INTO ways_result
+        query = f"""INSERT INTO pylovo.ways_result
                         SELECT '{VERSION_ID}' as version_id, clazz, source, target, cost, reverse_cost, geom, way_id,
-                        %(p)s as plz FROM {ways_table};"""
+                %(p)s as plz FROM pylovo.{ways_table};"""
 
         self.cur.execute(query, vars={"p": plz})
 
@@ -196,8 +197,8 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         :param plz: Postal code
         :param version_id: Version ID
         """
-        query = """DELETE
-                   FROM postcode_result
+        query = f"""DELETE
+               FROM pylovo.postcode_result
                    WHERE version_id = %(v)s
                      AND postcode_result_plz = %(p)s;"""
         self.cur.execute(query, {"v": version_id, "p": int(plz)})
@@ -207,7 +208,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
     def delete_version_from_all_tables(self, version_id: str) -> None:
         """Delete all entries of the given version ID from all tables."""
-        query = "DELETE FROM version WHERE version_id = %(v)s;"
+        query = "DELETE FROM pylovo.version WHERE version_id = %(v)s;"
         self.cur.execute(query, {"v": version_id})
         self.refresh_materialized_views()
         self.conn.commit()
@@ -220,7 +221,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
         :param classification_id: ID of the classification version to delete
         """
-        query = "DELETE FROM classification_version WHERE classification_id = %(cid)s;"
+        query = "DELETE FROM pylovo.classification_version WHERE classification_id = %(cid)s;"
         self.cur.execute(query, {"cid": classification_id})
         self.conn.commit()
 
@@ -235,7 +236,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         """
         query = """
                 DELETE
-                FROM sample_set
+            FROM pylovo.sample_set
                 WHERE classification_id = %(cid)s
                   AND plz = %(p)s; \
                 """
@@ -245,7 +246,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
 
     def delete_transformers(self) -> None:
         """all transformers are deleted from table transformers in database"""
-        delete_query = "TRUNCATE TABLE transformers;"
+        delete_query = "TRUNCATE TABLE pylovo.transformers;"
         self.cur.execute(delete_query)
         self.conn.commit()
         self.logger.info('Transformers deleted.')
@@ -256,7 +257,7 @@ class DatabaseClient(PreprocessingMixin, ClusteringMixin, GridMixin, AnalysisMix
         :param ags:  ags to be added
         :rtype ags: numpy integer 64
          """
-        query = """INSERT INTO ags_log (ags)
+        query = f"""INSERT INTO pylovo.ags_log (ags)
                    VALUES (%(a)s); """
         self.cur.execute(query, {"a": int(ags), })
         self.conn.commit()

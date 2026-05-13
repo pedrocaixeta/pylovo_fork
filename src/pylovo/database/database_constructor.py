@@ -40,7 +40,7 @@ class DatabaseConstructor:
         """
         try:
             with self.dbc.conn.cursor() as cur:
-                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {TARGET_SCHEMA}")
+                cur.execute(f"CREATE SCHEMA IF NOT EXISTS pylovo")
                 self.dbc.conn.commit()
         except (Exception, psy.DatabaseError) as error:
             print(f"Error creating schema: {error}")
@@ -50,7 +50,7 @@ class DatabaseConstructor:
         with self.dbc.conn.cursor() as cur:
             cur.execute(
                 """SELECT table_name FROM information_schema.tables
-                   WHERE table_schema = %s""", (TARGET_SCHEMA,)
+                   WHERE table_schema = %s""", ("pylovo",)
             )
             table_name_list = [tup[0] for tup in cur.fetchall()]
 
@@ -129,7 +129,7 @@ class DatabaseConstructor:
                     f"PG:dbname={DBNAME} user={DBUSER} password={PASSWORD} host={HOST} port={PORT}",
                     file_path,
                     "-nln",
-                    f"{TARGET_SCHEMA}.{table_name}",  # explicitly tells ogr2ogr where to append (for the case of table already existing)
+                    f"pylovo.{table_name}",  # explicitly tells ogr2ogr where to append (for the case of table already existing)
                     "-nlt",
                     # "MULTIPOLYGON",
                     "PROMOTE_TO_MULTI",
@@ -137,7 +137,7 @@ class DatabaseConstructor:
                     "EPSG:3035",
                     "-lco",
                     "geometry_name=geom",
-                    "-lco", f"SCHEMA={TARGET_SCHEMA}", # ensures creation happens in correct schema
+                    "-lco", f"SCHEMA=pylovo", # ensures creation happens in correct schema
             ]
             if skip_failures:
                 command.append("-skipfailures")
@@ -170,7 +170,7 @@ class DatabaseConstructor:
         # clear existing data to avoid duplicate primary keys
         if clear_existing and self.table_exists(table_name="transformers"):
             with self.dbc.conn.cursor() as cur:
-                cur.execute("DELETE FROM transformers;")
+                cur.execute(f"DELETE FROM pylovo.transformers;")
             self.dbc.conn.commit()
 
         trafos_processed_geojson_path = get_trafos_processed_geojson_path(RELATION_ID)
@@ -353,7 +353,7 @@ class DatabaseConstructor:
         cur = self.dbc.conn.cursor()
 
         # Transform to ways table
-        query = """INSERT INTO ways
+        query = """INSERT INTO pylovo.ways
             SELECT  clazz,
                     source,
                     target,
@@ -389,7 +389,7 @@ class DatabaseConstructor:
         cur = self.dbc.conn.cursor()
 
         # Print once at the beginning
-        print(f"Loading ways preprocessing functions into schema '{TARGET_SCHEMA}'.")
+        print(f"Loading ways preprocessing functions into schema 'pylovo'.")
 
         # Get the path to the ways_preprocessing_functions directory within the package
         package_dir = Path(__file__).parent.parent  # Go up to pylovo package directory
@@ -425,5 +425,5 @@ class DatabaseConstructor:
         Drops all tables in the database
         """
         cur = self.dbc.conn.cursor()
-        cur.execute(f"DROP SCHEMA {TARGET_SCHEMA} CASCADE")
+        cur.execute(f"DROP SCHEMA pylovo CASCADE")
         self.dbc.conn.commit()

@@ -15,11 +15,11 @@ class GridMixin(BaseMixin, ABC):
         super().__init__()
 
     def fetch_cables(self) -> list:
-        query = """SELECT name,
+        query = f"""SELECT name,
                        r_mohm_per_km / 1000.0 as r_ohm_per_km,
                        x_mohm_per_km / 1000.0 as x_ohm_per_km,
                        max_i_a / 1000.0       as max_i_ka
-                FROM equipment_data
+            FROM pylovo.equipment_data
                 WHERE typ = 'Cable' \
                 """
         self.cur.execute(query)
@@ -57,8 +57,8 @@ class GridMixin(BaseMixin, ABC):
 
     def get_ont_info_from_bc(self, plz: int, kcid: int, bcid: int) -> dict | None:
 
-        query = """SELECT ont_vertice_id, transformer_rated_power
-                   FROM grid_result
+        query = f"""SELECT ont_vertice_id, transformer_rated_power
+                                     FROM pylovo.grid_result
                    WHERE version_id = %(v)s
                      AND kcid = %(k)s
                      AND bcid = %(b)s
@@ -73,9 +73,9 @@ class GridMixin(BaseMixin, ABC):
         return {"ont_vertice_id": info[0][0], "transformer_rated_power": info[0][1]}
 
     def get_ont_geom_from_bcid(self, plz: int, kcid: int, bcid: int):
-        query = """SELECT ST_X(ST_Transform(geom, 4326)), ST_Y(ST_Transform(geom, 4326))
-                   FROM transformer_positions tp
-                            JOIN grid_result gr
+        query = f"""SELECT ST_X(ST_Transform(geom, 4326)), ST_Y(ST_Transform(geom, 4326))
+                                     FROM pylovo.transformer_positions tp
+                                                        JOIN pylovo.grid_result gr
                                  ON tp.grid_result_id = gr.grid_result_id
                    WHERE gr.version_id = %(v)s
                      AND plz = %(p)s
@@ -87,8 +87,8 @@ class GridMixin(BaseMixin, ABC):
         return geo
 
     def get_transformer_rated_power_from_bcid(self, plz: int, kcid: int, bcid: int) -> int:
-        query = """SELECT transformer_rated_power
-                   FROM grid_result
+        query = f"""SELECT transformer_rated_power
+                                     FROM pylovo.grid_result
                    WHERE version_id = %(v)s
                      AND plz = %(p)s
                      AND kcid = %(k)s
@@ -151,7 +151,7 @@ class GridMixin(BaseMixin, ABC):
     def insert_lines(self, geom: list, plz: int, bcid: int, kcid: int, line_name: str, std_type: str, from_bus: int,
             to_bus: int, length_km: float) -> None:
         """writes lines / cables that belong to a network into the database"""
-        line_insertion_query = """INSERT INTO lines_result (grid_result_id,
+        line_insertion_query = f"""INSERT INTO pylovo.lines_result (grid_result_id,
                                                             geom,
                                                             line_name,
                                                             std_type,
@@ -159,7 +159,7 @@ class GridMixin(BaseMixin, ABC):
                                                             to_bus,
                                                             length_km)
                                   VALUES ((SELECT grid_result_id
-                                           FROM grid_result
+                           FROM pylovo.grid_result
                                            WHERE version_id = %(v)s
                                              AND plz = %(plz)s
                                              AND kcid = %(kcid)s
@@ -187,7 +187,7 @@ class GridMixin(BaseMixin, ABC):
         """
         query = f"""
             SELECT 1
-            FROM postcode_result
+            FROM pylovo.postcode_result
             WHERE version_id = %(version_id)s AND postcode_result_plz = %(plz)s
             LIMIT 1;
         """

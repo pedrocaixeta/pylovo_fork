@@ -16,14 +16,14 @@ class AnalysisMixin(BaseMixin, ABC):
         super().__init__()
 
     def insert_plz_parameters(self, plz: int, trafo_string: str, load_count_string: str, bus_count_string: str):
-        update_query = """INSERT INTO plz_parameters (version_id, plz, trafo_num, load_count_per_trafo, bus_count_per_trafo)
+        update_query = f"""INSERT INTO pylovo.plz_parameters (version_id, plz, trafo_num, load_count_per_trafo, bus_count_per_trafo)
                           VALUES (%s, %s, %s, %s,
                                   %s);"""  # TODO: check - should values be updated for same plz and version if analysis is started? And Add a column
         self.cur.execute(update_query, vars=(VERSION_ID, plz, trafo_string, load_count_string, bus_count_string), )
         self.logger.debug("basic parameter count finished")
 
     def insert_cable_length(self, plz: int, cable_length_string: str):
-        update_query = """UPDATE plz_parameters
+        update_query = f"""UPDATE pylovo.plz_parameters
                           SET cable_length = %(c)s
                           WHERE version_id = %(v)s
                             AND plz = %(p)s;"""
@@ -33,7 +33,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
     def insert_trafo_parameters(self, plz: int, trafo_load_string: str, trafo_max_distance_string: str,
             trafo_avg_distance_string: str):
-        update_query = """UPDATE plz_parameters
+        update_query = f"""UPDATE pylovo.plz_parameters
                           SET sim_peak_load_per_trafo = %(l)s,
                               max_distance_per_trafo  = %(m)s,
                               avg_distance_per_trafo  = %(a)s
@@ -54,7 +54,7 @@ class AnalysisMixin(BaseMixin, ABC):
         transformer_description: str,
         power_flow_status: str,
     ) -> None:
-        insert_query = ("""UPDATE grid_result
+        insert_query = (f"""UPDATE pylovo.grid_result
                            SET grid = %s,
                                transformer_description = %s,
                                power_flow_status = %s
@@ -79,10 +79,10 @@ class AnalysisMixin(BaseMixin, ABC):
         Returns:
             bool: True if parameters exist, False otherwise
         """
-        query = """
+        query = f"""
             SELECT 1 
-            FROM clustering_parameters cp
-            JOIN grid_result gr ON cp.grid_result_id = gr.grid_result_id
+            FROM pylovo.clustering_parameters cp
+            JOIN pylovo.grid_result gr ON cp.grid_result_id = gr.grid_result_id
             WHERE gr.plz = %s AND gr.kcid = %s AND gr.bcid = %s AND gr.version_id = %s
         """
         self.cur.execute(query, (plz, kcid, bcid, VERSION_ID))
@@ -93,9 +93,9 @@ class AnalysisMixin(BaseMixin, ABC):
         :param plz:
         :return:
         """
-        query = """SELECT COUNT(cp.grid_result_id)
-                   FROM clustering_parameters cp
-                            JOIN grid_result gr ON gr.grid_result_id = cp.grid_result_id
+        query = f"""SELECT COUNT(cp.grid_result_id)
+                                     FROM pylovo.clustering_parameters cp
+                                                        JOIN pylovo.grid_result gr ON gr.grid_result_id = cp.grid_result_id
                    WHERE version_id = %(v)s
                      AND plz = %(p)s"""
         self.cur.execute(query, {"v": VERSION_ID, "p": plz})
@@ -107,7 +107,7 @@ class AnalysisMixin(BaseMixin, ABC):
                                sim_peak_load_per_trafo,
                                max_distance_per_trafo,
                                avg_distance_per_trafo
-                        FROM plz_parameters
+                                                FROM pylovo.plz_parameters
                         WHERE version_id = %(v)s
                           AND plz = %(p)s;"""
         self.cur.execute(read_query, {"v": VERSION_ID, "p": plz})
@@ -144,7 +144,7 @@ class AnalysisMixin(BaseMixin, ABC):
             ValueError: If the requested grid does not exist in the database
         """
         effective_version_id = VERSION_ID if version_id is None else str(version_id)
-        read_query = "SELECT grid FROM grid_result WHERE version_id = %s AND plz = %s AND kcid = %s AND bcid = %s LIMIT 1"
+        read_query = f"SELECT grid FROM pylovo.grid_result WHERE version_id = %s AND plz = %s AND kcid = %s AND bcid = %s LIMIT 1"
         self.cur.execute(read_query, vars=(effective_version_id, plz, kcid, bcid))
 
         result = self.cur.fetchall()
@@ -164,7 +164,7 @@ class AnalysisMixin(BaseMixin, ABC):
     def insert_clustering_parameters(self, params: dict) -> None:
         """Insert calculated grid parameters into clustering_parameters table."""
 
-        insert_query = """INSERT INTO clustering_parameters (
+        insert_query = f"""INSERT INTO pylovo.clustering_parameters (
                    grid_result_id,
                    no_connection_buses,
                    no_branches,
@@ -190,7 +190,7 @@ class AnalysisMixin(BaseMixin, ABC):
                    max_vsw_of_a_branch
                   )
                   VALUES (
-                  (SELECT grid_result_id FROM grid_result WHERE version_id = %(version_id)s AND plz = %(plz)s AND bcid = %(bcid)s AND kcid = %(kcid)s),
+                  (SELECT grid_result_id FROM pylovo.grid_result WHERE version_id = %(version_id)s AND plz = %(plz)s AND bcid = %(bcid)s AND kcid = %(kcid)s),
                   %(no_connection_buses)s,
                   %(no_branches)s,
                   %(no_house_connections)s,
@@ -229,7 +229,8 @@ class AnalysisMixin(BaseMixin, ABC):
                 [f"{key} = {value}" for key, value in kwargs.items() if key != 'version_id'])
         else:
             filters = ""
-        query = (f"""SELECT * FROM {table}
+        table_name = table if "." in table or table.startswith("(") else f"pylovo.{table}"
+        query = (f"""SELECT * FROM {table_name}
                         WHERE version_id = %(v)s """ + filters)
         version = VERSION_ID
         if 'version_id' in kwargs:
@@ -260,6 +261,16 @@ class AnalysisMixin(BaseMixin, ABC):
 
         column_names = ", ".join(select)
 
+        from_parts = from_table.split(" ", 1)
+        from_name = from_parts[0]
+        if "." not in from_name and not from_name.startswith("("):
+            from_table = f"pylovo.{from_name}" + (f" {from_parts[1]}" if len(from_parts) == 2 else "")
+
+        join_parts = join_table.split(" ", 1)
+        join_name = join_parts[0]
+        if "." not in join_name and not join_name.startswith("("):
+            join_table = f"pylovo.{join_name}" + (f" {join_parts[1]}" if len(join_parts) == 2 else "")
+
         jt_prefix = join_table
         parts = join_table.split(" ")
         if len(parts) == 2:
@@ -283,7 +294,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
     def read_trafo_dict(self, plz: int) -> dict:
         read_query = """SELECT trafo_num
-                        FROM plz_parameters
+                                                FROM pylovo.plz_parameters
                         WHERE version_id = %(v)s
                           AND plz = %(p)s;"""
         self.cur.execute(read_query, {"v": VERSION_ID, "p": plz})
@@ -293,7 +304,7 @@ class AnalysisMixin(BaseMixin, ABC):
 
     def read_cable_dict(self, plz: int) -> dict:
         read_query = """SELECT cable_length
-                        FROM plz_parameters
+                                                FROM pylovo.plz_parameters
                         WHERE version_id = %(v)s
                           AND plz = %(p)s;"""
         self.cur.execute(read_query, {"v": VERSION_ID, "p": plz})
@@ -313,7 +324,7 @@ class AnalysisMixin(BaseMixin, ABC):
         """
         query = f"""
             SELECT 1
-            FROM plz_parameters
+            FROM pylovo.plz_parameters
             WHERE version_id = %(version_id)s AND plz = %(plz)s
             LIMIT 1;
         """
@@ -323,7 +334,7 @@ class AnalysisMixin(BaseMixin, ABC):
         return result is not None
 
     def get_grids_from_plz(self, plz : int) -> pd.DataFrame:
-        grids_query = """SELECT * FROM grid_result
+        grids_query = f"""SELECT * FROM pylovo.grid_result
                         WHERE plz = %(p)s"""
         params = {"p": plz}
         grids_df = pd.read_sql_query(grids_query, con=self.conn, params=params)

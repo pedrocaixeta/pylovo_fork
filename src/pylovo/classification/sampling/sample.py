@@ -27,7 +27,7 @@ def check_if_classification_version_exists():
     """
     cur = db_client.cur
     count_query = f"""SELECT COUNT(*) 
-            FROM classification_version 
+            FROM pylovo.classification_version 
             WHERE "classification_id" = {CLASSIFICATION_VERSION}"""
     cur.execute(count_query)
     version_exists = cur.fetchone()[0]
@@ -38,7 +38,7 @@ def check_if_classification_version_exists():
     # conn.commit()
     else:
         # create new version
-        insert_query = f"""INSERT INTO classification_version (classification_id, classification_version_comment, classification_region) VALUES
+        insert_query = f"""INSERT INTO pylovo.classification_version (classification_id, classification_version_comment, classification_region) VALUES
         ({CLASSIFICATION_VERSION}, '{CLASSIFICATION_VERSION_COMMENT}', '{CLASSIFICATION_REGION}')"""
         cur.execute(insert_query)
         print(cur.statusmessage)
@@ -182,8 +182,8 @@ def get_sample_set() -> pd.DataFrame:
     """
     cur = db_client.cur
     query = f"""SELECT ss.plz, mr.pop, mr.area, mr.lat, mr.lon, ss.ags, mr.name_city, mr.fed_state, mr.regio7, mr.regio5, mr.pop_den
-    FROM sample_set ss
-    JOIN municipal_register mr ON ss.plz = mr.plz AND ss.ags = mr.ags
+    FROM pylovo.sample_set ss
+    JOIN pylovo.municipal_register mr ON ss.plz = mr.plz AND ss.ags = mr.ags
     WHERE ss.classification_id = {CLASSIFICATION_VERSION};"""
     cur.execute(query)
     sample_set = cur.fetchall()

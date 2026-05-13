@@ -330,7 +330,7 @@ class ClusteringMixin(BaseMixin, ABC):
         query = """SELECT kcid
                    FROM buildings_tem
                    WHERE kcid NOT IN (SELECT DISTINCT kcid
-                                      FROM grid_result
+                                      FROM pylovo.grid_result
                                       WHERE version_id = %(v)s
                                         AND grid_result.plz = %(plz)s)
                      AND kcid IS NOT NULL
@@ -357,7 +357,7 @@ class ClusteringMixin(BaseMixin, ABC):
     def clear_grid_result_in_kmean_cluster(self, plz: int, kcid: int):
         # Remove old clustering at same postcode cluster
         clear_query = """DELETE
-                         FROM grid_result
+                         FROM pylovo.grid_result
                          WHERE version_id = %(v)s
                            AND plz = %(pc)s
                            AND kcid = %(kc)s
@@ -390,7 +390,7 @@ class ClusteringMixin(BaseMixin, ABC):
         self.cur.execute(building_query, params)
 
         # Insert new clustering
-        cluster_query = """INSERT INTO grid_result (version_id, plz, kcid, bcid, transformer_rated_power)
+        cluster_query = """INSERT INTO pylovo.grid_result (version_id, plz, kcid, bcid, transformer_rated_power)
                            VALUES (%(v)s, %(pc)s, %(kc)s, %(bc)s, %(s)s); """
 
         params = {"v": VERSION_ID, "pc": plz, "bc": bcid, "kc": kcid, "s": int(transformer_rated_power)}
@@ -441,7 +441,7 @@ class ClusteringMixin(BaseMixin, ABC):
         Returns: A list of greenfield building clusters for a given plz
         """
         query = """SELECT DISTINCT bcid
-                   FROM grid_result
+                   FROM pylovo.grid_result
                    WHERE version_id = %(v)s
                      AND kcid = %(kc)s
                      AND plz = %(pc)s
@@ -523,7 +523,7 @@ class ClusteringMixin(BaseMixin, ABC):
         # Use a more robust approach to handle GEOS topology issues
         transformer_query = """
             SELECT transformer_rated_power
-            FROM transformers t
+            FROM pylovo.transformers t
             WHERE t.transformer_rated_power IS NOT NULL
             AND ST_Intersects(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)))
             LIMIT 1
@@ -540,7 +540,7 @@ class ClusteringMixin(BaseMixin, ABC):
             try:
                 fallback_query = """
                     SELECT transformer_rated_power
-                    FROM transformers t
+                    FROM pylovo.transformers t
                     WHERE t.transformer_rated_power IS NOT NULL
                     AND ST_DWithin(t.geom, ST_MakeValid(ST_Buffer(ST_MakeValid(ST_GeomFromText(%(cluster_geom_wkt)s, 3035)), 0)), 1.0)
                     LIMIT 1
@@ -588,7 +588,7 @@ class ClusteringMixin(BaseMixin, ABC):
         if existing_capacity is not None:
             # Use the existing transformer capacity
             existing_capacity = int(existing_capacity)
-            update_query = """UPDATE grid_result
+            update_query = """UPDATE pylovo.grid_result
                               SET transformer_rated_power = %(n)s
                               WHERE version_id = %(v)s
                                 AND plz = %(p)s
@@ -604,7 +604,7 @@ class ClusteringMixin(BaseMixin, ABC):
 
         if note == 0:
             old_query = """SELECT transformer_rated_power
-                           FROM grid_result
+                           FROM pylovo.grid_result
                            WHERE version_id = %(v)s
                              AND plz = %(p)s
                              AND kcid = %(k)s
@@ -615,7 +615,7 @@ class ClusteringMixin(BaseMixin, ABC):
             new_transformer_rated_power = int(
                 transformer_capacities[transformer_capacities > transformer_rated_power][0].item()
             )
-            update_query = """UPDATE grid_result
+            update_query = """UPDATE pylovo.grid_result
                               SET transformer_rated_power = %(n)s
                               WHERE version_id = %(v)s
                                 AND plz = %(p)s
@@ -628,7 +628,7 @@ class ClusteringMixin(BaseMixin, ABC):
             combined = np.concatenate((transformer_capacities, double_trans), axis=None)
             np.sort(combined, axis=None)
             old_query = """SELECT transformer_rated_power
-                           FROM grid_result
+                           FROM pylovo.grid_result
                            WHERE version_id = %(v)s
                              AND plz = %(p)s
                              AND kcid = %(k)s
@@ -638,7 +638,7 @@ class ClusteringMixin(BaseMixin, ABC):
             if transformer_rated_power in combined.tolist():
                 return None
             new_transformer_rated_power = int(np.ceil(transformer_rated_power / 630) * 630)
-            update_query = """UPDATE grid_result
+            update_query = """UPDATE pylovo.grid_result
                               SET transformer_rated_power = %(n)s
                               WHERE version_id = %(v)s
                                 AND plz = %(p)s
@@ -664,7 +664,7 @@ class ClusteringMixin(BaseMixin, ABC):
         allowed_capacities = tuple(TRANSFORMER_MAPPING[settlement_type])
 
         query = """SELECT equipment_data.s_max_kva, cost_eur
-                   FROM equipment_data
+                   FROM pylovo.equipment_data
                    WHERE typ = 'Transformer' \
                      AND s_max_kva IN %(capacities)s
                    ORDER BY s_max_kva;"""
@@ -703,14 +703,14 @@ class ClusteringMixin(BaseMixin, ABC):
                 WHERE connection_point IN %(c)s
                   AND type != 'Transformer';
 
-                INSERT INTO grid_result (version_id, plz, kcid, bcid, ont_vertice_id, transformer_rated_power)
+                INSERT INTO pylovo.grid_result (version_id, plz, kcid, bcid, ont_vertice_id, transformer_rated_power)
                 VALUES (%(v)s, %(pc)s, %(k)s, %(count)s, %(t)s, %(l)s);
 
-                INSERT INTO transformer_positions (version_id, grid_result_id, geom, osm_id, comment)
+                INSERT INTO pylovo.transformer_positions (version_id, grid_result_id, geom, osm_id, comment)
                 VALUES (
                         %(v)s,
                         (SELECT grid_result_id
-                         FROM grid_result
+                         FROM pylovo.grid_result
                          WHERE version_id = %(v)s AND plz = %(pc)s AND kcid = %(k)s AND bcid = %(count)s),
                         (SELECT center FROM buildings_tem WHERE vertice_id = %(t)s),
                         (SELECT osm_id FROM buildings_tem WHERE vertice_id = %(t)s),
@@ -724,7 +724,7 @@ class ClusteringMixin(BaseMixin, ABC):
         residential = """WITH residential AS
                                   (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                                    FROM buildings_tem AS b
-                                            LEFT JOIN consumer_categories AS c
+                                            LEFT JOIN pylovo.consumer_categories AS c
                                                       ON b.type = c.definition
                                    WHERE b.connection_point IN %(c)s
                                      AND b.type IN ('SFH', 'MFH', 'AB', 'TH'))
@@ -747,7 +747,7 @@ class ClusteringMixin(BaseMixin, ABC):
         commercial = """WITH commercial AS
                                  (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                                   FROM buildings_tem AS b
-                                           LEFT JOIN consumer_categories AS c
+                                           LEFT JOIN pylovo.consumer_categories AS c
                                                      ON c.definition = b.type
                                   WHERE b.connection_point IN %(c)s
                                     AND b.type = 'Commercial')
@@ -769,7 +769,7 @@ class ClusteringMixin(BaseMixin, ABC):
         public = """WITH public AS
                              (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                               FROM buildings_tem AS b
-                                       LEFT JOIN consumer_categories AS c
+                                       LEFT JOIN pylovo.consumer_categories AS c
                                                  ON c.definition = b.type
                               WHERE b.connection_point IN %(c)s
                                 AND b.type = 'Public')
@@ -790,7 +790,7 @@ class ClusteringMixin(BaseMixin, ABC):
         industrial = """WITH industrial AS
                                  (SELECT b.peak_load_in_kw AS load, b.households_per_building AS count, c.sim_factor
                                   FROM buildings_tem AS b
-                                           LEFT JOIN consumer_categories AS c
+                                           LEFT JOIN pylovo.consumer_categories AS c
                                                      ON c.definition = b.type
                                   WHERE b.connection_point IN %(c)s
                                     AND b.type = 'Industrial')
@@ -837,25 +837,25 @@ class ClusteringMixin(BaseMixin, ABC):
     def upsert_transformer_selection(self, plz: int, kcid: int, bcid: int, connection_id: int):
         """Writes the vertice_id of chosen building as ONT location in the grid_result table"""
 
-        query = """UPDATE grid_result
+        query = """UPDATE pylovo.grid_result
                    SET ont_vertice_id = %(c)s
                    WHERE version_id = %(v)s
                      AND plz = %(p)s
                      AND kcid = %(k)s
                      AND bcid = %(b)s;
 
-        UPDATE grid_result
+        UPDATE pylovo.grid_result
         SET model_status = 1
         WHERE version_id = %(v)s
           AND plz = %(p)s
           AND kcid = %(k)s
           AND bcid = %(b)s;
 
-        INSERT INTO transformer_positions (version_id, grid_result_id, geom, comment)
+        INSERT INTO pylovo.transformer_positions (version_id, grid_result_id, geom, comment)
         VALUES(
                 %(v)s,
                 (SELECT grid_result_id
-                 FROM grid_result
+                 FROM pylovo.grid_result
                  WHERE version_id = %(v)s \
                    AND plz = %(p)s \
                    AND kcid = %(k)s \
@@ -896,7 +896,7 @@ class ClusteringMixin(BaseMixin, ABC):
         Returns: Settlement type: 1=Rural, 2=Semi-urban, 3=Urban
         """
         settlement_query = """SELECT settlement_type
-                              FROM postcode_result
+                              FROM pylovo.postcode_result
                               WHERE version_id = %(v)s
                                 AND postcode_result_plz = %(p)s
                               LIMIT 1; """

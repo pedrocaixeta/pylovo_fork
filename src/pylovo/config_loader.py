@@ -121,7 +121,6 @@ DBUSER = get_required_env_var("DBUSER", "Database username")
 HOST = get_required_env_var("HOST", "Database host address")
 PORT = get_required_env_var("PORT", "Database port number")
 PASSWORD = get_required_env_var("PASSWORD", "Database password")
-TARGET_SCHEMA = get_required_env_var("TARGET_SCHEMA", "Target schema name")
 
 # INFDB (external database) connection (recommended)
 USE_INFDB = os.getenv("USE_INFDB", "True").lower() in ("true", "1", "yes")

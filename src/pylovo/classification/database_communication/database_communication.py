@@ -32,13 +32,13 @@ class DatabaseCommunication:
         query = """
                 WITH plz_table(plz) AS (
                     SELECT plz
-                    FROM sample_set
+                    FROM pylovo.sample_set
                     WHERE classification_id= %(c)s
                 ),
                 clustering AS (
                     SELECT version_id, plz, kcid, bcid, cp.*
-                    FROM clustering_parameters cp 
-                    JOIN grid_result gr ON cp.grid_result_id = gr.grid_result_id
+                    FROM pylovo.clustering_parameters cp 
+                    JOIN pylovo.grid_result gr ON cp.grid_result_id = gr.grid_result_id
                     WHERE gr.version_id = %(v)s AND cp.filtered = false
                 )
                 SELECT c.* 
@@ -65,14 +65,14 @@ class DatabaseCommunication:
         query = """
                 WITH plz_table(plz) AS (
                     SELECT ss.plz, mr.pop, mr.area, mr.lat, mr.lon, ss.ags, mr.name_city, mr.regio7, mr.regio5, mr.pop_den
-                    FROM sample_set ss
-                    JOIN municipal_register mr ON ss.plz = mr.plz AND ss.ags = mr.ags
+                    FROM pylovo.sample_set ss
+                    JOIN pylovo.municipal_register mr ON ss.plz = mr.plz AND ss.ags = mr.ags
                     WHERE ss.classification_id = %(c)s
                 ),
                 clustering AS (
                     SELECT version_id, plz, kcid, bcid, cp.*
-                    FROM clustering_parameters cp 
-                    JOIN grid_result gr ON cp.grid_result_id = gr.grid_result_id
+                    FROM pylovo.clustering_parameters cp 
+                    JOIN pylovo.grid_result gr ON cp.grid_result_id = gr.grid_result_id
                     WHERE gr.version_id = %(v)s AND cp.filtered = false
                 )
                 SELECT c.*, p.pop, p.area, p.lat, p.lon, p.ags, p.name_city, p.regio7, p.regio5, p.pop_den
@@ -96,8 +96,8 @@ class DatabaseCommunication:
         # load transformer positions from database, preserve geo-datatype of geom column
         query = """
                 SELECT version_id, plz, kcid, bcid, geom
-                FROM transformer_positions tp
-                JOIN grid_result gr
+                FROM pylovo.transformer_positions tp
+                JOIN pylovo.grid_result gr
                   ON tp.grid_result_id = gr.grid_result_id
                 WHERE gr.version_id=%(v)s;"""
         params = {"v": VERSION_ID}
@@ -156,7 +156,7 @@ class DatabaseCommunication:
         
         query = """
                 SELECT grid_result_id, version_id, plz, kcid, bcid
-                FROM grid_result
+                FROM pylovo.grid_result
                 WHERE version_id=%(v)s;"""
         params = {"v": VERSION_ID}
         df_grid_result = pd.read_sql_query(query, con=self.dbc.sqla_engine, params=params)
@@ -181,7 +181,7 @@ class DatabaseCommunication:
         """apply maximum transformer distance threshold on clustering parameter table
         by indicating if the threshold is surpassed in the filtered column
         """
-        query = """UPDATE clustering_parameters
+        query = """UPDATE pylovo.clustering_parameters
                 SET filtered = true
                 WHERE max_trafo_dis > %(t)s;"""
         self.dbc.cur.execute(query, {"t": THRESHOLD_MAX_TRAFO_DIS})
@@ -194,11 +194,11 @@ class DatabaseCommunication:
         """
         query = """WITH buildings(grid_result_id) AS (
                        SELECT DISTINCT grid_result_id
-                       FROM buildings_result
+                       FROM pylovo.buildings_result
                        WHERE households_per_building > %(h)s
                    )
                    
-                   UPDATE clustering_parameters c
+                   UPDATE pylovo.clustering_parameters c
                    SET filtered = true
                    FROM buildings b
                    WHERE c.grid_result_id = b.grid_result_id;"""
@@ -213,7 +213,7 @@ class DatabaseCommunication:
         """
 
         query = """
-            UPDATE clustering_parameters
+            UPDATE pylovo.clustering_parameters
             SET filtered = true
             WHERE avg_trafo_dis < %(avg_trafo_dis)s
             OR no_house_connections < %(no_house_connections)s
@@ -235,7 +235,7 @@ class DatabaseCommunication:
     def set_remaining_filter_values_false(self) -> None:
         """setting filtered value to false for grids that should not be filtered according to their parameters
         """
-        query = """UPDATE clustering_parameters 
+        query = """UPDATE pylovo.clustering_parameters 
             SET filtered = false
             WHERE filtered IS NULL;"""
         self.dbc.cur.execute(query)
