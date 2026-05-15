@@ -234,6 +234,127 @@ CREATE_QUERIES = {
             ON DELETE CASCADE
     )
     """,
+    "pandapower_bus": """
+    CREATE TABLE IF NOT EXISTS pylovo.pandapower_bus (
+        pandapower_bus_id SERIAL PRIMARY KEY,
+        grid_result_id bigint NOT NULL,
+        pp_index integer NOT NULL,
+        name varchar(255),
+        vn_kv double precision,
+        type varchar(32),
+        zone varchar(32),
+        geo jsonb,
+        in_service boolean,
+        min_vm_pu double precision,
+        max_vm_pu double precision,
+        CONSTRAINT uq_pandapower_bus_grid_result_pp_index UNIQUE (grid_result_id, pp_index),
+        CONSTRAINT fk_pandapower_bus_grid_result
+            FOREIGN KEY (grid_result_id)
+            REFERENCES pylovo.grid_result (grid_result_id)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pandapower_bus_grid_result_id
+    ON pylovo.pandapower_bus (grid_result_id);
+    """,
+    "pandapower_line": """
+    CREATE TABLE IF NOT EXISTS pylovo.pandapower_line (
+        pandapower_line_id SERIAL PRIMARY KEY,
+        grid_result_id bigint NOT NULL,
+        pp_index integer NOT NULL,
+        name varchar(255),
+        std_type varchar(100),
+        from_bus integer,
+        to_bus integer,
+        length_km double precision,
+        parallel integer,
+        geo jsonb,
+        in_service boolean,
+        r_ohm_per_km double precision,
+        x_ohm_per_km double precision,
+        c_nf_per_km double precision,
+        g_us_per_km double precision,
+        max_i_ka double precision,
+        df double precision,
+        type varchar(32),
+        CONSTRAINT uq_pandapower_line_grid_result_pp_index UNIQUE (grid_result_id, pp_index),
+        CONSTRAINT fk_pandapower_line_grid_result
+            FOREIGN KEY (grid_result_id)
+            REFERENCES pylovo.grid_result (grid_result_id)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pandapower_line_grid_result_id
+    ON pylovo.pandapower_line (grid_result_id);
+    CREATE INDEX IF NOT EXISTS idx_pandapower_line_from_to_bus
+    ON pylovo.pandapower_line (from_bus, to_bus);
+    """,
+    "pandapower_trafo": """
+    CREATE TABLE IF NOT EXISTS pylovo.pandapower_trafo (
+        pandapower_trafo_id SERIAL PRIMARY KEY,
+        grid_result_id bigint NOT NULL,
+        pp_index integer NOT NULL,
+        name varchar(255),
+        std_type varchar(100),
+        hv_bus integer,
+        lv_bus integer,
+        sn_mva double precision,
+        vn_hv_kv double precision,
+        vn_lv_kv double precision,
+        vkr_percent double precision,
+        vk_percent double precision,
+        pfe_kw double precision,
+        i0_percent double precision,
+        shift_degree double precision,
+        tap_side varchar(16),
+        tap_neutral integer,
+        tap_min integer,
+        tap_max integer,
+        tap_step_percent double precision,
+        tap_pos integer,
+        tap_phase_shifter boolean,
+        parallel integer,
+        in_service boolean,
+        CONSTRAINT uq_pandapower_trafo_grid_result_pp_index UNIQUE (grid_result_id, pp_index),
+        CONSTRAINT fk_pandapower_trafo_grid_result
+            FOREIGN KEY (grid_result_id)
+            REFERENCES pylovo.grid_result (grid_result_id)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pandapower_trafo_grid_result_id
+    ON pylovo.pandapower_trafo (grid_result_id);
+    CREATE INDEX IF NOT EXISTS idx_pandapower_trafo_hv_lv_bus
+    ON pylovo.pandapower_trafo (hv_bus, lv_bus);
+    """,
+    "pandapower_load": """
+    CREATE TABLE IF NOT EXISTS pylovo.pandapower_load (
+        pandapower_load_id SERIAL PRIMARY KEY,
+        grid_result_id bigint NOT NULL,
+        pp_index integer NOT NULL,
+        name varchar(255),
+        bus integer,
+        p_mw double precision,
+        q_mvar double precision,
+        const_z_percent double precision,
+        const_i_percent double precision,
+        sn_mva double precision,
+        scaling double precision,
+        in_service boolean,
+        type varchar(64),
+        controllable boolean,
+        max_p_mw double precision,
+        min_p_mw double precision,
+        max_q_mvar double precision,
+        min_q_mvar double precision,
+        CONSTRAINT uq_pandapower_load_grid_result_pp_index UNIQUE (grid_result_id, pp_index),
+        CONSTRAINT fk_pandapower_load_grid_result
+            FOREIGN KEY (grid_result_id)
+            REFERENCES pylovo.grid_result (grid_result_id)
+            ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pandapower_load_grid_result_id
+    ON pylovo.pandapower_load (grid_result_id);
+    CREATE INDEX IF NOT EXISTS idx_pandapower_load_bus
+    ON pylovo.pandapower_load (bus);
+    """,
     "transformers": """CREATE TABLE IF NOT EXISTS pylovo.transformers (
         osm_id varchar PRIMARY KEY,
         area double precision,

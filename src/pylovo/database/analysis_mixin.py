@@ -1,8 +1,10 @@
 import json
 import warnings
+from typing import Any
 
 import geopandas as gpd
 import pandapower as pp
+import pandas as pd
 from abc import ABC
 
 from pylovo.config_loader import *
@@ -66,6 +68,366 @@ class AnalysisMixin(BaseMixin, ABC):
             insert_query,
             vars=(json_string, transformer_description, power_flow_status, VERSION_ID, plz, kcid, bcid),
         )
+
+    @staticmethod
+    def _normalize_sql_scalar(value: Any) -> Any:
+        if value is None:
+            return None
+
+        if hasattr(value, "item"):
+            value = value.item()
+
+        try:
+            if pd.isna(value):
+                return None
+        except TypeError:
+            pass
+
+        return value
+
+    def _series_value(self, row: pd.Series, column: str) -> Any:
+        if column not in row.index:
+            return None
+        return self._normalize_sql_scalar(row[column])
+
+    def _normalize_geojson(self, value: Any) -> str | None:
+        normalized = self._normalize_sql_scalar(value)
+        if normalized is None:
+            return None
+
+        if isinstance(normalized, str):
+            return normalized
+
+        if isinstance(normalized, (dict, list)):
+            return json.dumps(normalized)
+
+        return None
+
+    def get_grid_result_id(self, plz: int, kcid: int, bcid: int, version_id: str | None = None) -> int | None:
+        effective_version_id = VERSION_ID if version_id is None else str(version_id)
+        query = """
+            SELECT grid_result_id
+            FROM pylovo.grid_result
+            WHERE version_id = %s
+              AND plz = %s
+              AND kcid = %s
+              AND bcid = %s
+            LIMIT 1
+        """
+        self.cur.execute(query, vars=(effective_version_id, plz, kcid, bcid))
+        result = self.cur.fetchone()
+        if result is None:
+            return None
+        return int(result[0])
+
+    def _delete_pandapower_element_rows(self, grid_result_id: int) -> None:
+        for table_name in ("pandapower_bus", "pandapower_line", "pandapower_trafo", "pandapower_load"):
+            self.cur.execute(f"DELETE FROM pylovo.{table_name} WHERE grid_result_id = %(g)s", {"g": grid_result_id})
+
+    def _insert_pandapower_bus_rows(self, grid_result_id: int, bus_df: pd.DataFrame | None) -> None:
+        if bus_df is None or bus_df.empty:
+            return
+
+        insert_query = """
+            INSERT INTO pylovo.pandapower_bus (
+                grid_result_id,
+                pp_index,
+                name,
+                vn_kv,
+                type,
+                zone,
+                geo,
+                in_service,
+                min_vm_pu,
+                max_vm_pu
+            ) VALUES (
+                %(grid_result_id)s,
+                %(pp_index)s,
+                %(name)s,
+                %(vn_kv)s,
+                %(type)s,
+                %(zone)s,
+                %(geo)s,
+                %(in_service)s,
+                %(min_vm_pu)s,
+                %(max_vm_pu)s
+            )
+        """
+
+        rows = []
+        for pp_index, row in bus_df.iterrows():
+            rows.append(
+                {
+                    "grid_result_id": grid_result_id,
+                    "pp_index": self._normalize_sql_scalar(pp_index),
+                    "name": self._series_value(row, "name"),
+                    "vn_kv": self._series_value(row, "vn_kv"),
+                    "type": self._series_value(row, "type"),
+                    "zone": self._series_value(row, "zone"),
+                    "geo": self._normalize_geojson(self._series_value(row, "geo")),
+                    "in_service": self._series_value(row, "in_service"),
+                    "min_vm_pu": self._series_value(row, "min_vm_pu"),
+                    "max_vm_pu": self._series_value(row, "max_vm_pu"),
+                }
+            )
+
+        self.cur.executemany(insert_query, rows)
+
+    def _insert_pandapower_line_rows(self, grid_result_id: int, line_df: pd.DataFrame | None) -> None:
+        if line_df is None or line_df.empty:
+            return
+
+        insert_query = """
+            INSERT INTO pylovo.pandapower_line (
+                grid_result_id,
+                pp_index,
+                name,
+                std_type,
+                from_bus,
+                to_bus,
+                length_km,
+                parallel,
+                geo,
+                in_service,
+                r_ohm_per_km,
+                x_ohm_per_km,
+                c_nf_per_km,
+                g_us_per_km,
+                max_i_ka,
+                df,
+                type
+            ) VALUES (
+                %(grid_result_id)s,
+                %(pp_index)s,
+                %(name)s,
+                %(std_type)s,
+                %(from_bus)s,
+                %(to_bus)s,
+                %(length_km)s,
+                %(parallel)s,
+                %(geo)s,
+                %(in_service)s,
+                %(r_ohm_per_km)s,
+                %(x_ohm_per_km)s,
+                %(c_nf_per_km)s,
+                %(g_us_per_km)s,
+                %(max_i_ka)s,
+                %(df)s,
+                %(type)s
+            )
+        """
+
+        rows = []
+        for pp_index, row in line_df.iterrows():
+            rows.append(
+                {
+                    "grid_result_id": grid_result_id,
+                    "pp_index": self._normalize_sql_scalar(pp_index),
+                    "name": self._series_value(row, "name"),
+                    "std_type": self._series_value(row, "std_type"),
+                    "from_bus": self._series_value(row, "from_bus"),
+                    "to_bus": self._series_value(row, "to_bus"),
+                    "length_km": self._series_value(row, "length_km"),
+                    "parallel": self._series_value(row, "parallel"),
+                    "geo": self._normalize_geojson(self._series_value(row, "geo")),
+                    "in_service": self._series_value(row, "in_service"),
+                    "r_ohm_per_km": self._series_value(row, "r_ohm_per_km"),
+                    "x_ohm_per_km": self._series_value(row, "x_ohm_per_km"),
+                    "c_nf_per_km": self._series_value(row, "c_nf_per_km"),
+                    "g_us_per_km": self._series_value(row, "g_us_per_km"),
+                    "max_i_ka": self._series_value(row, "max_i_ka"),
+                    "df": self._series_value(row, "df"),
+                    "type": self._series_value(row, "type"),
+                }
+            )
+
+        self.cur.executemany(insert_query, rows)
+
+    def _insert_pandapower_trafo_rows(self, grid_result_id: int, trafo_df: pd.DataFrame | None) -> None:
+        if trafo_df is None or trafo_df.empty:
+            return
+
+        insert_query = """
+            INSERT INTO pylovo.pandapower_trafo (
+                grid_result_id,
+                pp_index,
+                name,
+                std_type,
+                hv_bus,
+                lv_bus,
+                sn_mva,
+                vn_hv_kv,
+                vn_lv_kv,
+                vkr_percent,
+                vk_percent,
+                pfe_kw,
+                i0_percent,
+                shift_degree,
+                tap_side,
+                tap_neutral,
+                tap_min,
+                tap_max,
+                tap_step_percent,
+                tap_pos,
+                tap_phase_shifter,
+                parallel,
+                in_service
+            ) VALUES (
+                %(grid_result_id)s,
+                %(pp_index)s,
+                %(name)s,
+                %(std_type)s,
+                %(hv_bus)s,
+                %(lv_bus)s,
+                %(sn_mva)s,
+                %(vn_hv_kv)s,
+                %(vn_lv_kv)s,
+                %(vkr_percent)s,
+                %(vk_percent)s,
+                %(pfe_kw)s,
+                %(i0_percent)s,
+                %(shift_degree)s,
+                %(tap_side)s,
+                %(tap_neutral)s,
+                %(tap_min)s,
+                %(tap_max)s,
+                %(tap_step_percent)s,
+                %(tap_pos)s,
+                %(tap_phase_shifter)s,
+                %(parallel)s,
+                %(in_service)s
+            )
+        """
+
+        rows = []
+        for pp_index, row in trafo_df.iterrows():
+            rows.append(
+                {
+                    "grid_result_id": grid_result_id,
+                    "pp_index": self._normalize_sql_scalar(pp_index),
+                    "name": self._series_value(row, "name"),
+                    "std_type": self._series_value(row, "std_type"),
+                    "hv_bus": self._series_value(row, "hv_bus"),
+                    "lv_bus": self._series_value(row, "lv_bus"),
+                    "sn_mva": self._series_value(row, "sn_mva"),
+                    "vn_hv_kv": self._series_value(row, "vn_hv_kv"),
+                    "vn_lv_kv": self._series_value(row, "vn_lv_kv"),
+                    "vkr_percent": self._series_value(row, "vkr_percent"),
+                    "vk_percent": self._series_value(row, "vk_percent"),
+                    "pfe_kw": self._series_value(row, "pfe_kw"),
+                    "i0_percent": self._series_value(row, "i0_percent"),
+                    "shift_degree": self._series_value(row, "shift_degree"),
+                    "tap_side": self._series_value(row, "tap_side"),
+                    "tap_neutral": self._series_value(row, "tap_neutral"),
+                    "tap_min": self._series_value(row, "tap_min"),
+                    "tap_max": self._series_value(row, "tap_max"),
+                    "tap_step_percent": self._series_value(row, "tap_step_percent"),
+                    "tap_pos": self._series_value(row, "tap_pos"),
+                    "tap_phase_shifter": self._series_value(row, "tap_phase_shifter"),
+                    "parallel": self._series_value(row, "parallel"),
+                    "in_service": self._series_value(row, "in_service"),
+                }
+            )
+
+        self.cur.executemany(insert_query, rows)
+
+    def _insert_pandapower_load_rows(self, grid_result_id: int, load_df: pd.DataFrame | None) -> None:
+        if load_df is None or load_df.empty:
+            return
+
+        insert_query = """
+            INSERT INTO pylovo.pandapower_load (
+                grid_result_id,
+                pp_index,
+                name,
+                bus,
+                p_mw,
+                q_mvar,
+                const_z_percent,
+                const_i_percent,
+                sn_mva,
+                scaling,
+                in_service,
+                type,
+                controllable,
+                max_p_mw,
+                min_p_mw,
+                max_q_mvar,
+                min_q_mvar
+            ) VALUES (
+                %(grid_result_id)s,
+                %(pp_index)s,
+                %(name)s,
+                %(bus)s,
+                %(p_mw)s,
+                %(q_mvar)s,
+                %(const_z_percent)s,
+                %(const_i_percent)s,
+                %(sn_mva)s,
+                %(scaling)s,
+                %(in_service)s,
+                %(type)s,
+                %(controllable)s,
+                %(max_p_mw)s,
+                %(min_p_mw)s,
+                %(max_q_mvar)s,
+                %(min_q_mvar)s
+            )
+        """
+
+        rows = []
+        for pp_index, row in load_df.iterrows():
+            rows.append(
+                {
+                    "grid_result_id": grid_result_id,
+                    "pp_index": self._normalize_sql_scalar(pp_index),
+                    "name": self._series_value(row, "name"),
+                    "bus": self._series_value(row, "bus"),
+                    "p_mw": self._series_value(row, "p_mw"),
+                    "q_mvar": self._series_value(row, "q_mvar"),
+                    "const_z_percent": self._series_value(row, "const_z_percent"),
+                    "const_i_percent": self._series_value(row, "const_i_percent"),
+                    "sn_mva": self._series_value(row, "sn_mva"),
+                    "scaling": self._series_value(row, "scaling"),
+                    "in_service": self._series_value(row, "in_service"),
+                    "type": self._series_value(row, "type"),
+                    "controllable": self._series_value(row, "controllable"),
+                    "max_p_mw": self._series_value(row, "max_p_mw"),
+                    "min_p_mw": self._series_value(row, "min_p_mw"),
+                    "max_q_mvar": self._series_value(row, "max_q_mvar"),
+                    "min_q_mvar": self._series_value(row, "min_q_mvar"),
+                }
+            )
+
+        self.cur.executemany(insert_query, rows)
+
+    def save_pandapower_net_with_sql(
+        self,
+        plz: int,
+        kcid: int,
+        bcid: int,
+        net: pp.pandapowerNet,
+        version_id: str | None = None,
+    ) -> None:
+        if net is None:
+            self.logger.warning(
+                "Skipping pandapower SQL persistence because no pandapower network instance was provided."
+            )
+            return
+
+        grid_result_id = self.get_grid_result_id(plz=plz, kcid=kcid, bcid=bcid, version_id=version_id)
+        if grid_result_id is None:
+            self.logger.warning(
+                f"Skipping pandapower SQL persistence because grid_result_id was not found for "
+                f"plz={plz}, kcid={kcid}, bcid={bcid}."
+            )
+            return
+
+        self._delete_pandapower_element_rows(grid_result_id)
+        self._insert_pandapower_bus_rows(grid_result_id, getattr(net, "bus", None))
+        self._insert_pandapower_line_rows(grid_result_id, getattr(net, "line", None))
+        self._insert_pandapower_trafo_rows(grid_result_id, getattr(net, "trafo", None))
+        self._insert_pandapower_load_rows(grid_result_id, getattr(net, "load", None))
 
     def has_clustering_parameters(self, plz: int, kcid: int, bcid: int) -> bool:
         """

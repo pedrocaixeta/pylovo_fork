@@ -1318,6 +1318,28 @@ class GridGenerator:
             powerflow_status,
         )
 
+        if ELECTRICAL_BACKEND == "pandapower":
+            if json_string is None:
+                self.logger.warning(
+                    f"Skipping SQL net persistence for kcid={kcid}, bcid={bcid} because JSON export failed."
+                )
+            elif getattr(backend, "net", None) is None:
+                self.logger.warning(
+                    f"Skipping SQL net persistence for kcid={kcid}, bcid={bcid} because no backend network is present."
+                )
+            else:
+                try:
+                    self.dbc.save_pandapower_net_with_sql(
+                        plz=self.plz,
+                        kcid=kcid,
+                        bcid=bcid,
+                        net=backend.net,
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to store SQL net tables for kcid={kcid}, bcid={bcid}: {e}"
+                    )
+
         self.logger.debug(
             f"Grid with kcid:{kcid} bcid:{bcid} is stored with status={powerflow_status}."
         )
