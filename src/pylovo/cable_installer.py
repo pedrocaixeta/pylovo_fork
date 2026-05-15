@@ -233,9 +233,9 @@ class CableInstaller:
             )
             line_df = self._cable_df
             while True:
-                current_available_cables_df = line_df[
+                current_available_cables_df = line_df.loc[
                     (line_df["max_i_ka"] >= Imax / count) & (line_df.index.isin(connection_available_cables))
-                ]
+                ].copy()
 
                 if len(current_available_cables_df) == 0:
                     count += 1
@@ -304,10 +304,10 @@ class CableInstaller:
         distance_km = distance * 1e-3
 
         while True:
-            current_available_cables = line_df[
+            current_available_cables = line_df.loc[
                 (line_df["max_i_ka"] >= Imax / count) &
                 (line_df.index.isin(self._feeder_available_cables))
-            ]
+            ].copy()
 
             if len(current_available_cables) == 0:
                 count += 1
