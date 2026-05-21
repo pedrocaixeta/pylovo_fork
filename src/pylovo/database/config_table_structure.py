@@ -1,4 +1,4 @@
-INFDB_OPTIONAL_TABLES = {"ags_log", "res", "oth", "ways"}
+INFDB_OPTIONAL_TABLES = {"res", "oth", "ways"}
 
 CREATE_QUERIES = {
     "version": """CREATE TABLE IF NOT EXISTS pylovo.version (
