@@ -146,7 +146,7 @@ def get_federal_state_id() -> int:
     return id
 
 
-def create_sample_set():
+def create_sample_set(restrict_to_postcode_result: bool = False):
     """complete process of creating a sample set of representative PLZ for a Region
     that is either Germany or a federal state
     All subprocesses of sampling the PLZ are executed in this function.
@@ -159,6 +159,14 @@ def create_sample_set():
 
     # some PLZ might appear multiple times for small municipalities that share PLZ
     regiostar_plz = regiostar_plz.drop_duplicates(subset="plz")
+
+    if restrict_to_postcode_result:
+        query = """SELECT DISTINCT postcode_result_plz
+                   FROM pylovo.postcode_result
+                   WHERE version_id = %(v)s;"""
+        db_client.cur.execute(query, {"v": VERSION_ID})
+        available_plz = {row[0] for row in db_client.cur.fetchall()}
+        regiostar_plz = regiostar_plz[regiostar_plz["plz"].isin(available_plz)]
 
     # restrict to federal state if indicated in config classification
     if CLASSIFICATION_REGION != 'Germany':

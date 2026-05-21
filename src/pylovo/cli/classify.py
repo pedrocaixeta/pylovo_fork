@@ -130,8 +130,17 @@ def main():
     # Step 2: Ask user if they want to apply additional filtering then Run prepare_data_for_clustering.py
     user_input = input("\nDo you want to apply additional filtering on top of the default filters? (yes/no): ").strip().lower()
     apply_additional_filtering = user_input == "yes"
+
+    user_input = input(
+        "\nDo you want to restrict sampling to PLZ present in postcode_result for the configured VERSION_ID? (yes/no): "
+    ).strip().lower()
+    sample_from_postcode_result_only = user_input == "yes"
+
     print("\nRunning prepare_data_for_clustering.py...")
-    prepare_data_for_clustering(additional_filtering=apply_additional_filtering)
+    prepare_data_for_clustering(
+        additional_filtering=apply_additional_filtering,
+        sample_from_postcode_result_only=sample_from_postcode_result_only,
+    )
 
     # Step 3: Ask user for manual input or automatic assignment
     if get_user_confirmation():
