@@ -243,7 +243,7 @@ class ParameterCalculator:
                     f"Failed to calculate/insert parameters for grid {kcid},{bcid} in PLZ {self.plz}: {e}"
                 )
 
-        print(f"Finished PLZ {self.plz}. Calculated: {calculated}, Skipped (already existed): {skipped}.")
+        print(f"Finished PLZ {self.plz}. Calculated new: {calculated}, Skipped existing: {skipped}.")
 
     # -------------------------------------------------------------------------
     # Shared Comparison-Parameter Helpers

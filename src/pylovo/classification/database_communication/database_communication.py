@@ -95,7 +95,7 @@ class DatabaseCommunication:
 
         # load transformer positions from database, preserve geo-datatype of geom column
         query = """
-                SELECT version_id, plz, kcid, bcid, geom
+                SELECT gr.version_id, gr.plz, gr.kcid, gr.bcid, tp.geom
                 FROM pylovo.transformer_positions tp
                 JOIN pylovo.grid_result gr
                   ON tp.grid_result_id = gr.grid_result_id
@@ -140,6 +140,11 @@ class DatabaseCommunication:
             df_parameters_of_grids.at[i, 'gmm_representative_grid'] = True
         df_parameters_of_grids['gmm_clusters'] = df_parameters_of_grids[
             'gmm_clusters'].astype('int')
+
+        if 'kmedoid_clusters' not in df_parameters_of_grids.columns:
+            df_parameters_of_grids['kmedoid_clusters'] = pd.NA
+        if 'kmedoid_representative_grid' not in df_parameters_of_grids.columns:
+            df_parameters_of_grids['kmedoid_representative_grid'] = False
 
         # reduce columns and convert datatypes
         df_parameters_of_grids = df_parameters_of_grids[['version_id', 'plz', 'kcid', 'bcid',

@@ -97,19 +97,27 @@ def update_list_of_clustering_parameters():
 def update_number_of_clusters():
     """Runs get_no_clusters_for_clustering and updates cluster numbers in config_clustering.yaml."""
     df_no_clusters = get_no_clusters_for_clustering()
+    config = load_yaml(CONFIG_CLUSTERING_PATH)
 
-    def get_no_clusters_from_df(algo: str) -> int:
-        return int(df_no_clusters[df_no_clusters["algorithm"] == algo]["no_clusters"].iloc[0])
+    def get_no_clusters_from_df(algo_names: list[str], fallback_key: str) -> int:
+        for algo in algo_names:
+            match = df_no_clusters[df_no_clusters["algorithm"] == algo]["no_clusters"]
+            if not match.empty:
+                return int(match.iloc[0])
+
+        fallback = int(config[fallback_key])
+        print(
+            f"Warning: no cluster recommendation found for {algo_names}. "
+            f"Keeping existing {fallback_key}={fallback}."
+        )
+        return fallback
 
     # Define the direct mapping from algorithm names to YAML keys
     cluster_counts = {
-        "N_CLUSTERS_KMEANS": get_no_clusters_from_df("kmeans"),
-        "N_CLUSTERS_KMEDOID": get_no_clusters_from_df("KMedoids"),
-        "N_CLUSTERS_GMM": get_no_clusters_from_df("GMM tied")
+        "N_CLUSTERS_KMEANS": get_no_clusters_from_df(["kmeans", "KMeans"], "N_CLUSTERS_KMEANS"),
+        "N_CLUSTERS_KMEDOID": get_no_clusters_from_df(["KMedoids", "kmedoids", "kmedoid"], "N_CLUSTERS_KMEDOID"),
+        "N_CLUSTERS_GMM": get_no_clusters_from_df(["GMM tied", "gmm_tied", "gmm tied"], "N_CLUSTERS_GMM"),
     }
-
-    # Load existing YAML configuration
-    config = load_yaml(CONFIG_CLUSTERING_PATH)
 
     # Update YAML configuration with extracted values
     config.update(cluster_counts)
