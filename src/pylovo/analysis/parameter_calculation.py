@@ -544,9 +544,12 @@ class ParameterCalculator:
         load_count_cat = pd.merge(left=load_count, left_on='zone_x', right=df_sim_factor_definitions,
                                   right_on='description')
 
-        load_count_cat = load_count_cat.assign(
-            sim_factor_level1=lambda x: utils.oneSimultaneousLoad(installed_power=1, load_count=x['count'],
-                                                                  sim_factor=x['sim_factor']))
+        load_count_cat['sim_factor_level1'] = load_count_cat.apply(
+            lambda row: utils.oneSimultaneousLoad(
+                installed_power=1,
+                load_count=row['count'],
+                sim_factor=row['sim_factor']
+            ), axis=1)
 
         load_count_cat = load_count_cat.assign(sim_load_level1=lambda x: x['max_p_mw'] * x['sim_factor_level1'])
 
