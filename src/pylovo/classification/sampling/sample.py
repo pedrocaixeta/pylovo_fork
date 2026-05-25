@@ -155,19 +155,19 @@ def create_sample_set():
     """
 
     check_if_classification_version_exists()
-    regiostar_plz = db_client.get_municipal_register()
+    regiostar_plz = db_client.get_municipal_register() # pd.DataFrame containing all rows from the pylovo.municipal_register table
 
-    # some PLZ might appear multiple times for small municipalities that share PLZ
+    # some PLZ appear in multiple AGS (for small municipalities that share PLZ). This block drops duplicated PLZs
     regiostar_plz = regiostar_plz.drop_duplicates(subset="plz")
 
-    # restrict to federal state if indicated in config classification
+    # If our target Region is a Bundesland, then we drop the PLZs that don't belong to this Bundesland
     if CLASSIFICATION_REGION != 'Germany':
         federal_state_id = get_federal_state_id()
         regiostar_plz = regiostar_plz[regiostar_plz['fed_state'] == federal_state_id]
 
     # create sample dataset
-    samples = perc_of_pop_per_class(regiostar_plz)
-    regiostar_samples_result = get_samples_with_regiostar(samples, regiostar_plz)
+    samples = perc_of_pop_per_class(regiostar_plz) #dictionary with the amount of PLZs for each RegioStar 7 code
+    regiostar_samples_result = get_samples_with_regiostar(samples, regiostar_plz) # pd.DataFrame containing sampled PLZs
     regiostar_samples_result = regiostar_samples_result.reset_index()
     regiostar_samples_result = regiostar_samples_result.rename(columns={'index': 'classification_id'})
     regiostar_samples_result['classification_id'] = CLASSIFICATION_VERSION
