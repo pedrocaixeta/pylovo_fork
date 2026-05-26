@@ -173,6 +173,32 @@ def create_sample_set():
     regiostar_samples_result['classification_id'] = CLASSIFICATION_VERSION
     sample_set_to_db(regiostar_samples_result)
 
+def populates_sample_set_for_defined_PLZ():
+    """ Substitute for "create_sample_set", to populate the sample_set table for a given list of PLZs
+    """
+
+    check_if_classification_version_exists()
+    regiostar_plz = db_client.get_municipal_register() # pd.DataFrame containing all rows from the pylovo.municipal_register table
+
+    # some PLZ appear in multiple AGS (for small municipalities that share PLZ). This block drops duplicated PLZs
+    regiostar_plz = regiostar_plz.drop_duplicates(subset="plz")
+
+    plz_list = [80333, 80335, 80337, 80339, 80469, 80636, 80637, 83451, 82057, 85132, 83567, 83112, 92280] #keep in mind that it should be at least 7 PLZs for the code to work properly
+
+    #Drops the PLZs that are not in the list
+    regiostar_plz = regiostar_plz[regiostar_plz['plz'].isin(plz_list)].copy()
+
+    # Drop columns that are not in the sample_set table
+    regiostar_plz = regiostar_plz.drop(columns=[
+        'pop', 'area', 'lat', 'lon', 'name_city', 'fed_state', 'regio7', 'regio5', 'pop_den'
+    ], errors='ignore')
+
+
+    # Add the required classification_id column
+    regiostar_plz['classification_id'] = CLASSIFICATION_VERSION
+
+    sample_set_to_db(regiostar_plz)
+
 
 def get_sample_set() -> pd.DataFrame:
     """get a sample set from the database that has already been created
