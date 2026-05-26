@@ -1,4 +1,21 @@
 import warnings
+import sklearn.utils.validation
+import sklearn.utils
+
+# Monkeypatch scikit-learn's check_array to support legacy factor-analyzer code
+# on newer scikit-learn versions (>= 1.6.0).
+# Pylovo-classify algorithm was written before scikit-learn 1.6.0 came out and uses 
+# the 'force_all_finite' keyword argument, which was renamed to 'ensure_all_finite' in scikit-learn >= 1.6.0.
+# This patch translates 'force_all_finite' to 'ensure_all_finite' at runtime.
+_orig_check_array = sklearn.utils.validation.check_array
+def _patched_check_array(*args, **kwargs):
+    if 'force_all_finite' in kwargs:
+        kwargs['ensure_all_finite'] = kwargs.pop('force_all_finite')
+    return _orig_check_array(*args, **kwargs)
+
+sklearn.utils.validation.check_array = _patched_check_array
+sklearn.utils.check_array = _patched_check_array
+
 from factor_analyzer import FactorAnalyzer
 
 from pylovo.classification.database_communication.database_communication import DatabaseCommunication
