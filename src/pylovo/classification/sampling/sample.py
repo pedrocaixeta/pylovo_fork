@@ -161,10 +161,9 @@ def create_sample_set(restrict_to_postcode_result: bool = False):
     regiostar_plz = regiostar_plz.drop_duplicates(subset="plz")
 
     if restrict_to_postcode_result:
-        query = """SELECT DISTINCT postcode_result_plz
-                   FROM pylovo.postcode_result
-                   WHERE version_id = %(v)s;"""
-        db_client.cur.execute(query, {"v": VERSION_ID})
+        query = f"""SELECT DISTINCT postcode
+                   FROM basedata.ways_per_connection;"""
+        db_client.cur.execute(query)
         available_plz = {row[0] for row in db_client.cur.fetchall()}
         regiostar_plz = regiostar_plz[regiostar_plz["plz"].isin(available_plz)]
 
