@@ -360,18 +360,28 @@ class ParameterCalculator:
         # --- walk past source stubs ----------------------------------------
         previous = None
         current = root_idx
+        # Keep track of visited nodes to avoid infinite loops if the grid has cycles (loops/parallel lines)
+        visited = {current}
 
         while graph_for_count.degree[current] == 1:
             neighbors = list(graph_for_count.neighbors(current))
             if not neighbors:
                 return 0
-            previous, current = current, neighbors[0]
+            next_node = neighbors[0]
+            if next_node in visited:
+                break
+            previous, current = current, next_node
+            visited.add(current)
 
         while previous is not None and graph_for_count.degree[current] == 2:
             next_nodes = [n for n in graph_for_count.neighbors(current) if n != previous]
             if not next_nodes:
                 break
-            previous, current = current, next_nodes[0]
+            next_node = next_nodes[0]
+            if next_node in visited:
+                break
+            previous, current = current, next_node
+            visited.add(current)
 
         branch_point = current
 
