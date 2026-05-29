@@ -11,7 +11,7 @@ import pylovo.database.database_client as dbc
 from pylovo.classification.clustering.filter_grids import apply_filter_to_grids
 from pylovo.analysis.parameter_calculation import ParameterCalculator
 from pylovo.data_import.import_buildings import import_buildings_for_multiple_plz
-from pylovo.classification.sampling.sample import get_sample_set   , create_sample_set
+from pylovo.classification.sampling.sample import get_sample_set, create_sample_set, populates_sample_set_for_defined_PLZ
 from pylovo.grid_generator import GridGenerator
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +24,8 @@ def prepare_data_for_clustering(
     # %% 1. create a sample set of PLZ for your classification
     # This takes a few seconds
 
-    create_sample_set(restrict_to_postcode_result=sample_from_postcode_result_only)
+    # create_sample_set(restrict_to_postcode_result=sample_from_postcode_result_only)
+    populates_sample_set_for_defined_PLZ() #Hardcoded
     samples = get_sample_set()
 
     # %% 2. import the buildings for the grid generation from the building database
